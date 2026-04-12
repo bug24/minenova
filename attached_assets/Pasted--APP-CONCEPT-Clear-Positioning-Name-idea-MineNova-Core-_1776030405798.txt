@@ -1,0 +1,147 @@
+🔷 APP CONCEPT (Clear Positioning)
+Name idea: MineNova,
+Core idea:
+Users “mine” daily, but what they’re really doing is earning through ads, tasks, and engagement. when THEY Hit mine, adsense Ad loads and after this, the mining will start.
+🔷 1. USER FLOW (FROM DOWNLOAD TO WITHDRAWAL)
+Step 1: Onboarding
+Screens:
+Welcome screen (simple value proposition)
+“Start Mining Free Crypto Daily”
+Sign up:
+Email / Google / Phone
+Wallet connection (optional, later)
+Referral code: (optional)
+New users get 4 coins when they use a referral code
+Goal: Get user in fast, no friction.
+🔷 2. HOME DASHBOARD (MAIN SCREEN)
+This is the most important screen.
+Elements:
+Mining status (Active / Idle)
+Fake “hash rate” (gamification)
+Earnings counter (live animation)
+“Start Mining” button (once daily or every few hours)
+Buttons:
+Boost mining (watch ad)
+Upgrade rig
+Claim rewards
+Behavior:
+Mining runs for 12-24 hours
+User must return to claim
+🔷 3. BOOST SYSTEM (MONETIZATION CORE)
+This is where ads come in.
+Screen: Boost Mining
+Options:
+Watch ad → +2x speed for 30 mins
+Watch 3 ads → +5x boost
+Daily bonus boost
+⚠ Important: Do NOT say “watch ads to earn money”
+Say:
+“Boost your mining speed”
+This keeps you safer with ad policies.
+🔷 4. TASKS / EARN PAGE
+This is your real revenue driver.
+Sections:
+Watch video (rewarded ads)
+Daily login bonus
+Complete offers (CPA networks)
+Download apps
+Survey offers
+Layout:
+Simple cards:
+Task name
+Reward amount
+CTA button
+🔷 5. REFERRAL SYSTEM (GROWTH ENGINE)
+Screen: Invite & Earn
+Features:
+Referral link/code
+Earn % of friends’ earnings
+Tier system:
+Level 1: 10%
+Level 2: 5%
+Add:
+Leaderboard (top earners)
+This can explode growth if done right.
+🔷 6. WALLET & WITHDRAWAL
+Screen: Wallet
+Show:
+Total balance
+Pending rewards
+Withdrawable balance
+Withdrawal Options:
+Crypto wallet (USDT is best)
+Minimum withdrawal (important)
+e.g. $5 or $10
+Flow:
+Enter wallet address
+Confirm
+Processing screen
+🔷 7. UPGRADE / SHOP (OPTIONAL BUT POWERFUL)
+Screen: Upgrade Mining Rig
+Users can:
+Spend earned coins to upgrade
+Or pay real money
+Upgrades:
+Increase mining speed
+Increase daily cap
+Unlock auto-mining
+This is where real profit comes in.
+🔷 8. NOTIFICATIONS SYSTEM
+Push notifications:
+“Your mining session has ended”
+“Claim your rewards now”
+“Boost available”
+This keeps retention high.
+🔷 9. PROFILE / SETTINGS
+Username
+Referral stats
+Transaction history
+Support
+FAQ
+🔷 10. BACKEND LOGIC (VERY IMPORTANT)
+This is what makes or breaks you.
+Your revenue sources:
+Ads (primary)
+CPA offers
+Referrals (external platforms)
+Optional in-app purchases
+Your expenses:
+User withdrawals
+So you must:
+Control earnings rate
+Add limits:
+Daily cap
+Cooldowns
+Tiered rewards
+🔷 11. ANTI-CHEAT SYSTEM
+People will try to exploit you.
+Add:
+Device tracking
+IP monitoring
+Limit multiple accounts
+CAPTCHA for tasks
+🔷 12. SIMPLE USER JOURNEY SUMMARY
+User signs up
+Starts mining
+Watches ads to boost
+Completes tasks
+Refers friends
+Earns points
+Converts to crypto
+Withdraws
+🔷 REALITY CHECK (VERY IMPORTANT)
+If you don’t control this, the app will crash:
+Too high rewards → you go broke
+Too low rewards → users leave
+Balance is everything
+
+Include countdown timer for each mining session. Make the theme switchable from dark to white theme. Use regular words for the buttons. E.g:⁠- for registration, use Sign Up. For login, use Login.
+Reduce rate of withdrawals by making users use their mined points or tokens to upgrade where necessary and also direct them to AdSense ads for them to boost their mining. After login, do not use the word command center. Simple use Dashboard. Use the word referrals instead of recruitment
+
+integrate USDT payment gateway API to it such that people who want to upgrade their mining power must send some amount of USDT to an address alongside an auto generated tag.
+
+i also need it to be both destop and mobile friendly.
+
+Under the daily tasks, there must be share to Twitter, share to facebook, share to WhatsApp and this shares should carry their referral link.
+
+pop ups of different usernames at the base showing that they have withdrawn various amounts of USDT.

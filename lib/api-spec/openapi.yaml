@@ -1,22 +1,37 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: MineNova API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: mining
+    description: Mining operations
+  - name: tasks
+    description: Daily tasks
+  - name: referrals
+    description: Referral system
+  - name: wallet
+    description: Wallet and withdrawals
+  - name: upgrades
+    description: Mining rig upgrades
+  - name: leaderboard
+    description: Leaderboard
+  - name: activity
+    description: Social proof activity feed
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +39,356 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterBody"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginBody"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /mining/status:
+    get:
+      operationId: getMiningStatus
+      tags: [mining]
+      summary: Get current mining session status
+      responses:
+        "200":
+          description: Mining status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MiningStatus"
+
+  /mining/start:
+    post:
+      operationId: startMining
+      tags: [mining]
+      summary: Start a new mining session
+      responses:
+        "200":
+          description: Mining started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MiningStatus"
+        "400":
+          description: Mining already active or cooldown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /mining/claim:
+    post:
+      operationId: claimMining
+      tags: [mining]
+      summary: Claim completed mining rewards
+      responses:
+        "200":
+          description: Rewards claimed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResult"
+        "400":
+          description: Nothing to claim
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /mining/boost:
+    post:
+      operationId: boostMining
+      tags: [mining]
+      summary: Apply a boost to mining (after watching ad)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BoostBody"
+      responses:
+        "200":
+          description: Boost applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MiningStatus"
+        "400":
+          description: No active session or limit reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tasks:
+    get:
+      operationId: getTasks
+      tags: [tasks]
+      summary: Get available daily tasks
+      responses:
+        "200":
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+
+  /tasks/{taskId}/complete:
+    post:
+      operationId: completeTask
+      tags: [tasks]
+      summary: Complete a task
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Task completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskCompletionResult"
+        "400":
+          description: Already completed or not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /referrals:
+    get:
+      operationId: getReferrals
+      tags: [referrals]
+      summary: Get referral info and list
+      responses:
+        "200":
+          description: Referral info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReferralInfo"
+
+  /wallet:
+    get:
+      operationId: getWallet
+      tags: [wallet]
+      summary: Get wallet balance and info
+      responses:
+        "200":
+          description: Wallet info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Wallet"
+
+  /wallet/withdraw:
+    post:
+      operationId: requestWithdrawal
+      tags: [wallet]
+      summary: Request a USDT withdrawal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawalBody"
+      responses:
+        "200":
+          description: Withdrawal submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WithdrawalResult"
+        "400":
+          description: Insufficient balance or below minimum
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /wallet/transactions:
+    get:
+      operationId: getTransactions
+      tags: [wallet]
+      summary: Get transaction history
+      responses:
+        "200":
+          description: Transaction list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+
+  /upgrades:
+    get:
+      operationId: getUpgrades
+      tags: [upgrades]
+      summary: Get available upgrades
+      responses:
+        "200":
+          description: List of upgrades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Upgrade"
+
+  /upgrades/{upgradeId}/purchase:
+    post:
+      operationId: purchaseUpgrade
+      tags: [upgrades]
+      summary: Purchase an upgrade using coins or USDT
+      parameters:
+        - name: upgradeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PurchaseUpgradeBody"
+      responses:
+        "200":
+          description: Upgrade purchased
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseUpgradeResult"
+        "400":
+          description: Insufficient funds or already owned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /leaderboard:
+    get:
+      operationId: getLeaderboard
+      tags: [leaderboard]
+      summary: Get top earners leaderboard
+      responses:
+        "200":
+          description: Leaderboard entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaderboardEntry"
+
+  /activity/feed:
+    get:
+      operationId: getActivityFeed
+      tags: [activity]
+      summary: Get recent withdrawal activity feed (social proof)
+      responses:
+        "200":
+          description: Activity feed
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityFeedItem"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [mining]
+      summary: Get dashboard summary stats
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +399,416 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    RegisterBody:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        referralCode:
+          type: ["string", "null"]
+      required:
+        - username
+        - email
+        - password
+
+    LoginBody:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required:
+        - email
+        - password
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        referralCode:
+          type: string
+        miningLevel:
+          type: integer
+        totalEarned:
+          type: number
+        createdAt:
+          type: string
+      required:
+        - id
+        - username
+        - email
+        - referralCode
+        - miningLevel
+        - totalEarned
+        - createdAt
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        token:
+          type: string
+      required:
+        - user
+        - token
+
+    MiningStatus:
+      type: object
+      properties:
+        isActive:
+          type: boolean
+        sessionStartedAt:
+          type: ["string", "null"]
+        sessionEndsAt:
+          type: ["string", "null"]
+        accumulatedCoins:
+          type: number
+        hashRate:
+          type: number
+        boostMultiplier:
+          type: number
+        boostEndsAt:
+          type: ["string", "null"]
+        boostsUsedToday:
+          type: integer
+        canClaim:
+          type: boolean
+        cooldownEndsAt:
+          type: ["string", "null"]
+      required:
+        - isActive
+        - sessionStartedAt
+        - sessionEndsAt
+        - accumulatedCoins
+        - hashRate
+        - boostMultiplier
+        - boostsUsedToday
+        - canClaim
+
+    ClaimResult:
+      type: object
+      properties:
+        coinsEarned:
+          type: number
+        newBalance:
+          type: number
+        message:
+          type: string
+      required:
+        - coinsEarned
+        - newBalance
+        - message
+
+    BoostBody:
+      type: object
+      properties:
+        boostType:
+          type: string
+      required:
+        - boostType
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        reward:
+          type: number
+        taskType:
+          type: string
+        completedToday:
+          type: boolean
+        shareUrl:
+          type: ["string", "null"]
+      required:
+        - id
+        - title
+        - description
+        - reward
+        - taskType
+        - completedToday
+
+    TaskCompletionResult:
+      type: object
+      properties:
+        coinsEarned:
+          type: number
+        newBalance:
+          type: number
+        message:
+          type: string
+      required:
+        - coinsEarned
+        - newBalance
+        - message
+
+    ReferralInfo:
+      type: object
+      properties:
+        referralCode:
+          type: string
+        referralLink:
+          type: string
+        totalReferrals:
+          type: integer
+        totalEarnedFromReferrals:
+          type: number
+        tier1Count:
+          type: integer
+        tier2Count:
+          type: integer
+        referrals:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReferralEntry"
+      required:
+        - referralCode
+        - referralLink
+        - totalReferrals
+        - totalEarnedFromReferrals
+        - tier1Count
+        - tier2Count
+        - referrals
+
+    ReferralEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        tier:
+          type: integer
+        earnedFromUser:
+          type: number
+        joinedAt:
+          type: string
+      required:
+        - id
+        - username
+        - tier
+        - earnedFromUser
+        - joinedAt
+
+    Wallet:
+      type: object
+      properties:
+        totalBalance:
+          type: number
+        pendingBalance:
+          type: number
+        withdrawableBalance:
+          type: number
+        totalWithdrawn:
+          type: number
+        minimumWithdrawal:
+          type: number
+      required:
+        - totalBalance
+        - pendingBalance
+        - withdrawableBalance
+        - totalWithdrawn
+        - minimumWithdrawal
+
+    WithdrawalBody:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        amount:
+          type: number
+      required:
+        - walletAddress
+        - amount
+
+    WithdrawalResult:
+      type: object
+      properties:
+        transactionId:
+          type: integer
+        amount:
+          type: number
+        status:
+          type: string
+        message:
+          type: string
+        usdtAddress:
+          type: string
+        paymentTag:
+          type: string
+      required:
+        - transactionId
+        - amount
+        - status
+        - message
+        - usdtAddress
+        - paymentTag
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        amount:
+          type: number
+        status:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - type
+        - amount
+        - status
+        - description
+        - createdAt
+
+    Upgrade:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        tier:
+          type: integer
+        hashRateBoost:
+          type: number
+        dailyCapBoost:
+          type: number
+        coinCost:
+          type: ["number", "null"]
+        usdtCost:
+          type: ["number", "null"]
+        owned:
+          type: boolean
+        isAutoMining:
+          type: boolean
+      required:
+        - id
+        - name
+        - description
+        - tier
+        - hashRateBoost
+        - dailyCapBoost
+        - owned
+        - isAutoMining
+
+    PurchaseUpgradeBody:
+      type: object
+      properties:
+        paymentMethod:
+          type: string
+      required:
+        - paymentMethod
+
+    PurchaseUpgradeResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        usdtAddress:
+          type: ["string", "null"]
+        paymentTag:
+          type: ["string", "null"]
+        newBalance:
+          type: ["number", "null"]
+      required:
+        - success
+        - message
+
+    LeaderboardEntry:
+      type: object
+      properties:
+        rank:
+          type: integer
+        username:
+          type: string
+        totalEarned:
+          type: number
+        miningLevel:
+          type: integer
+        referralCount:
+          type: integer
+      required:
+        - rank
+        - username
+        - totalEarned
+        - miningLevel
+        - referralCount
+
+    ActivityFeedItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        amount:
+          type: number
+        action:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - username
+        - amount
+        - action
+        - createdAt
+
+    DashboardSummary:
+      type: object
+      properties:
+        totalUsers:
+          type: integer
+        totalCoinsDistributed:
+          type: number
+        activeSessions:
+          type: integer
+        myRank:
+          type: ["integer", "null"]
+        myTotalEarned:
+          type: number
+        myReferralCount:
+          type: integer
+        myMiningLevel:
+          type: integer
+      required:
+        - totalUsers
+        - totalCoinsDistributed
+        - activeSessions
+        - myTotalEarned
+        - myReferralCount
+        - myMiningLevel
