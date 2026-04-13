@@ -66,6 +66,9 @@ interface Analytics {
   totalUsers: number; activeMiners: number; totalCoinsDistributed: number;
   totalUsdtWithdrawn: number; totalReferralPayout: number; pendingWithdrawals: number;
 }
+interface WithdrawalStats {
+  pendingCount: number; pendingValue: number; approvedTotal: number; rejectedTotal: number;
+}
 interface Settings { min_withdrawal_usdt: string; referral_bonus_coins: string; referral_commission_pct: string; maintenance_mode: string; }
 interface ShareMessage { id: number; platform: string; message: string; isActive: boolean; sortOrder: number; }
 interface UserReferral { id: number; referredId: number; referredUsername: string; totalEarned: number; bonusPaid: boolean; createdAt: string; }
@@ -484,91 +487,329 @@ function UsersTab({ secret }: { secret: string }) {
 
 function WithdrawalsTab({ secret }: { secret: string }) {
   const { toast } = useToast();
+  const h = { "x-admin-secret": secret, "Content-Type": "application/json" };
+
+  // Stats
+  const [stats, setStats] = useState<WithdrawalStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  // Min-withdrawal settings
+  const [minWithdrawal, setMinWithdrawal] = useState("5");
+  const [minWdLoading, setMinWdLoading] = useState(true);
+  const [minWdSaving, setMinWdSaving] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // List
   const [items, setItems] = useState<Withdrawal[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
-  const [rejectNote, setRejectNote] = useState<Record<number, string>>({});
-  const [rejectingId, setRejectingId] = useState<number | null>(null);
-  const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
+  const [search, setSearch] = useState("");
 
-  const load = useCallback(async () => {
+  // Per-card action state
+  const [actionId, setActionId] = useState<number | null>(null);
+  const [actionType, setActionType] = useState<"approve" | "reject" | "note" | null>(null);
+  const [noteInput, setNoteInput] = useState<Record<number, string>>({});
+  const [processing, setProcessing] = useState<number | null>(null);
+
+  const loadStats = useCallback(() => {
+    setStatsLoading(true);
+    apiFetch("/admin/withdrawal-stats", { headers: h }).then(r => r.json()).then((d: WithdrawalStats) => {
+      setStats(d); setStatsLoading(false);
+    }).catch(() => setStatsLoading(false));
+  }, [secret]);
+
+  const loadList = useCallback((q: string, f: string) => {
     setLoading(true);
-    const q = filter !== "all" ? `?status=${filter}` : "";
-    const res = await apiFetch(`/admin/withdrawals${q}`, { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
-    const data = await res.json();
-    setItems(Array.isArray(data) ? data : []);
-    setLoading(false);
-  }, [filter, secret]);
+    const params = new URLSearchParams();
+    if (f !== "all") params.set("status", f);
+    if (q.trim()) params.set("search", q.trim());
+    apiFetch(`/admin/withdrawals?${params}`, { headers: h }).then(r => r.json()).then((d: Withdrawal[]) => {
+      setItems(Array.isArray(d) ? d : []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [secret]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadMinWithdrawal = useCallback(() => {
+    setMinWdLoading(true);
+    apiFetch("/admin/settings", { headers: h }).then(r => r.json()).then((d: Settings) => {
+      setMinWithdrawal(d.min_withdrawal_usdt ?? "5");
+      setMinWdLoading(false);
+    }).catch(() => setMinWdLoading(false));
+  }, [secret]);
+
+  useEffect(() => { loadStats(); loadMinWithdrawal(); }, [loadStats, loadMinWithdrawal]);
+
+  // Debounced list fetch
+  useEffect(() => {
+    const t = setTimeout(() => loadList(search, filter), search ? 350 : 0);
+    return () => clearTimeout(t);
+  }, [search, filter, loadList]);
+
+  const refreshAll = () => { loadStats(); loadList(search, filter); };
+
+  const openAction = (id: number, type: "approve" | "reject" | "note", existingNote = "") => {
+    setActionId(id); setActionType(type);
+    setNoteInput(prev => ({ ...prev, [id]: existingNote }));
+  };
+  const closeAction = () => { setActionId(null); setActionType(null); };
 
   const handleApprove = async (id: number) => {
-    const res = await apiFetch(`/admin/withdrawals/${id}/approve`, { method: "POST", headers, body: JSON.stringify({}) });
-    if (res.ok) { toast({ title: "Withdrawal approved" }); load(); }
-    else toast({ variant: "destructive", title: "Failed to approve" });
+    setProcessing(id);
+    try {
+      const res = await apiFetch(`/admin/withdrawals/${id}/approve`, {
+        method: "POST", headers: h, body: JSON.stringify({ adminNote: noteInput[id] ?? "" }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Failed"); }
+      toast({ title: "Withdrawal approved" });
+      closeAction();
+      refreshAll();
+    } catch (e: unknown) {
+      toast({ variant: "destructive", title: e instanceof Error ? e.message : "Failed to approve" });
+    } finally { setProcessing(null); }
   };
 
   const handleReject = async (id: number) => {
-    const res = await apiFetch(`/admin/withdrawals/${id}/reject`, {
-      method: "POST", headers, body: JSON.stringify({ adminNote: rejectNote[id] ?? "" }),
-    });
-    if (res.ok) { toast({ title: "Withdrawal rejected · Coins refunded" }); setRejectingId(null); load(); }
-    else toast({ variant: "destructive", title: "Failed to reject" });
+    setProcessing(id);
+    try {
+      const res = await apiFetch(`/admin/withdrawals/${id}/reject`, {
+        method: "POST", headers: h, body: JSON.stringify({ adminNote: noteInput[id] ?? "" }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Failed"); }
+      toast({ title: "Withdrawal rejected · Coins refunded" });
+      closeAction();
+      refreshAll();
+    } catch (e: unknown) {
+      toast({ variant: "destructive", title: e instanceof Error ? e.message : "Failed to reject" });
+    } finally { setProcessing(null); }
+  };
+
+  const handleSaveNote = async (id: number) => {
+    setProcessing(id);
+    try {
+      const res = await apiFetch(`/admin/withdrawals/${id}/note`, {
+        method: "PUT", headers: h, body: JSON.stringify({ adminNote: noteInput[id] ?? null }),
+      });
+      if (!res.ok) throw new Error();
+      toast({ title: "Note saved" });
+      closeAction();
+      loadList(search, filter);
+    } catch {
+      toast({ variant: "destructive", title: "Failed to save note" });
+    } finally { setProcessing(null); }
+  };
+
+  const handleSaveMinWithdrawal = async () => {
+    const v = parseFloat(minWithdrawal);
+    if (isNaN(v) || v < 0) { toast({ variant: "destructive", title: "Invalid amount" }); return; }
+    setMinWdSaving(true);
+    try {
+      const res = await apiFetch("/admin/settings", {
+        method: "PUT", headers: h, body: JSON.stringify({ min_withdrawal_usdt: minWithdrawal }),
+      });
+      if (!res.ok) throw new Error();
+      toast({ title: "Minimum withdrawal updated" });
+    } catch {
+      toast({ variant: "destructive", title: "Failed to save setting" });
+    } finally { setMinWdSaving(false); }
   };
 
   const FILTERS = ["all", "pending", "approved", "rejected"];
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 flex-wrap">
-        {FILTERS.map(f => (
-          <Button key={f} size="sm" variant={filter === f ? "default" : "outline"} className="capitalize text-xs h-7" onClick={() => setFilter(f)}>{f}</Button>
-        ))}
-        <Button variant="outline" size="sm" className="ml-auto" onClick={load}><RefreshCw className="w-3.5 h-3.5" /></Button>
-      </div>
-      {loading ? <p className="text-muted-foreground text-sm text-center py-8">Loading…</p> : (
-        <div className="space-y-2">
-          {items.length === 0 && <p className="text-muted-foreground text-sm text-center py-8">No withdrawals</p>}
-          {items.map(w => (
-            <div key={w.id} className="bg-card border border-card-border rounded-xl p-4 space-y-3">
-              <div className="flex items-start justify-between gap-2 flex-wrap">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">{w.username ?? `User #${w.userId}`}</span>
-                    <StatusBadge status={w.status} />
-                  </div>
-                  <p className="text-xs text-muted-foreground">{w.email}</p>
-                  <p className="text-xs text-muted-foreground">Wallet: {w.walletAddress ? `${w.walletAddress.slice(0, 12)}…` : "—"}</p>
-                  {w.paymentTag && <p className="text-xs text-muted-foreground font-mono">Tag: {w.paymentTag}</p>}
-                  {w.adminNote && <p className="text-xs text-muted-foreground">Note: {w.adminNote}</p>}
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-bold">${w.amount.toFixed(2)} USDT</p>
-                  <p className="text-xs text-muted-foreground">{fmt(w.createdAt)}</p>
-                </div>
-              </div>
-              {w.status === "pending" && (
-                rejectingId === w.id ? (
-                  <div className="space-y-2 bg-muted/50 rounded-xl p-3">
-                    <Input
-                      placeholder="Rejection reason (optional)"
-                      value={rejectNote[w.id] ?? ""}
-                      onChange={e => setRejectNote(prev => ({ ...prev, [w.id]: e.target.value }))}
-                    />
-                    <div className="flex gap-2">
-                      <Button size="sm" className="gap-1 bg-red-500 hover:bg-red-600 text-white" onClick={() => handleReject(w.id)}><X className="w-3 h-3" /> Confirm Reject</Button>
-                      <Button size="sm" variant="outline" onClick={() => setRejectingId(null)}>Cancel</Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <Button size="sm" className="gap-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs h-7" onClick={() => handleApprove(w.id)}><Check className="w-3 h-3" /> Approve</Button>
-                    <Button size="sm" variant="outline" className="gap-1 text-red-400 border-red-500/30 text-xs h-7" onClick={() => setRejectingId(w.id)}><X className="w-3 h-3" /> Reject</Button>
-                  </div>
-                )
+
+      {/* ── Stats Bar ── */}
+      {statsLoading ? (
+        <div className="grid grid-cols-2 gap-3">
+          {[...Array(4)].map((_, i) => <div key={i} className="bg-card border border-card-border rounded-xl p-3 h-16 animate-pulse" />)}
+        </div>
+      ) : stats && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 space-y-0.5">
+            <p className="text-xs text-amber-400 font-medium">Pending</p>
+            <p className="text-lg font-bold">{stats.pendingCount}</p>
+            <p className="text-xs text-muted-foreground">${stats.pendingValue.toFixed(2)} USDT</p>
+          </div>
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 space-y-0.5">
+            <p className="text-xs text-emerald-400 font-medium">Approved (all-time)</p>
+            <p className="text-lg font-bold text-emerald-400">${stats.approvedTotal.toFixed(2)}</p>
+            <p className="text-xs text-muted-foreground">USDT</p>
+          </div>
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 space-y-0.5">
+            <p className="text-xs text-red-400 font-medium">Rejected (all-time)</p>
+            <p className="text-lg font-bold text-red-400">${stats.rejectedTotal.toFixed(2)}</p>
+            <p className="text-xs text-muted-foreground">USDT refunded</p>
+          </div>
+          <div className="bg-card border border-card-border rounded-xl p-3 space-y-0.5">
+            <p className="text-xs text-muted-foreground font-medium">Platform net paid</p>
+            <p className="text-lg font-bold text-purple-400">${stats.approvedTotal.toFixed(2)}</p>
+            <p className="text-xs text-muted-foreground">USDT total</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Withdrawal Settings (collapsible) ── */}
+      <div className="bg-card border border-card-border rounded-xl overflow-hidden">
+        <button
+          className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/30 transition-colors"
+          onClick={() => setSettingsOpen(o => !o)}
+        >
+          <span className="flex items-center gap-2"><Settings className="w-3.5 h-3.5 text-muted-foreground" /> Withdrawal Settings</span>
+          <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${settingsOpen ? "rotate-90" : ""}`} />
+        </button>
+        {settingsOpen && (
+          <div className="px-4 pb-4 space-y-3 border-t border-card-border">
+            <p className="text-xs text-muted-foreground pt-3">Minimum withdrawal amount (USDT). Users below this threshold cannot request a withdrawal.</p>
+            <div className="flex gap-2 items-center">
+              {minWdLoading ? (
+                <div className="flex-1 h-9 bg-muted/30 rounded-lg animate-pulse" />
+              ) : (
+                <Input
+                  type="number" min="0" step="0.5"
+                  value={minWithdrawal}
+                  onChange={e => setMinWithdrawal(e.target.value)}
+                  className="h-9 flex-1"
+                  placeholder="e.g. 5"
+                />
               )}
+              <span className="text-sm text-muted-foreground shrink-0">USDT</span>
+              <Button size="sm" onClick={handleSaveMinWithdrawal} disabled={minWdSaving || minWdLoading} className="shrink-0">
+                {minWdSaving ? "Saving…" : "Save"}
+              </Button>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Filter + Search + Refresh ── */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {FILTERS.map(f => (
+            <Button key={f} size="sm" variant={filter === f ? "default" : "outline"} className="capitalize text-xs h-7" onClick={() => setFilter(f)}>{f}</Button>
           ))}
+          <Button variant="outline" size="sm" className="ml-auto h-7 w-7 p-0" onClick={refreshAll}>
+            <RefreshCw className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+        <Input
+          placeholder="Search by username or wallet address…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="h-9"
+        />
+      </div>
+
+      {/* ── List ── */}
+      {loading ? (
+        <p className="text-muted-foreground text-sm text-center py-8">Loading…</p>
+      ) : items.length === 0 ? (
+        <p className="text-muted-foreground text-sm text-center py-8">
+          {search ? "No matching withdrawals" : "No withdrawals"}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {items.map(w => {
+            const isActing = actionId === w.id;
+            const isProcessing = processing === w.id;
+            return (
+              <div key={w.id} className="bg-card border border-card-border rounded-xl p-4 space-y-3">
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold">{w.username ?? `User #${w.userId}`}</span>
+                      <StatusBadge status={w.status} />
+                    </div>
+                    <p className="text-xs text-muted-foreground">{w.email}</p>
+                    <p className="text-xs text-muted-foreground font-mono truncate">
+                      {w.walletAddress ?? "No wallet"}
+                    </p>
+                    {w.paymentTag && <p className="text-xs text-muted-foreground font-mono">Tag: {w.paymentTag}</p>}
+                    {w.adminNote && !(isActing && actionType === "note") && (
+                      <p className="text-xs text-blue-400 italic">Note: {w.adminNote}</p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-lg font-bold">${w.amount.toFixed(2)} USDT</p>
+                    <p className="text-xs text-muted-foreground">{fmt(w.createdAt)}</p>
+                  </div>
+                </div>
+
+                {/* ── Pending: Approve (with note) or Reject ── */}
+                {w.status === "pending" && (
+                  isActing && actionType === "approve" ? (
+                    <div className="space-y-2 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3">
+                      <p className="text-xs text-emerald-400 font-medium">Add approval note (optional)</p>
+                      <Input
+                        placeholder="e.g. Payment verified via TRC20"
+                        value={noteInput[w.id] ?? ""}
+                        onChange={e => setNoteInput(prev => ({ ...prev, [w.id]: e.target.value }))}
+                        className="h-9"
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" className="gap-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs" onClick={() => handleApprove(w.id)} disabled={isProcessing}>
+                          <Check className="w-3 h-3" /> {isProcessing ? "Approving…" : "Confirm Approve"}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={closeAction} disabled={isProcessing}>Cancel</Button>
+                      </div>
+                    </div>
+                  ) : isActing && actionType === "reject" ? (
+                    <div className="space-y-2 bg-red-500/5 border border-red-500/20 rounded-xl p-3">
+                      <p className="text-xs text-red-400 font-medium">Rejection reason (optional) — coins will be refunded</p>
+                      <Input
+                        placeholder="e.g. Invalid wallet address"
+                        value={noteInput[w.id] ?? ""}
+                        onChange={e => setNoteInput(prev => ({ ...prev, [w.id]: e.target.value }))}
+                        className="h-9"
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" className="gap-1 bg-red-500 hover:bg-red-600 text-white text-xs" onClick={() => handleReject(w.id)} disabled={isProcessing}>
+                          <X className="w-3 h-3" /> {isProcessing ? "Rejecting…" : "Confirm Reject"}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={closeAction} disabled={isProcessing}>Cancel</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Button size="sm" className="gap-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs h-7" onClick={() => openAction(w.id, "approve")}>
+                        <Check className="w-3 h-3" /> Approve
+                      </Button>
+                      <Button size="sm" variant="outline" className="gap-1 text-red-400 border-red-500/30 text-xs h-7" onClick={() => openAction(w.id, "reject")}>
+                        <X className="w-3 h-3" /> Reject
+                      </Button>
+                    </div>
+                  )
+                )}
+
+                {/* ── Processed: Edit note ── */}
+                {w.status !== "pending" && (
+                  isActing && actionType === "note" ? (
+                    <div className="space-y-2 bg-muted/30 rounded-xl p-3">
+                      <Input
+                        placeholder="Admin note…"
+                        value={noteInput[w.id] ?? ""}
+                        onChange={e => setNoteInput(prev => ({ ...prev, [w.id]: e.target.value }))}
+                        className="h-9"
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" className="text-xs gap-1" onClick={() => handleSaveNote(w.id)} disabled={isProcessing}>
+                          <Save className="w-3 h-3" /> {isProcessing ? "Saving…" : "Save note"}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-xs" onClick={closeAction} disabled={isProcessing}>Cancel</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm" variant="ghost"
+                      className="text-xs text-muted-foreground h-6 px-2 gap-1 hover:text-foreground"
+                      onClick={() => openAction(w.id, "note", w.adminNote ?? "")}
+                    >
+                      <Pencil className="w-3 h-3" /> {w.adminNote ? "Edit note" : "Add note"}
+                    </Button>
+                  )
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

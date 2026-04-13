@@ -382,11 +382,42 @@ router.post("/admin/users/:id/adjust-balance", requireAdmin, async (req, res): P
 
 // ─── Withdrawals ──────────────────────────────────────────────────────────────
 
+router.get("/admin/withdrawal-stats", requireAdmin, async (_req, res): Promise<void> => {
+  const rows = await db
+    .select({
+      status: transactionsTable.status,
+      count: sql<number>`count(*)::int`,
+      total: sql<number>`coalesce(sum(amount), 0)`,
+    })
+    .from(transactionsTable)
+    .where(eq(transactionsTable.type, "withdrawal"))
+    .groupBy(transactionsTable.status);
+
+  const byStatus: Record<string, { count: number; total: number }> = {};
+  for (const r of rows) byStatus[r.status] = { count: r.count, total: r.total };
+
+  res.json({
+    pendingCount: byStatus["pending"]?.count ?? 0,
+    pendingValue: Math.round((byStatus["pending"]?.total ?? 0) * 100) / 100,
+    approvedTotal: Math.round((byStatus["approved"]?.total ?? 0) * 100) / 100,
+    rejectedTotal: Math.round((byStatus["rejected"]?.total ?? 0) * 100) / 100,
+  });
+});
+
 router.get("/admin/withdrawals", requireAdmin, async (req, res): Promise<void> => {
   const status = req.query.status as string | undefined;
-  const conditions = [eq(transactionsTable.type, "withdrawal")];
+  const search = (req.query.search as string | undefined)?.trim();
+  const conditions: SQL<unknown>[] = [eq(transactionsTable.type, "withdrawal")];
   if (status && ["pending", "approved", "rejected"].includes(status)) {
     conditions.push(eq(transactionsTable.status, status));
+  }
+  if (search) {
+    conditions.push(
+      or(
+        ilike(usersTable.username, `%${search}%`),
+        ilike(transactionsTable.walletAddress, `%${search}%`)
+      ) as SQL<unknown>
+    );
   }
 
   const rows = await db
@@ -408,6 +439,19 @@ router.get("/admin/withdrawals", requireAdmin, async (req, res): Promise<void> =
     .orderBy(desc(transactionsTable.createdAt));
 
   res.json(rows.map(r => ({ ...r, createdAt: r.createdAt.toISOString() })));
+});
+
+router.put("/admin/withdrawals/:id/note", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid withdrawal ID" }); return; }
+  const schema = z.object({ adminNote: z.string().nullable() });
+  const data = schema.safeParse(req.body);
+  if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
+  const [tx] = await db.select({ id: transactionsTable.id }).from(transactionsTable)
+    .where(and(eq(transactionsTable.id, id), eq(transactionsTable.type, "withdrawal"))).limit(1);
+  if (!tx) { res.status(404).json({ error: "Withdrawal not found" }); return; }
+  await db.update(transactionsTable).set({ adminNote: data.data.adminNote }).where(eq(transactionsTable.id, id));
+  res.json({ success: true });
 });
 
 router.post("/admin/withdrawals/:id/approve", requireAdmin, async (req, res): Promise<void> => {
