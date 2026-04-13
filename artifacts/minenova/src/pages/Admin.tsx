@@ -585,16 +585,18 @@ function WithdrawalsTab({ secret }: { secret: string }) {
 
   const handleSaveNote = async (id: number) => {
     setProcessing(id);
+    const raw = noteInput[id] ?? "";
+    const adminNote = raw.trim() === "" ? null : raw.trim();
     try {
       const res = await apiFetch(`/admin/withdrawals/${id}/note`, {
-        method: "PUT", headers: h, body: JSON.stringify({ adminNote: noteInput[id] ?? null }),
+        method: "PUT", headers: h, body: JSON.stringify({ adminNote }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Failed"); }
       toast({ title: "Note saved" });
       closeAction();
       loadList(search, filter);
-    } catch {
-      toast({ variant: "destructive", title: "Failed to save note" });
+    } catch (e: unknown) {
+      toast({ variant: "destructive", title: e instanceof Error ? e.message : "Failed to save note" });
     } finally { setProcessing(null); }
   };
 
