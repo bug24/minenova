@@ -10,7 +10,7 @@ import {
   upgradesTable,
   userUpgradesTable,
 } from "@workspace/db";
-import { eq, and, isNull, or, ilike, sql, desc } from "drizzle-orm";
+import { eq, and, isNull, or, ilike, sql, desc, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -311,7 +311,7 @@ router.post("/admin/users/:id/adjust-balance", requireAdmin, async (req, res): P
 router.get("/admin/withdrawals", requireAdmin, async (req, res): Promise<void> => {
   const status = req.query.status as string | undefined;
   const conditions = [eq(transactionsTable.type, "withdrawal")];
-  if (status && ["pending", "approved", "rejected"].includes(status)) {
+  if (status && ["pending", "completed", "rejected"].includes(status)) {
     conditions.push(eq(transactionsTable.status, status));
   }
 
@@ -346,7 +346,7 @@ router.post("/admin/withdrawals/:id/approve", requireAdmin, async (req, res): Pr
   if (!tx) { res.status(404).json({ error: "Withdrawal not found" }); return; }
   if (tx.status !== "pending") { res.status(400).json({ error: "Only pending withdrawals can be approved" }); return; }
 
-  await db.update(transactionsTable).set({ status: "approved", adminNote: data.data.adminNote ?? null }).where(eq(transactionsTable.id, id));
+  await db.update(transactionsTable).set({ status: "completed", adminNote: data.data.adminNote ?? null }).where(eq(transactionsTable.id, id));
   res.json({ success: true });
 });
 
@@ -380,7 +380,7 @@ router.get("/admin/transactions", requireAdmin, async (req, res): Promise<void> 
   const type = req.query.type as string | undefined;
   const search = req.query.search as string | undefined;
 
-  const conditions: any[] = [];
+  const conditions: SQL<unknown>[] = [];
   if (type && type !== "all") conditions.push(eq(transactionsTable.type, type));
 
   let rows;
