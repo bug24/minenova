@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { useGetUpgrades, usePurchaseUpgrade, getGetUpgradesQueryKey } from "@workspace/api-client-react";
+import { useGetUpgrades, usePurchaseUpgrade, getGetUpgradesQueryKey, useGetWallet, getGetWalletQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useGetWallet } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +48,7 @@ export default function Upgrades() {
         setHasSent(false);
         setResultOpen(true);
         queryClient.invalidateQueries({ queryKey: getGetUpgradesQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
       },
       onError: (err: unknown) => {
         const msg = (err as { data?: { error?: string } })?.data?.error ?? "Purchase failed";
