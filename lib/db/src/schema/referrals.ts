@@ -1,4 +1,4 @@
-import { pgTable, serial, timestamp, integer, real } from "drizzle-orm/pg-core";
+import { pgTable, serial, timestamp, integer, real, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -8,6 +8,7 @@ export const referralsTable = pgTable("referrals", {
   referredId: integer("referred_id").notNull(),
   tier: integer("tier").notNull().default(1),
   totalEarned: real("total_earned").notNull().default(0),
+  bonusPaid: boolean("bonus_paid").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

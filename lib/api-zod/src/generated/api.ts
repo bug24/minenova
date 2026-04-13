@@ -163,6 +163,7 @@ export const GetReferralsResponse = zod.object({
       username: zod.string(),
       tier: zod.number(),
       earnedFromUser: zod.number(),
+      bonusPaid: zod.boolean(),
       joinedAt: zod.string(),
     }),
   ),

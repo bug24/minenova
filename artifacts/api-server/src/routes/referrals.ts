@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
-import { db, referralsTable, usersTable } from "@workspace/db";
+import { db, referralsTable, usersTable, referralTransactionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { GetReferralsResponse } from "@workspace/api-zod";
+import { sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -14,6 +15,7 @@ router.get("/referrals", requireAuth, async (req, res): Promise<void> => {
       id: referralsTable.id,
       referredId: referralsTable.referredId,
       earnedFromUser: referralsTable.totalEarned,
+      bonusPaid: referralsTable.bonusPaid,
       createdAt: referralsTable.createdAt,
     })
     .from(referralsTable)
@@ -21,12 +23,13 @@ router.get("/referrals", requireAuth, async (req, res): Promise<void> => {
 
   const referredUserIds = tier1Refs.map(r => r.referredId).filter(id => id > 0);
 
-  const referredUsersData = referredUserIds.length > 0
-    ? await db
-        .select({ id: usersTable.id, username: usersTable.username })
-        .from(usersTable)
-        .where(eq(usersTable.id, referredUserIds[0]))
-    : [];
+  let referredUsersData: { id: number; username: string }[] = [];
+  if (referredUserIds.length > 0) {
+    referredUsersData = await db
+      .select({ id: usersTable.id, username: usersTable.username })
+      .from(usersTable)
+      .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(referredUserIds.map(id => sql`${id}`), sql`, `)}]::int[])`);
+  }
 
   const usernameMap = new Map(referredUsersData.map(u => [u.id, u.username]));
 
@@ -35,6 +38,7 @@ router.get("/referrals", requireAuth, async (req, res): Promise<void> => {
     username: usernameMap.get(r.referredId) ?? "unknown",
     tier: 1,
     earnedFromUser: r.earnedFromUser,
+    bonusPaid: r.bonusPaid,
     joinedAt: r.createdAt.toISOString(),
   }));
 
@@ -45,7 +49,7 @@ router.get("/referrals", requireAuth, async (req, res): Promise<void> => {
     referralLink: `${baseUrl}/?ref=${user.referralCode}`,
     totalReferrals: referralsList.length,
     totalEarnedFromReferrals: referralsList.reduce((sum, r) => sum + r.earnedFromUser, 0),
-    tier1Count: referralsList.filter(r => r.tier === 1).length,
+    tier1Count: referralsList.length,
     tier2Count: 0,
     referrals: referralsList,
   }));

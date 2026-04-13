@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, usersTable } from "@workspace/db";
+import { db, usersTable, referralsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { hashPassword, verifyPassword, generateReferralCode, generateToken } from "../lib/auth";
 import { requireAuth } from "../middlewares/requireAuth";
@@ -41,7 +41,6 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   const newReferralCode = generateReferralCode();
 
   let referredBy: number | null = null;
-  let bonusCoins = 0;
 
   if (referralCode) {
     const [referrer] = await db
@@ -52,14 +51,6 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
     if (referrer) {
       referredBy = referrer.id;
-      bonusCoins = 4;
-
-      await db.insert((await import("@workspace/db")).referralsTable).values({
-        referrerId: referrer.id,
-        referredId: 0,
-        tier: 1,
-        totalEarned: 0,
-      });
     }
   }
 
@@ -71,16 +62,18 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       passwordHash,
       referralCode: newReferralCode,
       referredBy: referredBy ?? undefined,
-      coinBalance: bonusCoins,
+      coinBalance: 0,
     })
     .returning();
 
-  if (referredBy && bonusCoins > 0) {
-    const { referralsTable } = await import("@workspace/db");
-    await db
-      .update(referralsTable)
-      .set({ referredId: user.id })
-      .where(eq(referralsTable.referrerId, referredBy));
+  if (referredBy) {
+    await db.insert(referralsTable).values({
+      referrerId: referredBy,
+      referredId: user.id,
+      tier: 1,
+      totalEarned: 0,
+      bonusPaid: false,
+    });
   }
 
   const token = generateToken(user.id);

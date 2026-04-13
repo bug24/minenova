@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, miningSessionsTable, usersTable, transactionsTable } from "@workspace/db";
+import { db, miningSessionsTable, usersTable, transactionsTable, referralsTable, referralTransactionsTable } from "@workspace/db";
 import { eq, and, isNull } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { BoostMiningBody, GetMiningStatusResponse, StartMiningResponse, ClaimMiningResponse, BoostMiningResponse, GetDashboardSummaryResponse } from "@workspace/api-zod";
@@ -10,6 +10,9 @@ const router: IRouter = Router();
 const SESSION_DURATION_MS = 12 * 60 * 60 * 1000;
 const BASE_HASH_RATE = 10;
 const BASE_COINS_PER_HOUR = 0.5;
+
+const REFERRAL_BONUS_COINS = 250;
+const REFERRAL_COMMISSION_RATE = 0.07;
 
 function computeMiningStatus(session: typeof miningSessionsTable.$inferSelect | null, user: { miningLevel: number }) {
   const now = new Date();
@@ -99,6 +102,39 @@ router.post("/mining/start", requireAuth, async (req, res): Promise<void> => {
     })
     .returning();
 
+  const [referralRecord] = await db
+    .select()
+    .from(referralsTable)
+    .where(and(eq(referralsTable.referredId, req.userId!), eq(referralsTable.bonusPaid, false)))
+    .limit(1);
+
+  if (referralRecord) {
+    await db
+      .update(usersTable)
+      .set({ coinBalance: sql`coin_balance + ${REFERRAL_BONUS_COINS}`, totalEarned: sql`total_earned + ${REFERRAL_BONUS_COINS}` })
+      .where(eq(usersTable.id, referralRecord.referrerId));
+
+    await db
+      .update(referralsTable)
+      .set({ bonusPaid: true, totalEarned: sql`total_earned + ${REFERRAL_BONUS_COINS}` })
+      .where(eq(referralsTable.id, referralRecord.id));
+
+    await db.insert(referralTransactionsTable).values({
+      referrerId: referralRecord.referrerId,
+      referredId: req.userId!,
+      rewardType: "bonus",
+      amount: REFERRAL_BONUS_COINS,
+    });
+
+    await db.insert(transactionsTable).values({
+      userId: referralRecord.referrerId,
+      type: "referral",
+      amount: REFERRAL_BONUS_COINS,
+      status: "completed",
+      description: `Referral activation bonus for user #${req.userId}`,
+    });
+  }
+
   res.json(StartMiningResponse.parse(computeMiningStatus(session, user)));
 });
 
@@ -146,6 +182,43 @@ router.post("/mining/claim", requireAuth, async (req, res): Promise<void> => {
     status: "completed",
     description: "Mining session reward",
   });
+
+  const [referralRecord] = await db
+    .select()
+    .from(referralsTable)
+    .where(eq(referralsTable.referredId, req.userId!))
+    .limit(1);
+
+  if (referralRecord) {
+    const commissionCoins = Math.round(coinsEarned * REFERRAL_COMMISSION_RATE * 100) / 100;
+
+    if (commissionCoins > 0) {
+      await db
+        .update(usersTable)
+        .set({ coinBalance: sql`coin_balance + ${commissionCoins}`, totalEarned: sql`total_earned + ${commissionCoins}` })
+        .where(eq(usersTable.id, referralRecord.referrerId));
+
+      await db
+        .update(referralsTable)
+        .set({ totalEarned: sql`total_earned + ${commissionCoins}` })
+        .where(eq(referralsTable.id, referralRecord.id));
+
+      await db.insert(referralTransactionsTable).values({
+        referrerId: referralRecord.referrerId,
+        referredId: req.userId!,
+        rewardType: "commission",
+        amount: commissionCoins,
+      });
+
+      await db.insert(transactionsTable).values({
+        userId: referralRecord.referrerId,
+        type: "referral",
+        amount: commissionCoins,
+        status: "completed",
+        description: `7% mining commission from user #${req.userId}`,
+      });
+    }
+  }
 
   res.json(ClaimMiningResponse.parse({
     coinsEarned,
@@ -209,7 +282,6 @@ router.get("/dashboard/summary", requireAuth, async (req, res): Promise<void> =>
   const [totalCoinsResult] = await db.select({ sum: sql<number>`coalesce(sum(total_earned), 0)` }).from(usersTable);
   const [activeSessionsResult] = await db.select({ count: sql<number>`count(*)::int` }).from(miningSessionsTable).where(eq(miningSessionsTable.isActive, true));
 
-  const { referralsTable } = await import("@workspace/db");
   const [refCountResult] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(referralsTable)

@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { useGetReferrals, useGetLeaderboard, getGetReferralsQueryKey } from "@workspace/api-client-react";
+import { useGetReferrals, useGetLeaderboard } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Twitter, Facebook, MessageCircle, Users, Trophy, TrendingUp, Check } from "lucide-react";
+import { Copy, Twitter, Facebook, MessageCircle, Users, Trophy, TrendingUp, Check, Gift, Zap } from "lucide-react";
 
 export default function Referrals() {
   const { data: referrals, isLoading } = useGetReferrals();
@@ -57,18 +57,38 @@ export default function Referrals() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         {[
           { label: "Total Referrals", value: String(referrals?.totalReferrals ?? 0), color: "text-primary" },
-          { label: "Level 1 (10%)", value: String(referrals?.tier1Count ?? 0), color: "text-primary" },
-          { label: "Level 2 (5%)", value: String(referrals?.tier2Count ?? 0), color: "text-muted-foreground" },
-          { label: "Earned from Refs", value: `${(referrals?.totalEarnedFromReferrals ?? 0).toFixed(2)}`, color: "text-accent" },
+          { label: "Earned from Refs", value: `${(referrals?.totalEarnedFromReferrals ?? 0).toFixed(2)} coins`, color: "text-accent" },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-card border border-card-border rounded-xl p-4 text-center">
             <div className={`text-2xl font-bold ${color}`}>{value}</div>
             <div className="text-xs text-muted-foreground mt-1">{label}</div>
           </div>
         ))}
+      </div>
+
+      {/* Earnings breakdown */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-card border border-card-border rounded-xl p-4 flex items-center gap-3">
+          <div className="w-10 h-10 bg-primary/20 rounded-lg flex items-center justify-center flex-shrink-0">
+            <Gift className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">0.25 USDT</p>
+            <p className="text-xs text-muted-foreground">One-time signup bonus</p>
+          </div>
+        </div>
+        <div className="bg-card border border-card-border rounded-xl p-4 flex items-center gap-3">
+          <div className="w-10 h-10 bg-accent/20 rounded-lg flex items-center justify-center flex-shrink-0">
+            <Zap className="w-5 h-5 text-accent" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">7% Commission</p>
+            <p className="text-xs text-muted-foreground">Per mining claim</p>
+          </div>
+        </div>
       </div>
 
       {/* Referral Link */}
@@ -117,25 +137,30 @@ export default function Referrals() {
         </div>
       </div>
 
-      {/* Tier Explanation */}
+      {/* How it works */}
       <div className="bg-card border border-card-border rounded-xl p-5">
-        <h3 className="font-semibold mb-3">Referral Tiers</h3>
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center text-sm font-bold text-primary">1</div>
+        <h3 className="font-semibold mb-4">How Referrals Work</h3>
+        <div className="space-y-4">
+          <div className="flex gap-3">
+            <div className="w-7 h-7 bg-primary/20 rounded-full flex items-center justify-center text-xs font-bold text-primary flex-shrink-0 mt-0.5">1</div>
             <div>
-              <p className="text-sm font-medium">Level 1 — Direct Referrals</p>
-              <p className="text-xs text-muted-foreground">Earn 10% of your direct referrals' mining rewards</p>
+              <p className="text-sm font-medium">Share your link</p>
+              <p className="text-xs text-muted-foreground">Send your unique referral link to friends</p>
             </div>
-            <Badge className="ml-auto bg-primary/20 text-primary border-0">10%</Badge>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center text-sm font-bold text-muted-foreground">2</div>
+          <div className="flex gap-3">
+            <div className="w-7 h-7 bg-primary/20 rounded-full flex items-center justify-center text-xs font-bold text-primary flex-shrink-0 mt-0.5">2</div>
             <div>
-              <p className="text-sm font-medium">Level 2 — Indirect Referrals</p>
-              <p className="text-xs text-muted-foreground">Earn 5% from people your referrals invite</p>
+              <p className="text-sm font-medium">Friend signs up and starts mining</p>
+              <p className="text-xs text-muted-foreground">You instantly receive a <span className="text-primary font-semibold">0.25 USDT (250 coins)</span> one-time bonus — paid the moment they activate their first mining session</p>
             </div>
-            <Badge className="ml-auto bg-muted text-muted-foreground border-0">5%</Badge>
+          </div>
+          <div className="flex gap-3">
+            <div className="w-7 h-7 bg-accent/20 rounded-full flex items-center justify-center text-xs font-bold text-accent flex-shrink-0 mt-0.5">3</div>
+            <div>
+              <p className="text-sm font-medium">Earn 7% on every claim they make</p>
+              <p className="text-xs text-muted-foreground">You earn <span className="text-accent font-semibold">7% commission</span> automatically added to your wallet every time a referral claims their mining reward. No multi-level, Level 1 only.</p>
+            </div>
           </div>
         </div>
       </div>
@@ -192,11 +217,17 @@ export default function Referrals() {
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-semibold">{ref.username}</p>
-                    <p className="text-xs text-muted-foreground">Level {ref.tier} • Joined {new Date(ref.joinedAt).toLocaleDateString()}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Joined {new Date(ref.joinedAt).toLocaleDateString()}
+                    </p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold text-accent">{ref.earnedFromUser.toFixed(2)}</p>
-                    <p className="text-xs text-muted-foreground">earned</p>
+                  <div className="text-right flex flex-col items-end gap-1">
+                    <p className="text-sm font-bold text-accent">{ref.earnedFromUser.toFixed(2)} coins</p>
+                    {(ref as any).bonusPaid ? (
+                      <Badge className="bg-emerald-500/15 text-emerald-500 border-0 text-[10px] px-1.5">Bonus paid</Badge>
+                    ) : (
+                      <Badge className="bg-amber-500/15 text-amber-500 border-0 text-[10px] px-1.5">Mining pending</Badge>
+                    )}
                   </div>
                 </div>
               ))}
