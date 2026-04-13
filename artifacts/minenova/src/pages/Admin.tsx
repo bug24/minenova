@@ -10,6 +10,7 @@ import {
   ShieldOff, Shield, CircleDollarSign, LayoutDashboard, type LucideIcon,
   Sun, Moon, UserCircle, Copy, RotateCcw, Activity, ChevronRight,
   Play, Zap, AlertTriangle, ToggleLeft, ToggleRight, Menu, ChevronLeft,
+  Film, Link, Clock, MonitorPlay,
 } from "lucide-react";
 
 function apiFetch(path: string, options?: RequestInit) {
@@ -90,7 +91,18 @@ interface UserProfile extends AdminUser {
   transactions: UserTransaction[];
 }
 
-type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share";
+type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads";
+
+interface AdminAd {
+  id: number;
+  title: string;
+  type: "video" | "image" | "script" | "external_link";
+  urlOrCode: string;
+  durationSeconds: number;
+  placement: string;
+  isActive: boolean;
+  createdAt: string;
+}
 
 const PLATFORMS = ["general", "twitter", "whatsapp", "facebook"] as const;
 type Platform = typeof PLATFORMS[number];
@@ -1863,6 +1875,241 @@ function ShareMessagesTab({ secret }: { secret: string }) {
   );
 }
 
+// ─── Ads Tab ─────────────────────────────────────────────────────────────────
+
+const AD_TYPES = [
+  { value: "video", label: "Video" },
+  { value: "image", label: "Image" },
+  { value: "script", label: "Script / Embed" },
+  { value: "external_link", label: "External Link (iframe)" },
+] as const;
+
+type AdType = "video" | "image" | "script" | "external_link";
+
+const BLANK_AD = {
+  title: "",
+  type: "video" as AdType,
+  urlOrCode: "",
+  durationSeconds: 15,
+  placement: "boost",
+  isActive: true,
+};
+
+function AdsTab({ secret }: { secret: string }) {
+  const { toast } = useToast();
+  const [ads, setAds] = useState<AdminAd[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState({ ...BLANK_AD });
+  const [saving, setSaving] = useState(false);
+  const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
+
+  const fetchAds = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch("/admin/ads", { headers: { "x-admin-secret": secret } });
+      const data = await res.json();
+      setAds(Array.isArray(data) ? data : []);
+    } finally {
+      setLoading(false);
+    }
+  }, [secret]);
+
+  useEffect(() => { fetchAds(); }, [fetchAds]);
+
+  const openCreate = () => { setForm({ ...BLANK_AD }); setEditingId(null); setShowForm(true); };
+  const openEdit = (ad: AdminAd) => {
+    setForm({ title: ad.title, type: ad.type, urlOrCode: ad.urlOrCode, durationSeconds: ad.durationSeconds, placement: ad.placement, isActive: ad.isActive });
+    setEditingId(ad.id);
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.title.trim() || !form.urlOrCode.trim()) { toast({ variant: "destructive", title: "Title and URL/Code are required" }); return; }
+    setSaving(true);
+    try {
+      const body = JSON.stringify({ ...form, durationSeconds: Number(form.durationSeconds) });
+      const res = editingId !== null
+        ? await apiFetch(`/admin/ads/${editingId}`, { method: "PUT", headers, body })
+        : await apiFetch("/admin/ads", { method: "POST", headers, body });
+      if (res.ok) {
+        toast({ title: editingId !== null ? "Ad updated!" : "Ad created!" });
+        setShowForm(false);
+        fetchAds();
+      } else {
+        const err = await res.json();
+        toast({ variant: "destructive", title: "Error", description: err.error ?? "Failed to save" });
+      }
+    } finally { setSaving(false); }
+  };
+
+  const handleToggle = async (ad: AdminAd) => {
+    const res = await apiFetch(`/admin/ads/${ad.id}`, { method: "PUT", headers, body: JSON.stringify({ isActive: !ad.isActive }) });
+    if (res.ok) fetchAds();
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm("Delete this ad?")) return;
+    const res = await apiFetch(`/admin/ads/${id}`, { method: "DELETE", headers });
+    if (res.ok) { toast({ title: "Deleted" }); fetchAds(); }
+  };
+
+  const urlLabel = form.type === "script" ? "Embed / Script Code" : "URL";
+  const urlPlaceholder = form.type === "script" ? "<script>…</script> or <div>…</div>" : "https://example.com/ad.mp4";
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Ad Management</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Manage ads shown to users before boost activation</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={fetchAds} disabled={loading}><RefreshCw className="w-3.5 h-3.5" /></Button>
+          <Button size="sm" className="gap-1.5" onClick={openCreate}><Plus className="w-3.5 h-3.5" /> Add Ad</Button>
+        </div>
+      </div>
+
+      {/* Info banner */}
+      <div className="bg-primary/10 border border-primary/20 rounded-xl p-3 text-xs text-primary flex items-start gap-2">
+        <MonitorPlay className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+        <span>Active ads in the <strong>Boost Activation</strong> placement are shown randomly to users before a boost is applied. If no active ads exist, the boost proceeds immediately.</span>
+      </div>
+
+      {/* Create / Edit form */}
+      {showForm && (
+        <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-foreground text-sm">{editingId !== null ? "Edit Ad" : "New Ad"}</h3>
+            <Button variant="ghost" size="sm" className="w-7 h-7 p-0" onClick={() => setShowForm(false)}><X className="w-3.5 h-3.5" /></Button>
+          </div>
+          <div className="grid gap-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Title</label>
+              <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Ad title" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Type</label>
+                <select
+                  value={form.type}
+                  onChange={e => setForm(f => ({ ...f, type: e.target.value as AdType }))}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  {AD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1"><Clock className="w-3 h-3" /> Duration (seconds)</label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={form.durationSeconds}
+                  onChange={e => setForm(f => ({ ...f, durationSeconds: parseInt(e.target.value) || 15 }))}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1"><Link className="w-3 h-3" /> {urlLabel}</label>
+              {form.type === "script" ? (
+                <textarea
+                  value={form.urlOrCode}
+                  onChange={e => setForm(f => ({ ...f, urlOrCode: e.target.value }))}
+                  placeholder={urlPlaceholder}
+                  className="w-full text-sm bg-background border border-border rounded-md p-3 resize-none min-h-[100px] font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              ) : (
+                <Input
+                  value={form.urlOrCode}
+                  onChange={e => setForm(f => ({ ...f, urlOrCode: e.target.value }))}
+                  placeholder={urlPlaceholder}
+                />
+              )}
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Placement</label>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.placement.split(",").map(s => s.trim()).includes("boost")}
+                    onChange={e => {
+                      const placements = form.placement.split(",").map(s => s.trim()).filter(Boolean);
+                      if (e.target.checked) { if (!placements.includes("boost")) placements.push("boost"); }
+                      else { const i = placements.indexOf("boost"); if (i !== -1) placements.splice(i, 1); }
+                      setForm(f => ({ ...f, placement: placements.join(",") || "boost" }));
+                    }}
+                    className="w-3.5 h-3.5"
+                  />
+                  Boost Activation
+                </label>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} className="w-3.5 h-3.5" />
+                Active
+              </label>
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button className="flex-1 gap-1" onClick={handleSave} disabled={saving}><Save className="w-3.5 h-3.5" /> {saving ? "Saving…" : "Save Ad"}</Button>
+            <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Ads list */}
+      {loading ? (
+        <div className="text-center py-10 text-muted-foreground text-sm">Loading…</div>
+      ) : ads.length === 0 ? (
+        <div className="text-center py-10 bg-card border border-card-border rounded-2xl">
+          <Film className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <p className="text-muted-foreground text-sm">No ads yet. Click "Add Ad" to create one.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {ads.map(ad => (
+            <div key={ad.id} className="bg-card border border-card-border rounded-xl p-4 flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                {ad.type === "video" && <Play className="w-4 h-4 text-primary" />}
+                {ad.type === "image" && <Film className="w-4 h-4 text-primary" />}
+                {ad.type === "external_link" && <Link className="w-4 h-4 text-primary" />}
+                {ad.type === "script" && <Zap className="w-4 h-4 text-primary" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground truncate">{ad.title}</p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                      <span className="text-xs text-muted-foreground capitalize">{AD_TYPES.find(t => t.value === ad.type)?.label ?? ad.type}</span>
+                      <span className="text-xs text-muted-foreground flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" /> {ad.durationSeconds}s</span>
+                      <span className="text-xs text-muted-foreground">Placement: {ad.placement || "—"}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 truncate max-w-[260px]">{ad.urlOrCode}</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => handleToggle(ad)}
+                      className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${ad.isActive ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/30" : "bg-muted text-muted-foreground border-border"}`}
+                    >
+                      {ad.isActive ? <><Check className="w-2.5 h-2.5 inline mr-0.5" />Active</> : "Inactive"}
+                    </button>
+                    <Button size="sm" variant="ghost" className="w-7 h-7 p-0" onClick={() => openEdit(ad)}><Pencil className="w-3 h-3" /></Button>
+                    <Button size="sm" variant="ghost" className="w-7 h-7 p-0 text-destructive hover:text-destructive" onClick={() => handleDelete(ad.id)}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function Admin() {
@@ -1955,6 +2202,7 @@ export default function Admin() {
     { id: "upgrades", label: "Upgrades", icon: Package },
     { id: "settings", label: "Settings", icon: Settings },
     { id: "share", label: "Share Links", icon: ArrowDownCircle },
+    { id: "ads", label: "Ads", icon: MonitorPlay },
   ];
 
   const currentTab = TABS.find(t => t.id === tab);
@@ -2056,6 +2304,7 @@ export default function Admin() {
           {tab === "upgrades" && <UpgradesTab secret={secret} />}
           {tab === "settings" && <SettingsTab secret={secret} />}
           {tab === "share" && <ShareMessagesTab secret={secret} />}
+          {tab === "ads" && <AdsTab secret={secret} />}
         </div>
       </div>
     </div>

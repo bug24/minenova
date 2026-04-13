@@ -10,6 +10,7 @@ import {
   referralTransactionsTable,
   upgradesTable,
   userUpgradesTable,
+  adsTable,
 } from "@workspace/db";
 import { eq, and, isNull, or, ilike, sql, desc, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -981,6 +982,61 @@ router.put("/admin/settings", requireAdmin, async (req, res): Promise<void> => {
   for (const [key, value] of Object.entries(data.data)) {
     if (value !== undefined) await upsertSetting(key, value);
   }
+  res.json({ success: true });
+});
+
+// ─── Ads CRUD ────────────────────────────────────────────────────────────────
+
+const adCreateSchema = z.object({
+  title: z.string().min(1),
+  type: z.enum(["video", "image", "script", "external_link"]),
+  urlOrCode: z.string().min(1),
+  durationSeconds: z.number().int().min(1).default(15),
+  placement: z.string().min(1).default("boost"),
+  isActive: z.boolean().default(true),
+});
+
+router.get("/admin/ads", requireAdmin, async (req, res): Promise<void> => {
+  const { placement, status } = req.query as { placement?: string; status?: string };
+  const conditions: ReturnType<typeof eq>[] = [];
+  if (status === "active") conditions.push(eq(adsTable.isActive, true));
+  if (status === "inactive") conditions.push(eq(adsTable.isActive, false));
+  const rows = await db.select().from(adsTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(adsTable.createdAt));
+  const filtered = placement
+    ? rows.filter(r => r.placement.split(",").map(s => s.trim()).includes(placement))
+    : rows;
+  res.json(filtered);
+});
+
+router.post("/admin/ads", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = adCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+  const [created] = await db.insert(adsTable).values(parsed.data).returning();
+  res.status(201).json(created);
+});
+
+router.put("/admin/ads/:id", requireAdmin, async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const parsed = adCreateSchema.partial().safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+  const [updated] = await db.update(adsTable).set(parsed.data).where(eq(adsTable.id, id)).returning();
+  if (!updated) { res.status(404).json({ error: "Ad not found" }); return; }
+  res.json(updated);
+});
+
+router.delete("/admin/ads/:id", requireAdmin, async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  await db.delete(adsTable).where(eq(adsTable.id, id));
   res.json({ success: true });
 });
 
