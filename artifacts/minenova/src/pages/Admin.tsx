@@ -1516,6 +1516,7 @@ function SettingsTab({ secret }: { secret: string }) {
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const [savedKeys, setSavedKeys] = useState<Record<string, boolean>>({});
   // Change-password state
   const [newPw, setNewPw] = useState("");
   const [savingPw, setSavingPw] = useState(false);
@@ -1529,11 +1530,13 @@ function SettingsTab({ secret }: { secret: string }) {
 
   const saveSetting = async (key: keyof Settings, value: string) => {
     setSaving(p => ({ ...p, [key]: true }));
+    setSavedKeys(p => ({ ...p, [key]: false }));
     try {
       const res = await apiFetch("/admin/settings", { method: "PUT", headers: h, body: JSON.stringify({ [key]: value }) });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Failed"); }
-      toast({ title: "Saved" });
       setSettings(p => ({ ...p, [key]: value }));
+      setSavedKeys(p => ({ ...p, [key]: true }));
+      setTimeout(() => setSavedKeys(p => ({ ...p, [key]: false })), 2000);
     } catch (e: unknown) {
       toast({ variant: "destructive", title: e instanceof Error ? e.message : "Failed to save" });
     } finally {
@@ -1558,6 +1561,13 @@ function SettingsTab({ secret }: { secret: string }) {
   if (loading) return <p className="text-muted-foreground text-sm py-8 text-center">Loading settings…</p>;
 
   const isSaving = (key: keyof Settings) => saving[key] === true;
+  const isSaved = (key: keyof Settings) => savedKeys[key] === true;
+  const SaveBtn = ({ k }: { k: keyof Settings }) => (
+    <Button size="sm" disabled={isSaving(k)} onClick={() => saveSetting(k, settings[k])}
+      className={isSaved(k) ? "bg-green-600 hover:bg-green-600 text-white" : ""}>
+      {isSaving(k) ? "Saving…" : isSaved(k) ? "Saved ✓" : "Save"}
+    </Button>
+  );
 
   return (
     <div className="max-w-lg space-y-5">
@@ -1575,12 +1585,13 @@ function SettingsTab({ secret }: { secret: string }) {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {isSaving("mining_disabled") && <span className="text-xs text-muted-foreground">Saving…</span>}
+            {isSaved("mining_disabled") && <span className="text-xs text-green-400">Saved ✓</span>}
             <Toggle
               on={settings.mining_disabled !== "true"}
               danger={false}
               onChange={v => saveSetting("mining_disabled", v ? "false" : "true")}
             />
-            {isSaving("mining_disabled") && <span className="text-xs text-muted-foreground">Saving…</span>}
           </div>
         </div>
 
@@ -1593,9 +1604,7 @@ function SettingsTab({ secret }: { secret: string }) {
               value={settings.global_base_coins_per_hour}
               onChange={e => setSettings(p => ({ ...p, global_base_coins_per_hour: e.target.value }))}
             />
-            <Button size="sm" disabled={isSaving("global_base_coins_per_hour")} onClick={() => saveSetting("global_base_coins_per_hour", settings.global_base_coins_per_hour)}>
-              {isSaving("global_base_coins_per_hour") ? "…" : "Save"}
-            </Button>
+            <SaveBtn k="global_base_coins_per_hour" />
           </div>
           <p className="text-xs text-muted-foreground">≈ ${(parseFloat(settings.global_base_coins_per_hour || "0") / 1000 * 12).toFixed(4)} USDT per 12-hour session</p>
         </div>
@@ -1609,9 +1618,7 @@ function SettingsTab({ secret }: { secret: string }) {
               value={settings.session_duration_hours}
               onChange={e => setSettings(p => ({ ...p, session_duration_hours: e.target.value }))}
             />
-            <Button size="sm" disabled={isSaving("session_duration_hours")} onClick={() => saveSetting("session_duration_hours", settings.session_duration_hours)}>
-              {isSaving("session_duration_hours") ? "…" : "Save"}
-            </Button>
+            <SaveBtn k="session_duration_hours" />
           </div>
           <p className="text-xs text-muted-foreground">Only applies to new sessions — active sessions are unaffected</p>
         </div>
@@ -1630,11 +1637,12 @@ function SettingsTab({ secret }: { secret: string }) {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {isSaving("referral_disabled") && <span className="text-xs text-muted-foreground">Saving…</span>}
+            {isSaved("referral_disabled") && <span className="text-xs text-green-400">Saved ✓</span>}
             <Toggle
               on={settings.referral_disabled !== "true"}
               onChange={v => saveSetting("referral_disabled", v ? "false" : "true")}
             />
-            {isSaving("referral_disabled") && <span className="text-xs text-muted-foreground">Saving…</span>}
           </div>
         </div>
 
@@ -1647,9 +1655,7 @@ function SettingsTab({ secret }: { secret: string }) {
               value={settings.referral_bonus_coins}
               onChange={e => setSettings(p => ({ ...p, referral_bonus_coins: e.target.value }))}
             />
-            <Button size="sm" disabled={isSaving("referral_bonus_coins")} onClick={() => saveSetting("referral_bonus_coins", settings.referral_bonus_coins)}>
-              {isSaving("referral_bonus_coins") ? "…" : "Save"}
-            </Button>
+            <SaveBtn k="referral_bonus_coins" />
           </div>
           <p className="text-xs text-muted-foreground">≈ ${(parseFloat(settings.referral_bonus_coins || "0") / 1000).toFixed(3)} USDT</p>
         </div>
@@ -1663,9 +1669,7 @@ function SettingsTab({ secret }: { secret: string }) {
               value={settings.referral_commission_pct}
               onChange={e => setSettings(p => ({ ...p, referral_commission_pct: e.target.value }))}
             />
-            <Button size="sm" disabled={isSaving("referral_commission_pct")} onClick={() => saveSetting("referral_commission_pct", settings.referral_commission_pct)}>
-              {isSaving("referral_commission_pct") ? "…" : "Save"}
-            </Button>
+            <SaveBtn k="referral_commission_pct" />
           </div>
           <p className="text-xs text-muted-foreground">Referrer earns this % of their referral's mining coins</p>
         </div>
@@ -1682,9 +1686,7 @@ function SettingsTab({ secret }: { secret: string }) {
               value={settings.min_withdrawal_usdt}
               onChange={e => setSettings(p => ({ ...p, min_withdrawal_usdt: e.target.value }))}
             />
-            <Button size="sm" disabled={isSaving("min_withdrawal_usdt")} onClick={() => saveSetting("min_withdrawal_usdt", settings.min_withdrawal_usdt)}>
-              {isSaving("min_withdrawal_usdt") ? "…" : "Save"}
-            </Button>
+            <SaveBtn k="min_withdrawal_usdt" />
           </div>
           <p className="text-xs text-muted-foreground">≈ {Math.round(parseFloat(settings.min_withdrawal_usdt || "0") * 1000).toLocaleString()} coins</p>
         </div>
@@ -1703,12 +1705,13 @@ function SettingsTab({ secret }: { secret: string }) {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {isSaving("maintenance_mode") && <span className="text-xs text-muted-foreground">Saving…</span>}
+            {isSaved("maintenance_mode") && <span className="text-xs text-green-400">Saved ✓</span>}
             <Toggle
               on={settings.maintenance_mode === "true"}
               danger
               onChange={v => saveSetting("maintenance_mode", v ? "true" : "false")}
             />
-            {isSaving("maintenance_mode") && <span className="text-xs text-muted-foreground">Saving…</span>}
           </div>
         </div>
 
