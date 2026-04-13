@@ -13,6 +13,7 @@ import Tasks from "@/pages/Tasks";
 import Referrals from "@/pages/Referrals";
 import WalletPage from "@/pages/Wallet";
 import Upgrades from "@/pages/Upgrades";
+import Boost from "@/pages/Boost";
 import Profile from "@/pages/Profile";
 import NotFound from "@/pages/not-found";
 import { useEffect } from "react";
@@ -83,6 +84,7 @@ function Router() {
       <Route path="/referrals" component={() => <ProtectedRoute component={Referrals} />} />
       <Route path="/wallet" component={() => <ProtectedRoute component={WalletPage} />} />
       <Route path="/upgrades" component={() => <ProtectedRoute component={Upgrades} />} />
+      <Route path="/boost" component={() => <ProtectedRoute component={Boost} />} />
       <Route path="/profile" component={() => <ProtectedRoute component={Profile} />} />
       <Route component={NotFound} />
     </Switch>

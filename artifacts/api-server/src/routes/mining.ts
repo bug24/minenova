@@ -182,8 +182,8 @@ router.post("/mining/boost", requireAuth, async (req, res): Promise<void> => {
 
   const now = new Date();
   const boostType = parsed.data.boostType;
-  const boostMultiplier = boostType === "triple" ? 5 : 2;
-  const boostDurationMs = 30 * 60 * 1000;
+  const boostMultiplier = boostType === "triple" ? 5 : boostType === "double" ? 3 : 2;
+  const boostDurationMs = boostType === "double" ? 60 * 60 * 1000 : 30 * 60 * 1000;
 
   await db
     .update(miningSessionsTable)

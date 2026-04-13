@@ -3,15 +3,12 @@ import {
   useGetMiningStatus,
   useStartMining,
   useClaimMining,
-  useBoostMining,
   useGetDashboardSummary,
   getGetMiningStatusQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Pickaxe, Zap, TrendingUp, Gift } from "lucide-react";
+import { Pickaxe, Zap, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 
@@ -27,7 +24,6 @@ export default function Dashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [boostDialogOpen, setBoostDialogOpen] = useState(false);
   const [countdown, setCountdown] = useState("--:--:--");
   const [displayCoins, setDisplayCoins] = useState(0);
 
@@ -35,7 +31,6 @@ export default function Dashboard() {
   const { data: summary } = useGetDashboardSummary();
   const startMining = useStartMining();
   const claimMining = useClaimMining();
-  const boostMining = useBoostMining();
 
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: getGetMiningStatusQueryKey() });
@@ -94,20 +89,6 @@ export default function Dashboard() {
       },
       onError: (err: unknown) => {
         const msg = (err as { data?: { error?: string } })?.data?.error ?? "Nothing to claim";
-        toast({ variant: "destructive", title: "Error", description: msg });
-      },
-    });
-  };
-
-  const handleBoost = (type: "single" | "triple") => {
-    boostMining.mutate({ data: { boostType: type === "single" ? "single" : "triple" } }, {
-      onSuccess: () => {
-        toast({ title: "Boost active!", description: type === "single" ? "2x speed for 30 min!" : "5x speed for 30 min!" });
-        setBoostDialogOpen(false);
-        invalidate();
-      },
-      onError: (err: unknown) => {
-        const msg = (err as { data?: { error?: string } })?.data?.error ?? "Could not apply boost";
         toast({ variant: "destructive", title: "Error", description: msg });
       },
     });
@@ -251,23 +232,23 @@ export default function Dashboard() {
       {/* Action Buttons */}
       <div className="grid grid-cols-2 gap-3">
         {/* Boost Speed */}
-        <button
-          onClick={() => setBoostDialogOpen(true)}
-          disabled={!status?.isActive || (status?.boostsUsedToday ?? 0) >= 3}
-          className="flex items-center gap-3 p-4 rounded-2xl text-left transition-opacity disabled:opacity-40"
-          style={{
-            background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #5b21b6 100%)",
-          }}
-          data-testid="button-boost-speed"
-        >
-          <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-            <Zap className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-white">Boost Speed</p>
-            <p className="text-xs text-white/70">Watch ads for 5x</p>
-          </div>
-        </button>
+        <Link href="/boost">
+          <button
+            className="w-full flex items-center gap-3 p-4 rounded-2xl text-left transition-opacity"
+            style={{
+              background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #5b21b6 100%)",
+            }}
+            data-testid="button-boost-speed"
+          >
+            <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Zap className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-white">Boost Speed</p>
+              <p className="text-xs text-white/70">Watch ads for 5x</p>
+            </div>
+          </button>
+        </Link>
 
         {/* Upgrade */}
         <Link href="/upgrades">
@@ -289,47 +270,6 @@ export default function Dashboard() {
           </button>
         </Link>
       </div>
-
-      {/* Boost Dialog */}
-      <Dialog open={boostDialogOpen} onOpenChange={setBoostDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Zap className="w-5 h-5 text-primary" />
-              Boost Mining Speed
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 pt-2">
-            <p className="text-sm text-muted-foreground">
-              Boosts used today: <strong>{status?.boostsUsedToday ?? 0}/3</strong>
-            </p>
-            <button
-              className="w-full rounded-xl p-4 text-left border border-primary/30 hover:border-primary/60 transition-colors"
-              style={{ background: "linear-gradient(135deg, #7c3aed20, #5b21b620)" }}
-              onClick={() => handleBoost("single")}
-              disabled={boostMining.isPending || (status?.boostsUsedToday ?? 0) >= 3}
-              data-testid="button-boost-2x"
-            >
-              <p className="font-bold flex items-center gap-2">
-                <Zap className="w-4 h-4 text-primary" /> 2x Speed Boost
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">Watch 1 ad — Active for 30 minutes</p>
-            </button>
-            <button
-              className="w-full rounded-xl p-4 text-left border border-accent/30 hover:border-accent/60 transition-colors"
-              style={{ background: "linear-gradient(135deg, #f59e0b20, #d9770620)" }}
-              onClick={() => handleBoost("triple")}
-              disabled={boostMining.isPending || (status?.boostsUsedToday ?? 0) >= 3}
-              data-testid="button-boost-5x"
-            >
-              <p className="font-bold flex items-center gap-2">
-                <Zap className="w-4 h-4 text-accent" /> 5x Speed Boost
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">Watch 3 ads — Active for 30 minutes</p>
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

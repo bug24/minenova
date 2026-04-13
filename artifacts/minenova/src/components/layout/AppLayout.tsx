@@ -19,7 +19,7 @@ import WithdrawalTicker from "@/components/WithdrawalTicker";
 const navItems = [
   { href: "/dashboard", label: "Mine", icon: Pickaxe },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
-  { href: "/upgrades", label: "Boost", icon: Zap },
+  { href: "/boost", label: "Boost", icon: Zap },
   { href: "/referrals", label: "Refer", icon: Users },
   { href: "/wallet", label: "Wallet", icon: Wallet },
   { href: "/profile", label: "Profile", icon: User },
