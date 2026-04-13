@@ -112,7 +112,7 @@ router.get("/mining/status", requireAuth, async (req, res): Promise<void> => {
 
 router.post("/mining/start", requireAuth, async (req, res): Promise<void> => {
   if (await isMiningDisabled()) {
-    res.status(403).json({ error: "Mining is currently disabled by the administrator." });
+    res.status(403).json({ error: "Mining is currently disabled." });
     return;
   }
   if (await isMaintenanceModeEnabled()) {
