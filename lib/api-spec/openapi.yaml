@@ -544,6 +544,8 @@ components:
           type: boolean
         shareUrl:
           type: ["string", "null"]
+        shareText:
+          type: ["string", "null"]
       required:
         - id
         - title

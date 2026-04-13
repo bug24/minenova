@@ -17,7 +17,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Wallet, ArrowUpRight, Clock, CheckCircle2, XCircle, Copy, AlertCircle, TrendingUp, Zap } from "lucide-react";
+import { Wallet, ArrowUpRight, Clock, CheckCircle2, XCircle, Copy, AlertCircle, TrendingUp, Zap, Twitter, Facebook, MessageCircle, Share2 } from "lucide-react";
 import { useLocation } from "wouter";
 
 const COINS_PER_USDT = 1000;
@@ -400,6 +400,39 @@ export default function WalletPage() {
                     <p className="text-xs text-muted-foreground">
                       Our team will verify your payment and process your withdrawal within 2–12 hours. Check your transaction history for updates.
                     </p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground text-center flex items-center gap-1 justify-center">
+                      <Share2 className="w-3 h-3" /> Share your withdrawal with friends
+                    </p>
+                    {(() => {
+                      const shareMsg = encodeURIComponent(`I just withdrew $${withdrawalResult.amount} USDT from MineNova! 💰\n\nThis platform actually pays — mine crypto and cash out as USDT with no delays.\n\nTry it free and start earning today!`);
+                      return (
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            onClick={() => window.open(`https://twitter.com/intent/tweet?text=${shareMsg}`, "_blank")}
+                            className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 transition-colors"
+                          >
+                            <Twitter className="w-4 h-4 text-sky-400" />
+                            <span className="text-xs text-sky-400 font-medium">Twitter</span>
+                          </button>
+                          <button
+                            onClick={() => window.open(`https://api.whatsapp.com/send?text=${shareMsg}`, "_blank")}
+                            className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                          >
+                            <MessageCircle className="w-4 h-4 text-emerald-500" />
+                            <span className="text-xs text-emerald-500 font-medium">WhatsApp</span>
+                          </button>
+                          <button
+                            onClick={() => window.open(`https://www.facebook.com/sharer/sharer.php?quote=${shareMsg}`, "_blank")}
+                            className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
+                          >
+                            <Facebook className="w-4 h-4 text-blue-500" />
+                            <span className="text-xs text-blue-500 font-medium">Facebook</span>
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <Button className="w-full" onClick={closeDialog}>Got it</Button>
                 </>

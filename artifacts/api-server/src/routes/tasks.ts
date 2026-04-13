@@ -1,10 +1,21 @@
 import { Router, type IRouter } from "express";
-import { db, tasksTable, userTaskCompletionsTable, usersTable, transactionsTable } from "@workspace/db";
+import { db, tasksTable, userTaskCompletionsTable, usersTable, transactionsTable, shareMessagesTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { CompleteTaskParams, GetTasksResponse, CompleteTaskResponse } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+const PLATFORM_MAP: Record<string, string> = {
+  share_twitter: "twitter",
+  share_facebook: "facebook",
+  share_whatsapp: "whatsapp",
+};
+
+function pickRandom<T>(arr: T[]): T | undefined {
+  if (arr.length === 0) return undefined;
+  return arr[Math.floor(Math.random() * arr.length)];
+}
 
 router.get("/tasks", requireAuth, async (req, res): Promise<void> => {
   const tasks = await db.select().from(tasksTable).where(eq(tasksTable.isActive, true)).orderBy(tasksTable.sortOrder);
@@ -28,16 +39,35 @@ router.get("/tasks", requireAuth, async (req, res): Promise<void> => {
   const referralCode = user[0]?.referralCode ?? "";
 
   const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const shareLink = `${baseUrl}/?ref=${referralCode}`;
 
-  const result = tasks.map(task => ({
-    id: task.id,
-    title: task.title,
-    description: task.description,
-    reward: task.reward,
-    taskType: task.taskType,
-    completedToday: completedTaskIds.has(task.id),
-    shareUrl: task.taskType.startsWith("share_") ? `${baseUrl}/?ref=${referralCode}` : null,
-  }));
+  const activeMessages = await db.select().from(shareMessagesTable).where(eq(shareMessagesTable.isActive, true));
+
+  const result = tasks.map(task => {
+    let shareText: string | null = null;
+    if (task.taskType.startsWith("share_")) {
+      const platform = PLATFORM_MAP[task.taskType] ?? "general";
+      const platformSpecific = activeMessages.filter(m => m.platform === platform);
+      const general = activeMessages.filter(m => m.platform === "general");
+      const pool = platformSpecific.length > 0 ? platformSpecific : general;
+      const chosen = pickRandom(pool);
+      if (chosen) {
+        shareText = chosen.message.replace(/\{url\}/g, shareLink).replace(/\{referral_code\}/g, referralCode);
+      } else {
+        shareText = `Join me on MineNova! Earn free crypto daily by mining. Use my referral code: ${referralCode}\n${shareLink}`;
+      }
+    }
+    return {
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      reward: task.reward,
+      taskType: task.taskType,
+      completedToday: completedTaskIds.has(task.id),
+      shareUrl: task.taskType.startsWith("share_") ? shareLink : null,
+      shareText,
+    };
+  });
 
   res.json(GetTasksResponse.parse(result));
 });

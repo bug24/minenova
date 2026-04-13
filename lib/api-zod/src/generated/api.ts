@@ -130,6 +130,7 @@ export const GetTasksResponseItem = zod.object({
   taskType: zod.string(),
   completedToday: zod.boolean(),
   shareUrl: zod.string().nullish(),
+  shareText: zod.string().nullish(),
 });
 export const GetTasksResponse = zod.array(GetTasksResponseItem);
 

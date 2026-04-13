@@ -68,8 +68,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl cursor-pointer transition-all ${
                     isActive
                       ? "text-primary"
-                      : "text-muted-foreground dark:text-white/55 hover:text-foreground dark:hover:text-white/80"
-                  } ${isActive ? "" : "dark:ring-1 dark:ring-white/10"}`}
+                      : "text-foreground/50 dark:text-white/55 hover:text-foreground dark:hover:text-white/80"
+                  } ${isActive ? "" : "ring-1 ring-foreground/10 dark:ring-white/10"}`}
                   data-testid={`nav-${label.toLowerCase()}`}
                 >
                   <div className={`relative ${isActive ? "after:absolute after:-bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1 after:h-1 after:rounded-full after:bg-primary" : ""}`}>

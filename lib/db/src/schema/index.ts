@@ -4,3 +4,4 @@ export * from "./tasks";
 export * from "./referrals";
 export * from "./transactions";
 export * from "./upgrades";
+export * from "./share_messages";

@@ -15,6 +15,7 @@ import WalletPage from "@/pages/Wallet";
 import Upgrades from "@/pages/Upgrades";
 import Boost from "@/pages/Boost";
 import Profile from "@/pages/Profile";
+import Admin from "@/pages/Admin";
 import NotFound from "@/pages/not-found";
 import { useEffect } from "react";
 
@@ -86,6 +87,7 @@ function Router() {
       <Route path="/upgrades" component={() => <ProtectedRoute component={Upgrades} />} />
       <Route path="/boost" component={() => <ProtectedRoute component={Boost} />} />
       <Route path="/profile" component={() => <ProtectedRoute component={Profile} />} />
+      <Route path="/admin" component={Admin} />
       <Route component={NotFound} />
     </Switch>
   );
