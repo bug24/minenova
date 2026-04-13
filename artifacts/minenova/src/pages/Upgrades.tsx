@@ -6,7 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Zap, CheckCircle2, Cpu, TrendingUp, Lock, Copy } from "lucide-react";
+import { Zap, CheckCircle2, Cpu, TrendingUp, Lock, Copy, DollarSign } from "lucide-react";
+
+const BASE_COINS_PER_HOUR = 0.5;
+const SESSIONS_PER_DAY = 2;
+const SESSION_HOURS = 12;
+const COINS_PER_USDT = 1000;
+
+function calcDailyUsdt(tier: number): number {
+  const miningLevel = tier + 1;
+  const coinsPerDay = BASE_COINS_PER_HOUR * miningLevel * SESSION_HOURS * SESSIONS_PER_DAY;
+  return coinsPerDay / COINS_PER_USDT;
+}
 
 interface PurchaseResult {
   usdtAddress: string | null | undefined;
@@ -84,7 +95,7 @@ export default function Upgrades() {
                   </div>
                   <p className="text-sm text-muted-foreground mb-3">{upgrade.description}</p>
 
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex flex-wrap gap-3 mb-3">
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <TrendingUp className="w-3.5 h-3.5 text-primary" />
                       <span>+{upgrade.hashRateBoost} MH/s</span>
@@ -93,6 +104,12 @@ export default function Upgrades() {
                       <Zap className="w-3.5 h-3.5 text-accent" />
                       <span>+{upgrade.dailyCapBoost} daily cap</span>
                     </div>
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2.5 py-1">
+                    <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
+                    <span className="text-xs font-semibold text-emerald-500">
+                      Earn ~${calcDailyUsdt(upgrade.tier).toFixed(3)} USDT/day
+                    </span>
                   </div>
                 </div>
 
