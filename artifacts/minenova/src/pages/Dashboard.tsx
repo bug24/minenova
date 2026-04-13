@@ -131,7 +131,6 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
-
       {/* Mining Orb */}
       <div className="flex flex-col items-center py-4">
         {/* Orb Container */}
@@ -172,7 +171,7 @@ export default function Dashboard() {
             {/* Inner glow */}
             {status?.isActive && (
               <div
-                className="absolute inset-0 rounded-full orb-glow"
+                className="absolute inset-0 rounded-full orb-glow border-t-[1px] border-r-[1px] border-b-[1px] border-l-[1px]"
                 style={{ borderRadius: "50%" }}
               />
             )}
@@ -228,7 +227,6 @@ export default function Dashboard() {
           </div>
         )}
       </div>
-
       {/* Action Buttons */}
       <div className="grid grid-cols-2 gap-3">
         {/* Boost Speed */}
