@@ -1135,12 +1135,12 @@ function ReferralsTab({ secret }: { secret: string }) {
         />
         {relLoading ? (
           <p className="text-muted-foreground text-sm text-center py-4">Loading…</p>
-        ) : filteredItems.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className="text-center text-sm text-muted-foreground py-6">
             {search ? "No matches found" : "No referral relationships"}
           </div>
         ) : (
-          filteredItems.map(r => (
+          items.map(r => (
             <div key={r.id} className="bg-card border border-card-border rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
               <div className="space-y-0.5 min-w-0">
                 <div className="flex items-center gap-2 text-sm">
