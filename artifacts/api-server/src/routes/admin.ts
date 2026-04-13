@@ -291,14 +291,20 @@ router.post("/admin/users/:id/adjust-balance", requireAdmin, async (req, res): P
   const [user] = await db.select({ coinBalance: usersTable.coinBalance, totalEarned: usersTable.totalEarned }).from(usersTable).where(eq(usersTable.id, id)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
-  const newBalance = Math.max(0, user.coinBalance + data.data.delta);
-  const newTotalEarned = data.data.delta > 0 ? user.totalEarned + data.data.delta : user.totalEarned;
+  const requestedDelta = data.data.delta;
+  const newBalance = Math.max(0, user.coinBalance + requestedDelta);
+  const appliedDelta = newBalance - user.coinBalance;
+  if (appliedDelta === 0 && requestedDelta !== 0) {
+    res.status(400).json({ error: "Debit exceeds available balance; balance would go below zero." });
+    return;
+  }
+  const newTotalEarned = appliedDelta > 0 ? user.totalEarned + appliedDelta : user.totalEarned;
 
   await db.update(usersTable).set({ coinBalance: newBalance, totalEarned: newTotalEarned }).where(eq(usersTable.id, id));
   await db.insert(transactionsTable).values({
     userId: id,
     type: "adjustment",
-    amount: data.data.delta,
+    amount: appliedDelta,
     status: "completed",
     description: data.data.note,
   });

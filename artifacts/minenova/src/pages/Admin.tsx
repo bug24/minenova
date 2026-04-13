@@ -6,7 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Pencil, Trash2, Plus, Save, X, Check, KeyRound, LogOut, Eye, EyeOff,
   Users, Wallet, ArrowDownCircle, BarChart3, Cpu, Share2, Package, Settings, RefreshCw,
-  ShieldOff, Shield, CircleDollarSign, LayoutDashboard,
+  ShieldOff, Shield, CircleDollarSign, LayoutDashboard, type LucideIcon,
 } from "lucide-react";
 
 function apiFetch(path: string, options?: RequestInit) {
@@ -795,7 +795,7 @@ export default function Admin() {
     );
   }
 
-  const TABS: { id: Tab; label: string; icon: any }[] = [
+  const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "users", label: "Users", icon: Users },
     { id: "withdrawals", label: "Withdrawals", icon: Wallet },
