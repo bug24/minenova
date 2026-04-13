@@ -19,4 +19,8 @@ export interface Upgrade {
   usdtCost?: number | null;
   owned: boolean;
   isAutoMining: boolean;
+  /** @nullable */
+  badge?: string | null;
+  /** @nullable */
+  icon?: string | null;
 }

@@ -36,6 +36,8 @@ router.get("/upgrades", requireAuth, async (req, res): Promise<void> => {
     usdtCost: u.usdtCost,
     owned: ownedSet.has(u.id),
     isAutoMining: u.isAutoMining,
+    badge: u.badge ?? null,
+    icon: u.icon ?? null,
   }));
 
   res.json(GetUpgradesResponse.parse(result));

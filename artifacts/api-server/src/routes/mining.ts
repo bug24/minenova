@@ -97,7 +97,7 @@ function computeMiningStatus(
       sessionStartedAt: null,
       sessionEndsAt: null,
       accumulatedCoins: 0,
-      hashRate: BASE_HASH_RATE * speedMultiplier,
+      hashRate: BASE_HASH_RATE * user.miningLevel * speedMultiplier,
       boostMultiplier: 1,
       boostEndsAt: null,
       boostsUsedToday: 0,
@@ -114,7 +114,7 @@ function computeMiningStatus(
   const boostActive = session.boostEndsAt && now < new Date(session.boostEndsAt);
   const multiplier = boostActive ? session.boostMultiplier : 1;
 
-  const coinsPerHour = baseRate * speedMultiplier * multiplier;
+  const coinsPerHour = baseRate * user.miningLevel * speedMultiplier * multiplier;
   const rawCoins = elapsedHours * coinsPerHour;
   const accumulatedCoins = dailyCap !== null ? Math.min(rawCoins, dailyCap) : rawCoins;
 
@@ -123,7 +123,7 @@ function computeMiningStatus(
     sessionStartedAt: session.startedAt.toISOString(),
     sessionEndsAt: endsAt.toISOString(),
     accumulatedCoins: Math.round(accumulatedCoins * 100) / 100,
-    hashRate: BASE_HASH_RATE * speedMultiplier * multiplier,
+    hashRate: BASE_HASH_RATE * user.miningLevel * speedMultiplier * multiplier,
     boostMultiplier: multiplier,
     boostEndsAt: session.boostEndsAt ? session.boostEndsAt.toISOString() : null,
     boostsUsedToday: session.boostsUsedToday,
