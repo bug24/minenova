@@ -143,9 +143,31 @@ const DEFAULT_UPGRADES = [
 ];
 
 async function seedUpgrades() {
-  const existing = await db.select({ id: upgradesTable.id }).from(upgradesTable).limit(1);
-  if (existing.length === 0) {
-    await db.insert(upgradesTable).values(DEFAULT_UPGRADES);
+  for (const upgrade of DEFAULT_UPGRADES) {
+    const existing = await db
+      .select({ id: upgradesTable.id })
+      .from(upgradesTable)
+      .where(eq(upgradesTable.tier, upgrade.tier))
+      .limit(1);
+    if (existing.length === 0) {
+      await db.insert(upgradesTable).values(upgrade);
+    } else {
+      await db
+        .update(upgradesTable)
+        .set({
+          name: upgrade.name,
+          description: upgrade.description,
+          hashRateBoost: upgrade.hashRateBoost,
+          dailyCapBoost: upgrade.dailyCapBoost,
+          coinCost: upgrade.coinCost,
+          usdtCost: upgrade.usdtCost,
+          isAutoMining: upgrade.isAutoMining,
+          sortOrder: upgrade.sortOrder,
+          badge: upgrade.badge,
+          icon: upgrade.icon,
+        })
+        .where(eq(upgradesTable.tier, upgrade.tier));
+    }
   }
 }
 
