@@ -22,7 +22,10 @@ router.post("/notifications/subscribe", requireAuth, async (req, res) => {
   await db
     .insert(pushSubscriptionsTable)
     .values({ userId, endpoint, p256dh: keys.p256dh, auth: keys.auth })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: pushSubscriptionsTable.endpoint,
+      set: { userId, p256dh: keys.p256dh, auth: keys.auth },
+    });
 
   res.json({ ok: true });
 });

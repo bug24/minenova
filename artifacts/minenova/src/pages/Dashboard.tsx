@@ -12,6 +12,11 @@ import { Pickaxe, Zap, TrendingUp, Bell, BellOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 
+function getAuthHeader(): Record<string, string> {
+  const token = localStorage.getItem("minenova_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function subscribeToNotifications(): Promise<boolean> {
   if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return false;
   if (Notification.permission === "denied") return false;
@@ -25,7 +30,7 @@ async function subscribeToNotifications(): Promise<boolean> {
   const registration = await navigator.serviceWorker.ready;
 
   const keyRes = await fetch("/api/notifications/vapid-public-key", {
-    headers: { "x-session-token": localStorage.getItem("sessionToken") ?? "" },
+    headers: { ...getAuthHeader() },
   });
   if (!keyRes.ok) return false;
   const { publicKey } = await keyRes.json() as { publicKey: string };
@@ -43,7 +48,7 @@ async function subscribeToNotifications(): Promise<boolean> {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-session-token": localStorage.getItem("sessionToken") ?? "",
+      ...getAuthHeader(),
     },
     body: JSON.stringify(subJson),
   });
@@ -137,6 +142,11 @@ export default function Dashboard() {
       onSuccess: () => {
         toast({ title: "Mining started!", description: "Your 12-hour session is running." });
         invalidate();
+        subscribeToNotifications()
+          .then((ok) => {
+            if (ok) setNotifPermission("granted");
+          })
+          .catch(() => {});
       },
       onError: (err: unknown) => {
         const msg = (err as { data?: { error?: string } })?.data?.error ?? "Could not start mining";

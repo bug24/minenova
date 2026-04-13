@@ -1,20 +1,24 @@
 import webpush from "web-push";
 import { db, miningSessionsTable, pushSubscriptionsTable } from "@workspace/db";
 import { eq, and, lte, isNull } from "drizzle-orm";
-import { sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 let vapidConfigured = false;
 
-function ensureVapid() {
+function ensureVapid(): boolean {
   if (vapidConfigured) return true;
   const pub = process.env["VAPID_PUBLIC_KEY"];
   const priv = process.env["VAPID_PRIVATE_KEY"];
   const subject = process.env["VAPID_SUBJECT"];
   if (!pub || !priv || !subject) return false;
-  webpush.setVapidDetails(subject, pub, priv);
-  vapidConfigured = true;
-  return true;
+  try {
+    webpush.setVapidDetails(subject, pub, priv);
+    vapidConfigured = true;
+    return true;
+  } catch (err) {
+    logger.warn({ err }, "VAPID configuration invalid — push notifications disabled");
+    return false;
+  }
 }
 
 export async function sendMiningCompleteNotifications() {
@@ -77,7 +81,7 @@ export async function sendMiningCompleteNotifications() {
 
 export function startNotificationJob() {
   if (!ensureVapid()) {
-    logger.warn("VAPID keys not configured — push notifications disabled");
+    logger.warn("VAPID keys not configured or invalid — push notifications disabled");
     return;
   }
   const INTERVAL_MS = 60_000;
