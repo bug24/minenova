@@ -1,15 +1,37 @@
 import { Router, type IRouter } from "express";
-import { db, shareMessagesTable } from "@workspace/db";
+import { db, shareMessagesTable, adminConfigTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 const router: IRouter = Router();
 
-const ADMIN_SECRET = process.env.ADMIN_SECRET || "minenova-admin-2024";
+const DEFAULT_PASSWORD = process.env.ADMIN_SECRET || "minenova-admin-2024";
 
-const requireAdmin = (req: any, res: any, next: any) => {
+async function getAdminPassword(): Promise<string> {
+  const [row] = await db
+    .select({ value: adminConfigTable.value })
+    .from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "admin_password"))
+    .limit(1);
+  return row?.value ?? DEFAULT_PASSWORD;
+}
+
+async function seedAdminConfig() {
+  const [existing] = await db
+    .select({ key: adminConfigTable.key })
+    .from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "admin_password"))
+    .limit(1);
+
+  if (!existing) {
+    await db.insert(adminConfigTable).values({ key: "admin_password", value: DEFAULT_PASSWORD });
+  }
+}
+
+const requireAdmin = async (req: any, res: any, next: any) => {
   const secret = req.headers["x-admin-secret"] ?? req.query.secret;
-  if (secret !== ADMIN_SECRET) {
+  const currentPassword = await getAdminPassword();
+  if (secret !== currentPassword) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -73,6 +95,7 @@ async function seedDefaultMessages() {
   }
 }
 
+seedAdminConfig().catch(console.error);
 seedDefaultMessages().catch(console.error);
 
 router.get("/admin/share-messages", requireAdmin, async (_req, res): Promise<void> => {
@@ -111,6 +134,22 @@ router.put("/admin/share-messages/:id", requireAdmin, async (req, res): Promise<
 router.delete("/admin/share-messages/:id", requireAdmin, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   await db.delete(shareMessagesTable).where(eq(shareMessagesTable.id, id));
+  res.json({ success: true });
+});
+
+router.post("/admin/change-password", requireAdmin, async (req, res): Promise<void> => {
+  const schema = z.object({
+    newPassword: z.string().min(8, "Password must be at least 8 characters"),
+  });
+  const data = schema.safeParse(req.body);
+  if (!data.success) {
+    res.status(400).json({ error: data.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+  await db
+    .update(adminConfigTable)
+    .set({ value: data.data.newPassword })
+    .where(eq(adminConfigTable.key, "admin_password"));
   res.json({ success: true });
 });
 

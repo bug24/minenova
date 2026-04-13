@@ -6,3 +6,4 @@ export * from "./transactions";
 export * from "./upgrades";
 export * from "./share_messages";
 export * from "./referral_transactions";
+export * from "./admin_config";

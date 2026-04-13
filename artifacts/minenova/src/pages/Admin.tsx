@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Pencil, Trash2, Plus, Save, X, Check } from "lucide-react";
+import { Pencil, Trash2, Plus, Save, X, Check, KeyRound, LogOut, Eye, EyeOff } from "lucide-react";
 
 const PLATFORMS = ["general", "twitter", "whatsapp", "facebook"] as const;
 type Platform = typeof PLATFORMS[number];
@@ -23,13 +23,14 @@ const PLATFORM_COLORS: Record<string, string> = {
   general: "bg-purple-500/20 text-purple-500 border-purple-500/30",
 };
 
-function getApiUrl() {
-  return import.meta.env.BASE_URL.replace(/\/$/, "");
+function apiFetch(path: string, options?: RequestInit) {
+  return fetch(`/api${path}`, options);
 }
 
 export default function Admin() {
   const { toast } = useToast();
   const [secret, setSecret] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [messages, setMessages] = useState<ShareMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -39,19 +40,28 @@ export default function Admin() {
   const [addingPlatform, setAddingPlatform] = useState<Platform | null>(null);
   const [newMessage, setNewMessage] = useState("");
 
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [changingPw, setChangingPw] = useState(false);
+
   const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
-  const base = getApiUrl();
 
   const fetchMessages = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${base}/api/admin/share-messages`, { headers });
-      if (res.status === 401) { toast({ variant: "destructive", title: "Wrong password" }); setAuthed(false); return; }
+      const res = await apiFetch("/admin/share-messages", { headers });
+      if (res.status === 401) {
+        toast({ variant: "destructive", title: "Wrong password", description: "Check the password and try again." });
+        setAuthed(false);
+        return;
+      }
       const data = await res.json();
       setMessages(data);
       setAuthed(true);
     } catch {
-      toast({ variant: "destructive", title: "Connection error" });
+      toast({ variant: "destructive", title: "Connection error", description: "Could not reach the server. Try again." });
     } finally {
       setLoading(false);
     }
@@ -62,8 +72,15 @@ export default function Admin() {
     await fetchMessages();
   };
 
+  const handleLogout = () => {
+    setAuthed(false);
+    setSecret("");
+    setMessages([]);
+    setShowChangePassword(false);
+  };
+
   const handleSaveEdit = async (id: number) => {
-    const res = await fetch(`${base}/api/admin/share-messages/${id}`, {
+    const res = await apiFetch(`/admin/share-messages/${id}`, {
       method: "PUT",
       headers,
       body: JSON.stringify({ message: editText, isActive: editActive }),
@@ -78,7 +95,7 @@ export default function Admin() {
   };
 
   const handleToggle = async (msg: ShareMessage) => {
-    const res = await fetch(`${base}/api/admin/share-messages/${msg.id}`, {
+    const res = await apiFetch(`/admin/share-messages/${msg.id}`, {
       method: "PUT",
       headers,
       body: JSON.stringify({ isActive: !msg.isActive }),
@@ -88,13 +105,13 @@ export default function Admin() {
 
   const handleDelete = async (id: number) => {
     if (!confirm("Delete this message?")) return;
-    const res = await fetch(`${base}/api/admin/share-messages/${id}`, { method: "DELETE", headers });
+    const res = await apiFetch(`/admin/share-messages/${id}`, { method: "DELETE", headers });
     if (res.ok) { toast({ title: "Deleted" }); fetchMessages(); }
   };
 
   const handleAdd = async () => {
     if (!addingPlatform || !newMessage.trim()) return;
-    const res = await fetch(`${base}/api/admin/share-messages`, {
+    const res = await apiFetch("/admin/share-messages", {
       method: "POST",
       headers,
       body: JSON.stringify({ platform: addingPlatform, message: newMessage, isActive: true, sortOrder: 0 }),
@@ -106,6 +123,40 @@ export default function Admin() {
       fetchMessages();
     } else {
       toast({ variant: "destructive", title: "Failed to add" });
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!newPassword) return;
+    if (newPassword.length < 8) {
+      toast({ variant: "destructive", title: "Password too short", description: "Must be at least 8 characters." });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast({ variant: "destructive", title: "Passwords don't match", description: "Make sure both fields are identical." });
+      return;
+    }
+    setChangingPw(true);
+    try {
+      const res = await apiFetch("/admin/change-password", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ newPassword }),
+      });
+      if (res.ok) {
+        setSecret(newPassword);
+        toast({ title: "Password changed!", description: "Your new password is now active." });
+        setNewPassword("");
+        setConfirmPassword("");
+        setShowChangePassword(false);
+      } else {
+        const err = await res.json();
+        toast({ variant: "destructive", title: "Failed", description: err.error ?? "Could not change password." });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Connection error" });
+    } finally {
+      setChangingPw(false);
     }
   };
 
@@ -123,14 +174,24 @@ export default function Admin() {
             <p className="text-muted-foreground text-sm mt-1">Enter your admin password to continue</p>
           </div>
           <div className="bg-card border border-card-border rounded-2xl p-6 space-y-4">
-            <Input
-              type="password"
-              placeholder="Admin password"
-              value={secret}
-              onChange={e => setSecret(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleLogin()}
-              data-testid="input-admin-password"
-            />
+            <div className="relative">
+              <Input
+                type={showSecret ? "text" : "password"}
+                placeholder="Admin password"
+                value={secret}
+                onChange={e => setSecret(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleLogin()}
+                data-testid="input-admin-password"
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowSecret(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
             <Button className="w-full" onClick={handleLogin} disabled={loading}>
               {loading ? "Checking…" : "Login"}
             </Button>
@@ -147,10 +208,77 @@ export default function Admin() {
           <h1 className="text-2xl font-black font-serif">Admin Panel</h1>
           <p className="text-muted-foreground text-sm mt-0.5">Manage social share messages</p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchMessages} disabled={loading}>
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={fetchMessages} disabled={loading}>
+            Refresh
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowChangePassword(v => !v)}>
+            <KeyRound className="w-3.5 h-3.5" />
+            Change Password
+          </Button>
+          <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={handleLogout}>
+            <LogOut className="w-3.5 h-3.5" />
+            Logout
+          </Button>
+        </div>
       </div>
+
+      {showChangePassword && (
+        <div className="mb-6 bg-card border border-card-border rounded-2xl p-5 space-y-4">
+          <h3 className="font-semibold flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-primary" />
+            Change Admin Password
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">New Password</label>
+              <div className="relative">
+                <Input
+                  type={showNewPw ? "text" : "password"}
+                  placeholder="Min. 8 characters"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPw(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">Confirm Password</label>
+              <Input
+                type={showNewPw ? "text" : "password"}
+                placeholder="Repeat new password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleChangePassword()}
+              />
+            </div>
+          </div>
+          {newPassword && confirmPassword && newPassword !== confirmPassword && (
+            <p className="text-xs text-destructive">Passwords don't match</p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={handleChangePassword}
+              disabled={changingPw || !newPassword || !confirmPassword}
+              className="gap-1.5"
+            >
+              <Save className="w-3.5 h-3.5" />
+              {changingPw ? "Saving…" : "Save New Password"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { setShowChangePassword(false); setNewPassword(""); setConfirmPassword(""); }}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="mb-4 bg-primary/10 border border-primary/20 rounded-xl p-3 text-xs text-primary">
         Use <code className="font-mono bg-primary/10 px-1 rounded">{`{url}`}</code> to insert the referral link, and <code className="font-mono bg-primary/10 px-1 rounded">{`{referral_code}`}</code> for the code. Messages with the specific platform take priority over "general" messages.
