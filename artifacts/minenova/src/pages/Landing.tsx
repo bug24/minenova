@@ -1,8 +1,7 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Pickaxe, Zap, Users, Wallet, Shield, TrendingUp } from "lucide-react";
+import { Pickaxe, Zap, Users, Wallet, Shield, TrendingUp, Sun, Moon } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
-import { Sun, Moon } from "lucide-react";
 
 export default function Landing() {
   const { theme, toggleTheme } = useTheme();
@@ -11,14 +10,12 @@ export default function Landing() {
     <div className="min-h-screen bg-background text-foreground overflow-hidden">
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border px-4 md:px-8 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center pulse-glow">
-            <Pickaxe className="w-4 h-4 text-primary-foreground" />
-          </div>
-          <span className="text-xl font-bold font-serif">MineNova</span>
+        <div className="flex items-center gap-2">
+          <Pickaxe className="w-5 h-5 text-primary" />
+          <span className="text-xl font-black font-serif">MineNova</span>
         </div>
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={toggleTheme} data-testid="button-theme-toggle">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={toggleTheme} className="w-8 h-8 p-0 rounded-full">
             {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </Button>
           <Link href="/login">
@@ -30,86 +27,75 @@ export default function Landing() {
         </div>
       </header>
 
-      {/* Hero Section */}
+      {/* Hero */}
       <section className="relative flex flex-col items-center justify-center min-h-screen text-center px-4 pt-16">
-        {/* Background orbs */}
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-accent/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl pointer-events-none opacity-20"
+          style={{ background: "radial-gradient(circle, #7c3aed, transparent 70%)" }} />
+        <div className="absolute bottom-1/4 right-1/4 w-64 h-64 rounded-full blur-3xl pointer-events-none opacity-10"
+          style={{ background: "radial-gradient(circle, #a855f7, transparent 70%)" }} />
 
-        <div className="relative z-10 max-w-3xl mx-auto">
+        <div className="relative z-10 max-w-2xl mx-auto">
           <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-4 py-1.5 text-sm text-primary font-medium mb-8">
             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-            Live Mining Active — Join 10,000+ Miners
+            Live Mining — Join 10,000+ Miners
           </div>
 
-          <div className="float-anim inline-block mb-8">
-            <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center pulse-glow mx-auto">
-              <Pickaxe className="w-12 h-12 text-white" />
+          {/* Big orb hero */}
+          <div className="relative inline-flex items-center justify-center mb-10">
+            <div className="absolute w-48 h-48 rounded-full opacity-30 blur-2xl"
+              style={{ background: "radial-gradient(circle, #7c3aed, transparent 70%)" }} />
+            <div
+              className="w-36 h-36 rounded-full flex items-center justify-center orb-glow relative z-10"
+              style={{
+                background: "radial-gradient(circle at 35% 35%, #a855f7, #7c3aed 40%, #4c1d95 75%, #1e0a3c)",
+              }}
+            >
+              <div className="absolute top-5 left-7 w-8 h-8 rounded-full opacity-30"
+                style={{ background: "radial-gradient(circle, rgba(255,255,255,0.8) 0%, transparent 70%)" }} />
+              <Pickaxe className="w-16 h-16 text-white/90 relative z-10" />
             </div>
           </div>
 
-          <h1 className="text-4xl md:text-6xl font-black font-serif mb-6 leading-tight">
-            Start Mining{" "}
-            <span className="text-primary">Free Crypto</span>{" "}
-            Daily
+          <h1 className="text-4xl md:text-5xl font-black font-serif mb-4 leading-tight">
+            Mine <span className="text-primary">Free Crypto</span> Daily
           </h1>
-
-          <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-xl mx-auto">
-            Earn USDT every day through mining sessions, completing tasks, and referring friends.
-            Withdraw directly to your crypto wallet.
+          <p className="text-base md:text-lg text-muted-foreground mb-8 max-w-md mx-auto">
+            Earn USDT every day through mining sessions, daily tasks, and referrals. Withdraw directly to your wallet.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/register">
-              <Button size="lg" className="w-full sm:w-auto px-10 text-base font-semibold h-12" data-testid="hero-signup">
-                Sign Up — It's Free
+              <Button size="lg" className="px-10 font-semibold h-12" data-testid="hero-signup">
+                Sign Up Free
               </Button>
             </Link>
             <Link href="/login">
-              <Button variant="outline" size="lg" className="w-full sm:w-auto px-10 text-base h-12" data-testid="hero-login">
+              <Button variant="outline" size="lg" className="px-10 h-12" data-testid="hero-login">
                 Login
               </Button>
             </Link>
           </div>
 
-          <p className="mt-6 text-sm text-muted-foreground">
-            Use a referral code and get <span className="text-accent font-semibold">4 bonus coins</span> instantly
+          <p className="mt-5 text-sm text-muted-foreground">
+            Use a referral code and get <span className="text-primary font-semibold">4 bonus coins</span> instantly
           </p>
         </div>
       </section>
 
       {/* Features */}
-      <section className="py-20 px-4 md:px-8 max-w-5xl mx-auto">
-        <h2 className="text-3xl font-bold font-serif text-center mb-12">How It Works</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <section className="py-16 px-4 md:px-8 max-w-4xl mx-auto">
+        <h2 className="text-2xl font-bold font-serif text-center mb-8">How It Works</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[
-            {
-              icon: Pickaxe,
-              title: "Mine Daily",
-              desc: "Start a 12-hour mining session once per day. Come back to claim your rewards.",
-              color: "text-primary",
-              bg: "bg-primary/10",
-            },
-            {
-              icon: Zap,
-              title: "Boost Your Speed",
-              desc: "Watch short videos to activate 2x and 5x speed boosts for your mining sessions.",
-              color: "text-accent",
-              bg: "bg-accent/10",
-            },
-            {
-              icon: Wallet,
-              title: "Withdraw USDT",
-              desc: "Convert your mined coins to USDT and withdraw directly to your crypto wallet.",
-              color: "text-emerald-500",
-              bg: "bg-emerald-500/10",
-            },
+            { icon: Pickaxe, title: "Mine Daily", desc: "Start a 12-hour session. Come back to claim rewards.", color: "text-primary", bg: "bg-primary/10" },
+            { icon: Zap, title: "Boost Speed", desc: "Activate 2x or 5x speed boosts for faster mining.", color: "text-accent", bg: "bg-accent/10" },
+            { icon: Wallet, title: "Withdraw USDT", desc: "Convert coins to USDT. Minimum $5 withdrawal.", color: "text-emerald-500", bg: "bg-emerald-500/10" },
           ].map(({ icon: Icon, title, desc, color, bg }) => (
-            <div key={title} className="bg-card border border-card-border rounded-2xl p-6">
-              <div className={`w-12 h-12 ${bg} rounded-xl flex items-center justify-center mb-4`}>
-                <Icon className={`w-6 h-6 ${color}`} />
+            <div key={title} className="bg-card border border-card-border rounded-2xl p-5">
+              <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center mb-3`}>
+                <Icon className={`w-5 h-5 ${color}`} />
               </div>
-              <h3 className="font-semibold text-lg mb-2">{title}</h3>
+              <h3 className="font-semibold mb-1">{title}</h3>
               <p className="text-muted-foreground text-sm">{desc}</p>
             </div>
           ))}
@@ -117,38 +103,37 @@ export default function Landing() {
       </section>
 
       {/* Stats */}
-      <section className="py-16 px-4 bg-card border-y border-border">
-        <div className="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+      <section className="py-12 px-4 bg-card border-y border-border">
+        <div className="max-w-3xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
           {[
             { label: "Active Miners", value: "10,000+" },
             { label: "USDT Paid Out", value: "$50,000+" },
-            { label: "Tasks Available", value: "7 Daily" },
-            { label: "Referral Levels", value: "2 Tiers" },
+            { label: "Daily Tasks", value: "7" },
+            { label: "Referral Tiers", value: "2" },
           ].map(({ label, value }) => (
             <div key={label}>
-              <div className="text-3xl font-black text-primary font-serif">{value}</div>
-              <div className="text-sm text-muted-foreground mt-1">{label}</div>
+              <div className="text-2xl font-black text-primary font-serif">{value}</div>
+              <div className="text-xs text-muted-foreground mt-1">{label}</div>
             </div>
           ))}
         </div>
       </section>
 
       {/* More features */}
-      <section className="py-20 px-4 md:px-8 max-w-5xl mx-auto">
-        <h2 className="text-3xl font-bold font-serif text-center mb-12">Everything You Need</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <section className="py-16 px-4 md:px-8 max-w-4xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[
-            { icon: Users, title: "Referral System", desc: "Earn 10% from Level 1 referrals and 5% from Level 2. Build your mining network and watch passive income grow.", color: "text-purple-500", bg: "bg-purple-500/10" },
-            { icon: TrendingUp, title: "Upgrade Your Rig", desc: "Spend coins or USDT to unlock advanced mining rigs with higher hash rates, daily caps, and auto-mining.", color: "text-orange-500", bg: "bg-orange-500/10" },
-            { icon: Shield, title: "Secure Withdrawals", desc: "Withdraw your earnings to any USDT wallet. Minimum $5. Your funds are always safe.", color: "text-emerald-500", bg: "bg-emerald-500/10" },
-            { icon: Zap, title: "Daily Tasks", desc: "Complete daily tasks for bonus coins. Share on social media, watch videos, and more.", color: "text-primary", bg: "bg-primary/10" },
+            { icon: Users, title: "Referral System", desc: "Earn 10% from Level 1 and 5% from Level 2 referrals.", color: "text-purple-400", bg: "bg-purple-500/10" },
+            { icon: TrendingUp, title: "Upgrade Your Rig", desc: "Unlock advanced mining rigs with higher hash rates.", color: "text-cyan-400", bg: "bg-cyan-500/10" },
+            { icon: Shield, title: "Secure Withdrawals", desc: "Withdraw to any USDT wallet. Minimum $5.", color: "text-emerald-400", bg: "bg-emerald-500/10" },
+            { icon: Zap, title: "Daily Tasks", desc: "Complete tasks for bonus coins every day.", color: "text-primary", bg: "bg-primary/10" },
           ].map(({ icon: Icon, title, desc, color, bg }) => (
-            <div key={title} className="bg-card border border-card-border rounded-2xl p-6 flex gap-4">
-              <div className={`w-12 h-12 ${bg} rounded-xl flex items-center justify-center flex-shrink-0`}>
-                <Icon className={`w-6 h-6 ${color}`} />
+            <div key={title} className="bg-card border border-card-border rounded-2xl p-5 flex gap-4">
+              <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center flex-shrink-0`}>
+                <Icon className={`w-5 h-5 ${color}`} />
               </div>
               <div>
-                <h3 className="font-semibold text-lg mb-1">{title}</h3>
+                <h3 className="font-semibold mb-0.5">{title}</h3>
                 <p className="text-muted-foreground text-sm">{desc}</p>
               </div>
             </div>
@@ -157,24 +142,24 @@ export default function Landing() {
       </section>
 
       {/* CTA */}
-      <section className="py-20 px-4 text-center">
-        <div className="max-w-2xl mx-auto">
-          <h2 className="text-4xl font-black font-serif mb-4">Ready to Start Mining?</h2>
-          <p className="text-muted-foreground mb-8">Join thousands of miners earning daily crypto rewards.</p>
+      <section className="py-16 px-4 text-center">
+        <div className="max-w-sm mx-auto">
+          <h2 className="text-3xl font-black font-serif mb-3">Ready to Start?</h2>
+          <p className="text-muted-foreground text-sm mb-6">Join thousands of miners earning daily crypto.</p>
           <Link href="/register">
-            <Button size="lg" className="px-12 h-14 text-lg font-bold pulse-glow" data-testid="cta-signup">
+            <Button size="lg" className="px-10 h-12 font-bold w-full orb-glow" data-testid="cta-signup">
               Sign Up Free
             </Button>
           </Link>
         </div>
       </section>
 
-      <footer className="border-t border-border py-8 px-4 text-center text-sm text-muted-foreground">
-        <div className="flex items-center justify-center gap-2 mb-2">
-          <Pickaxe className="w-4 h-4 text-primary" />
+      <footer className="border-t border-border py-6 px-4 text-center text-xs text-muted-foreground">
+        <div className="flex items-center justify-center gap-2 mb-1">
+          <Pickaxe className="w-3.5 h-3.5 text-primary" />
           <span className="font-semibold font-serif">MineNova</span>
         </div>
-        <p>Mine smarter, not harder. Earn daily crypto rewards.</p>
+        <p>Mine smarter, not harder.</p>
       </footer>
     </div>
   );
