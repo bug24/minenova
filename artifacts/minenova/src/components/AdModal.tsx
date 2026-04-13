@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 export interface AdData {
@@ -23,8 +23,14 @@ interface AdModalProps {
 export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete }: AdModalProps) {
   const [elapsed, setElapsed] = useState(0);
   const [canSkip, setCanSkip] = useState(false);
-  const scriptRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const total = Math.max(1, ad.durationSeconds);
+  const srcDoc = useMemo(() => {
+    if (ad.type !== "script") return "";
+    const provider = ad.providerScript ?? "";
+    const body = ad.urlOrCode ?? "";
+    return `<!doctype html><html><head><meta charset="utf-8">${provider}</head><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;">${body}</body></html>`;
+  }, [ad]);
 
   useEffect(() => {
     setElapsed(0);
@@ -44,30 +50,8 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
   }, [ad.id, currentAd, total]);
 
   useEffect(() => {
-    if (ad.providerScript) {
-      const scriptUrlMatch = ad.providerScript.match(/src=["']([^"']+)["']/i);
-      const scriptId = scriptUrlMatch?.[1] ?? ad.providerScript;
-      if (!document.querySelector(`script[data-ad-provider="${scriptId}"]`)) {
-        const wrapper = document.createElement("div");
-        wrapper.innerHTML = ad.providerScript;
-        const script = wrapper.querySelector("script");
-        if (script) {
-          script.setAttribute("data-ad-provider", scriptId);
-          document.head.appendChild(script);
-        }
-      }
-    }
-    if (ad.type === "script" && scriptRef.current) {
-      const div = scriptRef.current;
-      div.innerHTML = "";
-      const code = ad.urlOrCode ?? ad.providerScript ?? "";
-      const range = document.createRange();
-      range.selectNodeContents(div);
-      range.deleteContents();
-      const fragment = range.createContextualFragment(code);
-      div.appendChild(fragment);
-    }
-  }, [ad]);
+    if (ad.type === "script" && iframeRef.current) iframeRef.current.srcdoc = srcDoc;
+  }, [ad, srcDoc]);
 
   const progress = Math.min(100, (elapsed / total) * 100);
   const remaining = Math.max(0, Math.ceil(total - elapsed));
@@ -119,10 +103,12 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
             />
           )}
           {ad.type === "script" && (
-            <div
-              ref={scriptRef}
-              className="w-full flex items-center justify-center"
-              style={{ minHeight: 220 }}
+            <iframe
+              ref={iframeRef}
+              title={ad.title}
+              sandbox="allow-scripts allow-popups"
+              className="w-full"
+              style={{ minHeight: 220, border: "none", background: "#000" }}
             />
           )}
         </div>
