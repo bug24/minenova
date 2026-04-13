@@ -98,6 +98,7 @@ interface AdminAd {
   title: string;
   type: "video" | "image" | "script" | "external_link";
   urlOrCode: string;
+  providerScript?: string | null;
   durationSeconds: number;
   placement: string;
   isActive: boolean;
