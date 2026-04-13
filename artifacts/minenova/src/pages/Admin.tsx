@@ -934,33 +934,45 @@ function ReferralsTab({ secret }: { secret: string }) {
   const [search, setSearch] = useState("");
   const [deleting, setDeleting] = useState<number | null>(null);
 
-  const loadAll = useCallback(() => {
-    setCfgLoading(true); setSuspLoading(true); setStatsLoading(true); setRelLoading(true);
+  const loadRelationships = useCallback((q: string) => {
+    setRelLoading(true);
+    const url = q.trim() ? `/admin/referrals?search=${encodeURIComponent(q.trim())}` : "/admin/referrals";
+    apiFetch(url, { headers: h }).then(r => r.json()).then((d: Referral[]) => {
+      setItems(Array.isArray(d) ? d : []);
+      setRelLoading(false);
+    }).catch(() => setRelLoading(false));
+  }, [secret]);
 
+  const loadAnalytics = useCallback(() => {
+    setSuspLoading(true); setStatsLoading(true);
+    apiFetch("/admin/referral-suspicious", { headers: h }).then(r => r.json()).then((d: SuspiciousReferral[]) => {
+      setSuspicious(Array.isArray(d) ? d : []);
+      setSuspLoading(false);
+    }).catch(() => setSuspLoading(false));
+    apiFetch("/admin/referral-stats", { headers: h }).then(r => r.json()).then((d: ReferralStat[]) => {
+      setStats(Array.isArray(d) ? d : []);
+      setStatsLoading(false);
+    }).catch(() => setStatsLoading(false));
+  }, [secret]);
+
+  const loadAll = useCallback(() => {
+    setCfgLoading(true);
     apiFetch("/admin/referral-config", { headers: h }).then(r => r.json()).then((d: ReferralConfig) => {
       setCfg(d);
       setBonusCoinsInput(String(d.bonusCoins));
       setCommissionPctInput(String(d.commissionPct));
       setCfgLoading(false);
     }).catch(() => setCfgLoading(false));
-
-    apiFetch("/admin/referral-suspicious", { headers: h }).then(r => r.json()).then((d: SuspiciousReferral[]) => {
-      setSuspicious(Array.isArray(d) ? d : []);
-      setSuspLoading(false);
-    }).catch(() => setSuspLoading(false));
-
-    apiFetch("/admin/referral-stats", { headers: h }).then(r => r.json()).then((d: ReferralStat[]) => {
-      setStats(Array.isArray(d) ? d : []);
-      setStatsLoading(false);
-    }).catch(() => setStatsLoading(false));
-
-    apiFetch("/admin/referrals", { headers: h }).then(r => r.json()).then((d: Referral[]) => {
-      setItems(Array.isArray(d) ? d : []);
-      setRelLoading(false);
-    }).catch(() => setRelLoading(false));
-  }, [secret]);
+    loadAnalytics();
+  }, [secret, loadAnalytics]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Debounced search → hits backend with ?search= param
+  useEffect(() => {
+    const timer = setTimeout(() => loadRelationships(search), search ? 350 : 0);
+    return () => clearTimeout(timer);
+  }, [search, loadRelationships]);
 
   const handleToggleDisabled = async () => {
     if (!cfg) return;
@@ -986,14 +998,16 @@ function ReferralsTab({ secret }: { secret: string }) {
   const handleDelete = async (id: number) => {
     setDeleting(id);
     await apiFetch(`/admin/referrals/${id}`, { method: "DELETE", headers: h });
-    setItems(prev => prev.filter(r => r.id !== id));
     setDeleting(null);
     toast({ title: "Referral relationship removed" });
+    loadRelationships(search);
+    loadAnalytics();
   };
 
-  const filteredItems = search.trim()
-    ? items.filter(r => r.referrerUsername.toLowerCase().includes(search.toLowerCase()) || r.referredUsername.toLowerCase().includes(search.toLowerCase()))
-    : items;
+  const liveBonusUsdt = (() => {
+    const v = parseFloat(bonusCoinsInput);
+    return isNaN(v) ? null : (v / 1000).toFixed(3);
+  })();
 
   return (
     <div className="space-y-6">
@@ -1016,7 +1030,10 @@ function ReferralsTab({ secret }: { secret: string }) {
         ) : (
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Referral Bonus (coins)</label>
+              <label className="text-xs text-muted-foreground flex items-center justify-between">
+                <span>Referral Bonus (coins)</span>
+                {liveBonusUsdt !== null && <span className="text-purple-400">${liveBonusUsdt} USDT</span>}
+              </label>
               <Input
                 type="number" min="0"
                 value={bonusCoinsInput}
@@ -1106,7 +1123,7 @@ function ReferralsTab({ secret }: { secret: string }) {
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">All Relationships</p>
-          <Button variant="ghost" size="sm" onClick={loadAll} className="h-6 w-6 p-0">
+          <Button variant="ghost" size="sm" onClick={() => { loadAll(); loadRelationships(search); }} className="h-6 w-6 p-0">
             <RefreshCw className="w-3 h-3" />
           </Button>
         </div>
