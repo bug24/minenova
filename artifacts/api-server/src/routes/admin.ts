@@ -958,13 +958,17 @@ router.get("/admin/settings", requireAdmin, async (_req, res): Promise<void> => 
 
 router.put("/admin/settings", requireAdmin, async (req, res): Promise<void> => {
   const boolStr = z.enum(["true", "false"]);
+  const strictNum = (min: number, max?: number) =>
+    z.string().refine(v => /^-?\d+(\.\d*)?$/.test(v.trim()) && parseFloat(v) >= min && (max === undefined || parseFloat(v) <= max),
+      max !== undefined ? `Must be a number between ${min} and ${max}` : `Must be a number ≥ ${min}`);
+  const strictPosInt = z.string().refine(v => /^\d+$/.test(v.trim()) && parseInt(v) >= 1, "Must be a positive integer");
   const schema = z.object({
-    min_withdrawal_usdt: z.string().refine(v => !isNaN(parseFloat(v)) && parseFloat(v) >= 0, "Must be a non-negative number").optional(),
-    referral_bonus_coins: z.string().refine(v => !isNaN(parseFloat(v)) && parseFloat(v) >= 0, "Must be a non-negative number").optional(),
-    referral_commission_pct: z.string().refine(v => { const n = parseFloat(v); return !isNaN(n) && n >= 0 && n <= 100; }, "Must be 0–100").optional(),
+    min_withdrawal_usdt: strictNum(0).optional(),
+    referral_bonus_coins: strictNum(0).optional(),
+    referral_commission_pct: strictNum(0, 100).optional(),
     maintenance_mode: boolStr.optional(),
-    global_base_coins_per_hour: z.string().refine(v => !isNaN(parseFloat(v)) && parseFloat(v) > 0, "Must be a positive number").optional(),
-    session_duration_hours: z.string().refine(v => Number.isInteger(Number(v)) && Number(v) >= 1, "Must be a positive integer").optional(),
+    global_base_coins_per_hour: strictNum(0.001).optional(),
+    session_duration_hours: strictPosInt.optional(),
     referral_disabled: boolStr.optional(),
     mining_disabled: boolStr.optional(),
   });
