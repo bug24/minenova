@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, shareMessagesTable, upgradesTable } from "@workspace/db";
+import { db, shareMessagesTable, upgradesTable, adminConfigTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -116,9 +116,9 @@ async function seedUpgrades() {
 seedUpgrades().catch(console.error);
 
 router.get("/admin/config", requireAdmin, async (_req, res): Promise<void> => {
-  const rows = await db.execute(sql`SELECT key, value FROM admin_config ORDER BY key`);
+  const rows = await db.select().from(adminConfigTable);
   const config: Record<string, string> = {};
-  for (const row of rows.rows as { key: string; value: string }[]) {
+  for (const row of rows) {
     config[row.key] = row.value;
   }
   res.json(config);
@@ -129,10 +129,10 @@ router.post("/admin/config", requireAdmin, async (req, res): Promise<void> => {
   const data = schema.safeParse(req.body);
   if (!data.success) { res.status(400).json({ error: data.error.message }); return; }
   const { key, value } = data.data;
-  await db.execute(sql`
-    INSERT INTO admin_config (key, value, updated_at) VALUES (${key}, ${value}, NOW())
-    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
-  `);
+  await db
+    .insert(adminConfigTable)
+    .values({ key, value })
+    .onConflictDoUpdate({ target: adminConfigTable.key, set: { value, updatedAt: sql`NOW()` } });
   res.json({ success: true, key, value });
 });
 

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, upgradesTable, userUpgradesTable, usersTable, transactionsTable } from "@workspace/db";
+import { db, upgradesTable, userUpgradesTable, usersTable, transactionsTable, adminConfigTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { PurchaseUpgradeParams, PurchaseUpgradeBody, GetUpgradesResponse, PurchaseUpgradeResponse } from "@workspace/api-zod";
@@ -8,8 +8,12 @@ import { generatePaymentTag } from "../lib/auth";
 const router: IRouter = Router();
 
 async function getUsdtDepositAddress(): Promise<string> {
-  const rows = await db.execute(sql`SELECT value FROM admin_config WHERE key = 'usdt_wallet_address'`);
-  return (rows.rows[0] as { value: string } | undefined)?.value ?? "TRX_PLACEHOLDER_ADDRESS_CONFIGURE_ME";
+  const rows = await db
+    .select({ value: adminConfigTable.value })
+    .from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "usdt_wallet_address"))
+    .limit(1);
+  return rows[0]?.value ?? "TRX_PLACEHOLDER_ADDRESS_CONFIGURE_ME";
 }
 
 router.get("/upgrades", requireAuth, async (req, res): Promise<void> => {
