@@ -46,5 +46,3 @@ channel = "stable-25_05"
 
 [userenv.shared]
 VAPID_PUBLIC_KEY = "BCkohQVpYWp1Fntu-Celg72vO2YyjsEFAmD7sona7PRBUHdjz8UJ7NofxGFZ9vkaP1I_VdmT8tvh2VLJoQxRaCE"
-VAPID_PRIVATE_KEY = "hYS60mQEvCXoo11aMZgbMD7V6KUPmtWzHoEwtjHOj2g"
-VAPID_SUBJECT = "mailto:admin@minenova.app"
