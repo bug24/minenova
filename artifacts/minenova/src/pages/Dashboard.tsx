@@ -135,22 +135,50 @@ export default function Dashboard() {
       <div className="flex flex-col items-center py-4">
         {/* Orb Container */}
         <div className="relative flex items-center justify-center mb-6">
-          {/* Outer dashed orbit ring */}
-          <div className="absolute w-[220px] h-[220px] rounded-full border border-dashed border-primary/20 spin-slow" />
 
-          {/* Orbit dots */}
-          <div className="absolute w-[220px] h-[220px] flex items-center justify-center">
+          {/* Outermost faded ghost ring - theme-compatible */}
+          <div
+            className="absolute w-[300px] h-[300px] rounded-full spin-reverse-slow"
+            style={{
+              border: "1px solid",
+              borderColor: "color-mix(in srgb, var(--color-primary) 12%, transparent)",
+              boxShadow: "0 0 30px color-mix(in srgb, var(--color-primary) 5%, transparent)",
+            }}
+          />
+
+          {/* Gradient orbit ring */}
+          <div
+            className="absolute w-[230px] h-[230px] rounded-full spin-slow"
+            style={{
+              background: "conic-gradient(from 0deg, transparent 0%, rgba(168,85,247,0.45) 30%, rgba(139,92,246,0.2) 55%, transparent 70%)",
+              WebkitMask: "radial-gradient(transparent 109px, black 110px, black 112px, transparent 113px)",
+              mask: "radial-gradient(transparent 109px, black 110px, black 112px, transparent 113px)",
+            }}
+          />
+
+          {/* Orbit dots - gentle independent spin */}
+          <div className="absolute w-[230px] h-[230px] flex items-center justify-center spin-very-slow">
             <div
-              className="absolute w-2.5 h-2.5 rounded-full bg-primary/60"
-              style={{ transform: "rotate(0deg) translateX(110px)" }}
+              className="absolute w-2 h-2 rounded-full"
+              style={{
+                background: "radial-gradient(circle, rgba(168,85,247,0.9), rgba(139,92,246,0.5))",
+                transform: "translateX(115px)",
+                boxShadow: "0 0 6px rgba(168,85,247,0.6)",
+              }}
             />
             <div
-              className="absolute w-1.5 h-1.5 rounded-full bg-primary/40"
-              style={{ transform: "rotate(120deg) translateX(110px)" }}
+              className="absolute w-1.5 h-1.5 rounded-full"
+              style={{
+                background: "rgba(139,92,246,0.6)",
+                transform: "rotate(130deg) translateX(115px)",
+              }}
             />
             <div
-              className="absolute w-2 h-2 rounded-full bg-primary/50"
-              style={{ transform: "rotate(240deg) translateX(110px)" }}
+              className="absolute w-1 h-1 rounded-full"
+              style={{
+                background: "rgba(168,85,247,0.5)",
+                transform: "rotate(250deg) translateX(115px)",
+              }}
             />
           </div>
 
@@ -163,24 +191,30 @@ export default function Dashboard() {
             }`}
             style={{
               background: status?.isActive
-                ? "radial-gradient(circle at 35% 35%, #a855f7, #7c3aed 40%, #4c1d95 75%, #1e0a3c)"
-                : "radial-gradient(circle at 35% 35%, #6b21a8, #4c1d95 50%, #2e1065)",
+                ? "radial-gradient(circle at 35% 35%, #c084fc, #a855f7 30%, #7c3aed 60%, #3b0764)"
+                : "radial-gradient(circle at 35% 35%, #7e22ce, #5b21b6 45%, #2e1065)",
+              boxShadow: status?.isActive
+                ? "0 0 40px rgba(168,85,247,0.35), 0 0 80px rgba(124,58,237,0.15)"
+                : "0 0 20px rgba(91,33,182,0.2)",
             }}
             data-testid="button-orb-mine"
           >
-            {/* Inner glow */}
+            {/* Inner glow ring */}
             {status?.isActive && (
               <div
-                className="absolute inset-0 rounded-full orb-glow border-t-[1px] border-r-[1px] border-b-[1px] border-l-[1px]"
-                style={{ borderRadius: "50%" }}
+                className="absolute inset-0 rounded-full orb-glow"
+                style={{
+                  border: "1px solid rgba(196,132,252,0.3)",
+                  borderRadius: "50%",
+                }}
               />
             )}
 
             {/* Shine highlight */}
             <div
-              className="absolute top-6 left-8 w-10 h-10 rounded-full opacity-30"
+              className="absolute top-6 left-8 w-10 h-10 rounded-full opacity-25"
               style={{
-                background: "radial-gradient(circle, rgba(255,255,255,0.8) 0%, transparent 70%)",
+                background: "radial-gradient(circle, rgba(255,255,255,0.9) 0%, transparent 70%)",
               }}
             />
 

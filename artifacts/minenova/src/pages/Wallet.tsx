@@ -67,6 +67,7 @@ export default function WalletPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [step, setStep] = useState<WithdrawStep>("choose");
   const [withdrawalResult, setWithdrawalResult] = useState<WithdrawalResult | null>(null);
+  const [hasSentWithdrawal, setHasSentWithdrawal] = useState(false);
 
   const coinBalance = wallet?.withdrawableBalance ?? 0;
   const usdtValue = coinBalance / COINS_PER_USDT;
@@ -88,6 +89,7 @@ export default function WalletPage() {
     setDialogOpen(false);
     setTimeout(() => {
       setStep("choose");
+      setHasSentWithdrawal(false);
       form.reset();
     }, 300);
   };
@@ -382,45 +384,71 @@ export default function WalletPage() {
           {/* Step 3: Result */}
           {step === "result" && withdrawalResult && (
             <div className="space-y-4 pt-2">
-              <div className="text-center">
-                <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
-                  <CheckCircle2 className="w-7 h-7 text-emerald-500" />
-                </div>
-                <p className="font-semibold text-foreground">Withdrawal Request Submitted</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Send <strong>${withdrawalResult.amount} USDT</strong> to the address below with your payment tag.
-                </p>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-1">USDT Address (TRC20)</p>
-                  <div className="flex gap-2">
-                    <div className="flex-1 bg-muted rounded-lg px-3 py-2 text-xs font-mono break-all">
-                      {withdrawalResult.usdtAddress}
+              {hasSentWithdrawal ? (
+                <>
+                  <div className="text-center py-2">
+                    <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
+                      <CheckCircle2 className="w-7 h-7 text-emerald-500" />
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => copyToClipboard(withdrawalResult.usdtAddress, "USDT address")}>
-                      <Copy className="w-3.5 h-3.5" />
-                    </Button>
+                    <p className="font-semibold text-foreground">Transfer Confirmed</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Thank you for sending <strong>${withdrawalResult.amount} USDT</strong>. Your withdrawal is being processed.
+                    </p>
                   </div>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Payment Tag (Required)</p>
-                  <div className="flex gap-2">
-                    <div className="flex-1 bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 text-sm font-mono font-bold text-primary">
-                      {withdrawalResult.paymentTag}
+                  <div className="bg-primary/10 border border-primary/20 rounded-xl p-4">
+                    <p className="text-sm font-semibold text-primary mb-1">⏱ Please allow 2–12 hours</p>
+                    <p className="text-xs text-muted-foreground">
+                      Our team will verify your payment and process your withdrawal within 2–12 hours. Check your transaction history for updates.
+                    </p>
+                  </div>
+                  <Button className="w-full" onClick={closeDialog}>Got it</Button>
+                </>
+              ) : (
+                <>
+                  <div className="text-center">
+                    <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
+                      <CheckCircle2 className="w-7 h-7 text-emerald-500" />
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => copyToClipboard(withdrawalResult.paymentTag, "Payment tag")}>
-                      <Copy className="w-3.5 h-3.5" />
-                    </Button>
+                    <p className="font-semibold text-foreground">Withdrawal Request Submitted</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Send <strong>${withdrawalResult.amount} USDT</strong> to the address below via TRC20 network, with your payment tag.
+                    </p>
                   </div>
-                </div>
-              </div>
-              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
-                <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                  Always include your payment tag in the transaction memo. Without it we cannot process your withdrawal.
-                </p>
-              </div>
-              <Button className="w-full" onClick={closeDialog}>Done</Button>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1">USDT Address (TRC20)</p>
+                      <div className="flex gap-2">
+                        <div className="flex-1 bg-muted rounded-lg px-3 py-2 text-xs font-mono break-all">
+                          {withdrawalResult.usdtAddress}
+                        </div>
+                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(withdrawalResult.usdtAddress, "USDT address")}>
+                          <Copy className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Payment Tag (Required)</p>
+                      <div className="flex gap-2">
+                        <div className="flex-1 bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 text-sm font-mono font-bold text-primary">
+                          {withdrawalResult.paymentTag}
+                        </div>
+                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(withdrawalResult.paymentTag, "Payment tag")}>
+                          <Copy className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
+                    <p className="text-xs text-yellow-600 dark:text-yellow-400">
+                      Always include your payment tag in the memo/note field. Without it we cannot process your withdrawal.
+                    </p>
+                  </div>
+                  <Button className="w-full gap-2" onClick={() => setHasSentWithdrawal(true)}>
+                    <CheckCircle2 className="w-4 h-4" />
+                    I have sent ${withdrawalResult.amount} USDT
+                  </Button>
+                </>
+              )}
             </div>
           )}
         </DialogContent>

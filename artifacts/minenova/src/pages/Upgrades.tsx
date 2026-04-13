@@ -12,6 +12,7 @@ interface PurchaseResult {
   usdtAddress: string | null | undefined;
   paymentTag: string | null | undefined;
   message: string;
+  usdtCost?: number | null;
 }
 
 export default function Upgrades() {
@@ -24,13 +25,15 @@ export default function Upgrades() {
   const [paymentMethod, setPaymentMethod] = useState<"coins" | "usdt">("coins");
   const [purchaseResult, setPurchaseResult] = useState<PurchaseResult | null>(null);
   const [resultOpen, setResultOpen] = useState(false);
+  const [hasSent, setHasSent] = useState(false);
 
   const handlePurchase = () => {
     if (!selectedUpgrade) return;
     purchaseUpgrade.mutate({ upgradeId: selectedUpgrade, data: { paymentMethod } }, {
       onSuccess: (res) => {
         setSelectedUpgrade(null);
-        setPurchaseResult({ usdtAddress: res.usdtAddress, paymentTag: res.paymentTag, message: res.message });
+        setPurchaseResult({ usdtAddress: res.usdtAddress, paymentTag: res.paymentTag, message: res.message, usdtCost: selectedUpgradeData?.usdtCost });
+        setHasSent(false);
         setResultOpen(true);
         queryClient.invalidateQueries({ queryKey: getGetUpgradesQueryKey() });
       },
@@ -188,36 +191,68 @@ export default function Upgrades() {
       </Dialog>
 
       {/* USDT Payment Result */}
-      <Dialog open={resultOpen} onOpenChange={setResultOpen}>
+      <Dialog open={resultOpen} onOpenChange={(open) => { setResultOpen(open); if (!open) setHasSent(false); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{purchaseResult?.usdtAddress ? "Complete Your Payment" : "Upgrade Activated"}</DialogTitle>
+            <DialogTitle>{purchaseResult?.usdtAddress ? (hasSent ? "Payment Received" : "Complete Your Payment") : "Upgrade Activated"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            <p className="text-sm text-muted-foreground">{purchaseResult?.message} TRC20 network</p>
-            {purchaseResult?.usdtAddress && (
-              <div className="space-y-3">
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Send USDT to</p>
-                  <div className="flex gap-2">
-                    <div className="flex-1 bg-muted rounded-lg px-3 py-2 text-xs font-mono break-all">{purchaseResult.usdtAddress}</div>
-                    <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(purchaseResult.usdtAddress ?? "")}>
-                      <Copy className="w-3.5 h-3.5" />
+            {hasSent ? (
+              <div className="space-y-4">
+                <div className="text-center py-2">
+                  <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
+                    <CheckCircle2 className="w-7 h-7 text-emerald-500" />
+                  </div>
+                  <p className="font-semibold text-foreground">Transfer Confirmed</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Thank you for sending <strong>${purchaseResult?.usdtCost} USDT</strong>. Your upgrade is being processed.
+                  </p>
+                </div>
+                <div className="bg-primary/10 border border-primary/20 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-primary mb-1">⏱ Please allow 2–12 hours</p>
+                  <p className="text-xs text-muted-foreground">
+                    Our team will verify your payment and activate your upgrade within 2–12 hours. You'll see it reflected on this page once confirmed.
+                  </p>
+                </div>
+                <Button className="w-full" onClick={() => setResultOpen(false)}>Got it</Button>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">{purchaseResult?.message} TRC20 network.</p>
+                {purchaseResult?.usdtAddress && (
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Send USDT to (TRC20)</p>
+                      <div className="flex gap-2">
+                        <div className="flex-1 bg-muted rounded-lg px-3 py-2 text-xs font-mono break-all">{purchaseResult.usdtAddress}</div>
+                        <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(purchaseResult.usdtAddress ?? "")}>
+                          <Copy className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                    {purchaseResult.paymentTag && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Payment Tag (Required)</p>
+                        <div className="flex gap-2">
+                          <div className="flex-1 bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 font-mono font-bold text-primary text-sm">{purchaseResult.paymentTag}</div>
+                          <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(purchaseResult.paymentTag ?? "")}>
+                            <Copy className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
+                      <p className="text-xs text-yellow-600 dark:text-yellow-400">
+                        Always include your payment tag in the memo/note field. Without it we cannot process your upgrade.
+                      </p>
+                    </div>
+                    <Button className="w-full gap-2" onClick={() => setHasSent(true)}>
+                      <CheckCircle2 className="w-4 h-4" />
+                      I have sent ${purchaseResult.usdtCost} USDT
                     </Button>
                   </div>
-                </div>
-                {purchaseResult.paymentTag && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">Payment Tag (Required)</p>
-                    <div className="flex gap-2">
-                      <div className="flex-1 bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 font-mono font-bold text-primary text-sm">{purchaseResult.paymentTag}</div>
-                      <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(purchaseResult.paymentTag ?? "")}>
-                        <Copy className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </div>
                 )}
-              </div>
+              </>
             )}
           </div>
         </DialogContent>

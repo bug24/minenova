@@ -58,7 +58,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-card border-t border-card-border z-50">
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-card border-t border-card-border dark:border-white/10 z-50">
         <div className="flex items-center justify-around px-2 py-2">
           {navItems.map(({ href, label, icon: Icon }) => {
             const isActive = location === href;
@@ -68,8 +68,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl cursor-pointer transition-all ${
                     isActive
                       ? "text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
+                      : "text-muted-foreground dark:text-white/55 hover:text-foreground dark:hover:text-white/80"
+                  } ${isActive ? "" : "dark:ring-1 dark:ring-white/10"}`}
                   data-testid={`nav-${label.toLowerCase()}`}
                 >
                   <div className={`relative ${isActive ? "after:absolute after:-bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1 after:h-1 after:rounded-full after:bg-primary" : ""}`}>
