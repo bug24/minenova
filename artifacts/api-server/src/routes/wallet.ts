@@ -9,7 +9,8 @@ const router: IRouter = Router();
 
 const USDT_DEPOSIT_ADDRESS = "TRX_PLACEHOLDER_ADDRESS_CONFIGURE_ME";
 const MINIMUM_WITHDRAWAL = 5;
-const COINS_PER_USDT = 100;
+const COINS_PER_USDT = 1000;
+const MINIMUM_COINS = MINIMUM_WITHDRAWAL * COINS_PER_USDT;
 
 router.get("/wallet", requireAuth, async (req, res): Promise<void> => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
@@ -17,7 +18,7 @@ router.get("/wallet", requireAuth, async (req, res): Promise<void> => {
   res.json(GetWalletResponse.parse({
     totalBalance: user.coinBalance,
     pendingBalance: user.pendingBalance,
-    withdrawableBalance: Math.max(0, user.coinBalance - user.pendingBalance),
+    withdrawableBalance: user.coinBalance,
     totalWithdrawn: user.totalWithdrawn,
     minimumWithdrawal: MINIMUM_WITHDRAWAL,
   }));
@@ -34,15 +35,19 @@ router.post("/wallet/withdraw", requireAuth, async (req, res): Promise<void> => 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
 
   if (amount < MINIMUM_WITHDRAWAL) {
-    res.status(400).json({ error: `Minimum withdrawal is $${MINIMUM_WITHDRAWAL} USDT` });
+    res.status(400).json({ error: `Minimum withdrawal is ${MINIMUM_COINS} coins (${MINIMUM_WITHDRAWAL} USDT)` });
     return;
   }
 
   const requiredCoins = amount * COINS_PER_USDT;
-  const withdrawable = user.coinBalance - user.pendingBalance;
 
-  if (withdrawable < requiredCoins) {
-    res.status(400).json({ error: "Insufficient withdrawable balance" });
+  if (user.coinBalance < MINIMUM_COINS) {
+    res.status(400).json({ error: `Minimum withdrawal is ${MINIMUM_COINS} coins (${MINIMUM_WITHDRAWAL} USDT)` });
+    return;
+  }
+
+  if (user.coinBalance < requiredCoins) {
+    res.status(400).json({ error: "Insufficient coin balance" });
     return;
   }
 
@@ -60,7 +65,10 @@ router.post("/wallet/withdraw", requireAuth, async (req, res): Promise<void> => 
   }).returning();
 
   await db.update(usersTable)
-    .set({ pendingBalance: user.pendingBalance + requiredCoins })
+    .set({
+      coinBalance: user.coinBalance - requiredCoins,
+      totalWithdrawn: user.totalWithdrawn + amount,
+    })
     .where(eq(usersTable.id, req.userId!));
 
   res.json(RequestWithdrawalResponse.parse({

@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { useGetWallet, useRequestWithdrawal, useGetTransactions, getGetWalletQueryKey, getGetTransactionsQueryKey } from "@workspace/api-client-react";
+import {
+  useGetWallet,
+  useRequestWithdrawal,
+  useGetTransactions,
+  useGetUpgrades,
+  getGetWalletQueryKey,
+  getGetTransactionsQueryKey,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -10,11 +17,16 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Wallet, ArrowUpRight, Clock, CheckCircle2, XCircle, Copy, AlertCircle } from "lucide-react";
+import { Wallet, ArrowUpRight, Clock, CheckCircle2, XCircle, Copy, AlertCircle, TrendingUp, Zap } from "lucide-react";
+import { useLocation } from "wouter";
+
+const COINS_PER_USDT = 1000;
+const MINIMUM_COINS = 5000;
+const MINIMUM_USDT = 5;
 
 const withdrawSchema = z.object({
   walletAddress: z.string().min(10, "Enter a valid USDT wallet address"),
-  amount: z.coerce.number().min(5, "Minimum withdrawal is $5 USDT"),
+  amount: z.coerce.number().min(MINIMUM_USDT, `Minimum withdrawal is $${MINIMUM_USDT} USDT`),
 });
 
 type WithdrawForm = z.infer<typeof withdrawSchema>;
@@ -41,28 +53,50 @@ function getTypeIcon(type: string) {
   return <Clock className="w-4 h-4 text-muted-foreground" />;
 }
 
+type WithdrawStep = "choose" | "form" | "result";
+
 export default function WalletPage() {
   const { data: wallet, isLoading: walletLoading } = useGetWallet();
   const { data: transactions, isLoading: txLoading } = useGetTransactions();
+  const { data: upgrades } = useGetUpgrades();
   const requestWithdrawal = useRequestWithdrawal();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [, setLocation] = useLocation();
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [step, setStep] = useState<WithdrawStep>("choose");
   const [withdrawalResult, setWithdrawalResult] = useState<WithdrawalResult | null>(null);
-  const [resultOpen, setResultOpen] = useState(false);
+
+  const coinBalance = wallet?.withdrawableBalance ?? 0;
+  const usdtValue = coinBalance / COINS_PER_USDT;
+  const canWithdraw = coinBalance >= MINIMUM_COINS;
+
+  const maxUsdt = Math.floor(usdtValue * 100) / 100;
 
   const form = useForm<WithdrawForm>({
     resolver: zodResolver(withdrawSchema),
-    defaultValues: { walletAddress: "", amount: 5 },
+    defaultValues: { walletAddress: "", amount: MINIMUM_USDT },
   });
+
+  const openWithdraw = () => {
+    setStep("choose");
+    setDialogOpen(true);
+  };
+
+  const closeDialog = () => {
+    setDialogOpen(false);
+    setTimeout(() => {
+      setStep("choose");
+      form.reset();
+    }, 300);
+  };
 
   const onWithdraw = (data: WithdrawForm) => {
     requestWithdrawal.mutate({ data }, {
       onSuccess: (res) => {
-        setWithdrawOpen(false);
         setWithdrawalResult({ usdtAddress: res.usdtAddress, paymentTag: res.paymentTag, amount: res.amount, transactionId: res.transactionId });
-        setResultOpen(true);
-        form.reset();
+        setStep("result");
         queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetTransactionsQueryKey() });
       },
@@ -78,42 +112,63 @@ export default function WalletPage() {
     toast({ title: "Copied!", description: `${label} copied to clipboard` });
   };
 
+  const handleUpgradeInstead = () => {
+    closeDialog();
+    setLocation("/upgrades");
+  };
+
+  const nearbyUpgrades = upgrades?.filter(u => !u.owned && u.coinCost && u.coinCost <= coinBalance * 1.5 && u.coinCost > coinBalance * 0.5);
+
+  const watchedAmount = form.watch("amount") || MINIMUM_USDT;
+  const requiredCoins = watchedAmount * COINS_PER_USDT;
+
   return (
-    <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-6">
+    <div className="px-4 pt-2 pb-6 space-y-5">
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold font-serif">Wallet</h1>
         <p className="text-muted-foreground text-sm mt-0.5">Manage your earnings and withdrawals</p>
       </div>
 
-      {/* Balance Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: "Total Balance", value: wallet?.totalBalance?.toFixed(2) ?? "0.00", unit: "coins", color: "text-primary" },
-          { label: "Withdrawable", value: wallet?.withdrawableBalance?.toFixed(2) ?? "0.00", unit: "coins", color: "text-emerald-500" },
-          { label: "Pending", value: wallet?.pendingBalance?.toFixed(2) ?? "0.00", unit: "coins", color: "text-yellow-500" },
-          { label: "Total Withdrawn", value: `$${wallet?.totalWithdrawn?.toFixed(2) ?? "0.00"}`, unit: "USDT", color: "text-muted-foreground" },
-        ].map(({ label, value, unit, color }) => (
-          <div key={label} className="bg-card border border-card-border rounded-xl p-4">
-            <p className="text-xs text-muted-foreground mb-1">{label}</p>
-            <p className={`text-xl font-bold ${color}`}>{value}</p>
-            <p className="text-xs text-muted-foreground">{unit}</p>
-          </div>
-        ))}
+      {/* Main balance card */}
+      <div
+        className="rounded-2xl p-5 text-white relative overflow-hidden"
+        style={{ background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #4c1d95 100%)" }}
+      >
+        <div className="absolute top-0 right-0 w-32 h-32 rounded-full opacity-10" style={{ background: "radial-gradient(circle, white, transparent)", transform: "translate(30%, -30%)" }} />
+        <p className="text-white/70 text-xs font-medium uppercase tracking-wider mb-1">Total Balance</p>
+        <p className="text-4xl font-black font-serif mb-0.5">{coinBalance.toFixed(2)}</p>
+        <p className="text-white/80 text-sm">coins · <span className="font-semibold">${usdtValue.toFixed(2)} USDT</span></p>
+        <p className="text-white/50 text-xs mt-3">1 USDT = 1,000 coins</p>
       </div>
 
-      {/* Withdrawal Info */}
-      <div className="bg-card border border-card-border rounded-xl p-5">
-        <div className="flex items-center justify-between mb-4">
+      {/* Stats row */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-card border border-card-border rounded-2xl p-4">
+          <p className="text-xs text-muted-foreground mb-1">Total Earned</p>
+          <p className="text-lg font-bold text-foreground">{(wallet?.totalBalance ?? 0).toFixed(2)}</p>
+          <p className="text-xs text-muted-foreground">coins</p>
+        </div>
+        <div className="bg-card border border-card-border rounded-2xl p-4">
+          <p className="text-xs text-muted-foreground mb-1">Total Withdrawn</p>
+          <p className="text-lg font-bold text-emerald-500">${(wallet?.totalWithdrawn ?? 0).toFixed(2)}</p>
+          <p className="text-xs text-muted-foreground">USDT</p>
+        </div>
+      </div>
+
+      {/* Withdraw section */}
+      <div className="bg-card border border-card-border rounded-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
           <div>
-            <h3 className="font-semibold flex items-center gap-2">
+            <h3 className="font-semibold text-foreground flex items-center gap-2">
               <Wallet className="w-4 h-4 text-primary" />
               USDT Withdrawal
             </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Minimum withdrawal: ${wallet?.minimumWithdrawal ?? 5} USDT (100 coins = $1 USDT)</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Min. 5,000 coins = 5 USDT</p>
           </div>
           <Button
-            onClick={() => setWithdrawOpen(true)}
-            disabled={walletLoading || (wallet?.withdrawableBalance ?? 0) < 500}
+            onClick={openWithdraw}
+            disabled={walletLoading}
             className="gap-2"
             data-testid="button-withdraw"
           >
@@ -122,11 +177,25 @@ export default function WalletPage() {
           </Button>
         </div>
 
-        {(wallet?.withdrawableBalance ?? 0) < 500 && !walletLoading && (
-          <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
+        {!canWithdraw && !walletLoading && (
+          <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
             <AlertCircle className="w-4 h-4 text-yellow-500 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-yellow-600 dark:text-yellow-400">
-              You need at least 500 coins to withdraw $5 USDT. Keep mining to reach the minimum!
+            <div>
+              <p className="text-xs font-medium text-yellow-600 dark:text-yellow-400">
+                Minimum withdrawal is 5,000 coins (5 USDT)
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                You need {Math.max(0, MINIMUM_COINS - coinBalance).toFixed(0)} more coins to unlock withdrawals.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {canWithdraw && nearbyUpgrades && nearbyUpgrades.length > 0 && (
+          <div className="flex items-start gap-2 bg-primary/10 border border-primary/20 rounded-xl p-3">
+            <Zap className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-primary">
+              You're close to upgrading your mining level — upgrade now to earn faster!
             </p>
           </div>
         )}
@@ -167,92 +236,193 @@ export default function WalletPage() {
         )}
       </div>
 
-      {/* Withdraw Dialog */}
-      <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
+      {/* Withdrawal Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={closeDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ArrowUpRight className="w-5 h-5 text-primary" />
-              Withdraw USDT
+              {step === "choose" ? "Withdraw USDT" : step === "form" ? "Enter Withdrawal Details" : "Withdrawal Submitted"}
             </DialogTitle>
           </DialogHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onWithdraw)} className="space-y-4 pt-2">
-              <FormField
-                control={form.control}
-                name="walletAddress"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Your USDT Wallet Address</FormLabel>
-                    <FormControl>
-                      <Input placeholder="TRC20 address (TRX...)" data-testid="input-wallet-address" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="amount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Amount (USDT)</FormLabel>
-                    <FormControl>
-                      <Input type="number" min="5" step="0.5" placeholder="Min $5" data-testid="input-amount" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                    <p className="text-xs text-muted-foreground">Requires {(form.watch("amount") || 5) * 100} coins</p>
-                  </FormItem>
-                )}
-              />
-              <Button type="submit" className="w-full" disabled={requestWithdrawal.isPending} data-testid="button-confirm-withdraw">
-                {requestWithdrawal.isPending ? "Processing..." : "Submit Withdrawal"}
-              </Button>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
 
-      {/* Withdrawal Instructions Dialog */}
-      <Dialog open={resultOpen} onOpenChange={setResultOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-emerald-500">Withdrawal Request Created</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <p className="text-sm text-muted-foreground">
-              To complete your withdrawal of <strong>${withdrawalResult?.amount} USDT</strong>, send exactly that amount to the address below with your unique payment tag.
-            </p>
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1">USDT Address (TRC20)</p>
-                <div className="flex gap-2">
-                  <div className="flex-1 bg-muted rounded-lg px-3 py-2 text-xs font-mono break-all">
-                    {withdrawalResult?.usdtAddress}
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => copyToClipboard(withdrawalResult?.usdtAddress ?? "", "USDT address")}>
-                    <Copy className="w-3.5 h-3.5" />
+          {/* Step 1: Choose action */}
+          {step === "choose" && (
+            <div className="space-y-4 pt-2">
+              {/* Balance summary */}
+              <div className="bg-muted rounded-xl p-4 text-center">
+                <p className="text-xs text-muted-foreground mb-1">Your balance</p>
+                <p className="text-2xl font-black text-foreground">{coinBalance.toFixed(0)} <span className="text-base font-normal text-muted-foreground">coins</span></p>
+                <p className="text-sm text-primary font-semibold">≈ ${usdtValue.toFixed(2)} USDT</p>
+              </div>
+
+              {!canWithdraw ? (
+                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 text-center">
+                  <AlertCircle className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-foreground">Minimum withdrawal is 5,000 coins</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    You need {Math.max(0, MINIMUM_COINS - coinBalance).toFixed(0)} more coins (${((MINIMUM_COINS - coinBalance) / COINS_PER_USDT).toFixed(2)} USDT) to withdraw.
+                  </p>
+                  <Button variant="outline" className="mt-3 w-full gap-2" onClick={handleUpgradeInstead}>
+                    <TrendingUp className="w-4 h-4" />
+                    Upgrade Mining Instead
                   </Button>
                 </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground text-center">What would you like to do with your earnings?</p>
+
+                  {nearbyUpgrades && nearbyUpgrades.length > 0 && (
+                    <div className="bg-primary/10 border border-primary/20 rounded-xl p-3">
+                      <p className="text-xs text-primary font-medium">
+                        💡 Upgrade your mining power instead and earn even faster!
+                      </p>
+                      {nearbyUpgrades.slice(0, 1).map(u => (
+                        <p key={u.id} className="text-xs text-muted-foreground mt-1">
+                          "{u.name}" — {u.coinCost?.toLocaleString()} coins (${((u.coinCost ?? 0) / COINS_PER_USDT).toFixed(2)} USDT)
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleUpgradeInstead}
+                    className="w-full rounded-xl p-4 text-left border border-primary/30 hover:border-primary/60 transition-colors flex items-center gap-3"
+                    style={{ background: "linear-gradient(135deg, rgba(124,58,237,0.08), rgba(91,33,182,0.08))" }}
+                    data-testid="button-upgrade-instead"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-primary/20 flex items-center justify-center flex-shrink-0">
+                      <TrendingUp className="w-4 h-4 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-foreground">Upgrade Instead</p>
+                      <p className="text-xs text-muted-foreground">Boost mining power for higher earnings</p>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setStep("form")}
+                    className="w-full rounded-xl p-4 text-left border border-emerald-500/30 hover:border-emerald-500/60 transition-colors flex items-center gap-3"
+                    style={{ background: "linear-gradient(135deg, rgba(16,185,129,0.08), rgba(5,150,105,0.08))" }}
+                    data-testid="button-withdraw-now"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                      <ArrowUpRight className="w-4 h-4 text-emerald-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-foreground">Withdraw Now</p>
+                      <p className="text-xs text-muted-foreground">Transfer up to ${maxUsdt.toFixed(2)} USDT to your wallet</p>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 2: Withdrawal form */}
+          {step === "form" && (
+            <div className="space-y-4 pt-2">
+              <div className="bg-muted rounded-xl px-4 py-3 flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Available to withdraw</span>
+                <span className="text-sm font-bold text-foreground">{coinBalance.toFixed(0)} coins (${usdtValue.toFixed(2)} USDT)</span>
               </div>
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1">Payment Tag (Required)</p>
-                <div className="flex gap-2">
-                  <div className="flex-1 bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 text-sm font-mono font-bold text-primary">
-                    {withdrawalResult?.paymentTag}
+
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onWithdraw)} className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="walletAddress"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>USDT Wallet Address (TRC20)</FormLabel>
+                        <FormControl>
+                          <Input placeholder="TRC20 address (TRX...)" data-testid="input-wallet-address" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="amount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Amount (USDT)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min={MINIMUM_USDT}
+                            max={maxUsdt}
+                            step="0.01"
+                            placeholder={`Min $${MINIMUM_USDT}`}
+                            data-testid="input-amount"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                        <p className="text-xs text-muted-foreground">
+                          Deducts {requiredCoins.toLocaleString()} coins from your balance
+                        </p>
+                      </FormItem>
+                    )}
+                  />
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" className="flex-1" onClick={() => setStep("choose")}>
+                      Back
+                    </Button>
+                    <Button type="submit" className="flex-1" disabled={requestWithdrawal.isPending} data-testid="button-confirm-withdraw">
+                      {requestWithdrawal.isPending ? "Processing..." : "Submit"}
+                    </Button>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => copyToClipboard(withdrawalResult?.paymentTag ?? "", "Payment tag")}>
-                    <Copy className="w-3.5 h-3.5" />
-                  </Button>
+                </form>
+              </Form>
+            </div>
+          )}
+
+          {/* Step 3: Result */}
+          {step === "result" && withdrawalResult && (
+            <div className="space-y-4 pt-2">
+              <div className="text-center">
+                <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
+                  <CheckCircle2 className="w-7 h-7 text-emerald-500" />
+                </div>
+                <p className="font-semibold text-foreground">Withdrawal Request Submitted</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Send <strong>${withdrawalResult.amount} USDT</strong> to the address below with your payment tag.
+                </p>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">USDT Address (TRC20)</p>
+                  <div className="flex gap-2">
+                    <div className="flex-1 bg-muted rounded-lg px-3 py-2 text-xs font-mono break-all">
+                      {withdrawalResult.usdtAddress}
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => copyToClipboard(withdrawalResult.usdtAddress, "USDT address")}>
+                      <Copy className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Payment Tag (Required)</p>
+                  <div className="flex gap-2">
+                    <div className="flex-1 bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 text-sm font-mono font-bold text-primary">
+                      {withdrawalResult.paymentTag}
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => copyToClipboard(withdrawalResult.paymentTag, "Payment tag")}>
+                      <Copy className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
                 </div>
               </div>
+              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
+                <p className="text-xs text-yellow-600 dark:text-yellow-400">
+                  Always include your payment tag in the transaction memo. Without it we cannot process your withdrawal.
+                </p>
+              </div>
+              <Button className="w-full" onClick={closeDialog}>Done</Button>
             </div>
-            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
-              <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                Important: Always include your payment tag in the transaction memo/note. Without it, we cannot identify your payment and process your withdrawal.
-              </p>
-            </div>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
