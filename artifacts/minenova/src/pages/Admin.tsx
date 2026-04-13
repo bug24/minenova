@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -487,7 +487,7 @@ function UsersTab({ secret }: { secret: string }) {
 
 function WithdrawalsTab({ secret }: { secret: string }) {
   const { toast } = useToast();
-  const h = { "x-admin-secret": secret, "Content-Type": "application/json" };
+  const h = useMemo(() => ({ "x-admin-secret": secret, "Content-Type": "application/json" }), [secret]);
 
   // Stats
   const [stats, setStats] = useState<WithdrawalStats | null>(null);
@@ -517,7 +517,7 @@ function WithdrawalsTab({ secret }: { secret: string }) {
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then((d: WithdrawalStats) => { setStats(d); setStatsLoading(false); })
       .catch(() => { toast({ variant: "destructive", title: "Failed to load withdrawal stats" }); setStatsLoading(false); });
-  }, [secret]);
+  }, [h, toast]);
 
   const loadList = useCallback((q: string, f: string) => {
     setLoading(true);
@@ -528,7 +528,7 @@ function WithdrawalsTab({ secret }: { secret: string }) {
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then((d: Withdrawal[]) => { setItems(Array.isArray(d) ? d : []); setLoading(false); })
       .catch(() => { toast({ variant: "destructive", title: "Failed to load withdrawals" }); setLoading(false); });
-  }, [secret]);
+  }, [h, toast]);
 
   const loadMinWithdrawal = useCallback(() => {
     setMinWdLoading(true);
@@ -536,7 +536,7 @@ function WithdrawalsTab({ secret }: { secret: string }) {
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then((d: Settings) => { setMinWithdrawal(d.min_withdrawal_usdt ?? "5"); setMinWdLoading(false); })
       .catch(() => { toast({ variant: "destructive", title: "Failed to load settings" }); setMinWdLoading(false); });
-  }, [secret]);
+  }, [h, toast]);
 
   useEffect(() => { loadStats(); loadMinWithdrawal(); }, [loadStats, loadMinWithdrawal]);
 
@@ -648,9 +648,9 @@ function WithdrawalsTab({ secret }: { secret: string }) {
             <p className="text-xs text-muted-foreground">USDT refunded</p>
           </div>
           <div className="bg-card border border-card-border rounded-xl p-3 space-y-0.5">
-            <p className="text-xs text-muted-foreground font-medium">Platform net paid</p>
-            <p className="text-lg font-bold text-purple-400">${stats.approvedTotal.toFixed(2)}</p>
-            <p className="text-xs text-muted-foreground">USDT total</p>
+            <p className="text-xs text-muted-foreground font-medium">Total volume</p>
+            <p className="text-lg font-bold">${(stats.pendingValue + stats.approvedTotal + stats.rejectedTotal).toFixed(2)}</p>
+            <p className="text-xs text-muted-foreground">USDT all-time requested</p>
           </div>
         </div>
       )}
