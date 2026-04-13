@@ -194,7 +194,7 @@ export default function Upgrades() {
             <DialogTitle>{purchaseResult?.usdtAddress ? "Complete Your Payment" : "Upgrade Activated"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            <p className="text-sm text-muted-foreground">{purchaseResult?.message}</p>
+            <p className="text-sm text-muted-foreground">{purchaseResult?.message} TRC20 network</p>
             {purchaseResult?.usdtAddress && (
               <div className="space-y-3">
                 <div>
