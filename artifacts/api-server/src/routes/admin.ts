@@ -457,7 +457,7 @@ router.put("/admin/withdrawals/:id/note", requireAdmin, async (req, res): Promis
 router.post("/admin/withdrawals/:id/approve", requireAdmin, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid withdrawal ID" }); return; }
-  const schema = z.object({ adminNote: z.string().optional() });
+  const schema = z.object({ adminNote: z.string().nullable().optional() });
   const data = schema.safeParse(req.body);
   if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
 
@@ -477,7 +477,7 @@ router.post("/admin/withdrawals/:id/approve", requireAdmin, async (req, res): Pr
 router.post("/admin/withdrawals/:id/reject", requireAdmin, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid withdrawal ID" }); return; }
-  const schema = z.object({ adminNote: z.string().optional() });
+  const schema = z.object({ adminNote: z.string().nullable().optional() });
   const data = schema.safeParse(req.body);
   if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
 
