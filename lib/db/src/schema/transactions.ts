@@ -12,6 +12,7 @@ export const transactionsTable = pgTable("transactions", {
   walletAddress: text("wallet_address"),
   usdtAddress: text("usdt_address"),
   paymentTag: text("payment_tag"),
+  adminNote: text("admin_note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
