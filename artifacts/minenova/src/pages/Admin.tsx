@@ -977,9 +977,14 @@ function ReferralsTab({ secret }: { secret: string }) {
   const handleToggleDisabled = async () => {
     if (!cfg) return;
     const newVal = !cfg.referralDisabled;
-    await apiFetch("/admin/referral-config", { method: "PUT", headers: h, body: JSON.stringify({ referralDisabled: newVal }) });
-    setCfg({ ...cfg, referralDisabled: newVal });
-    toast({ title: newVal ? "Referral program disabled" : "Referral program enabled" });
+    try {
+      const res = await apiFetch("/admin/referral-config", { method: "PUT", headers: h, body: JSON.stringify({ referralDisabled: newVal }) });
+      if (!res.ok) throw new Error();
+      setCfg({ ...cfg, referralDisabled: newVal });
+      toast({ title: newVal ? "Referral program disabled" : "Referral program enabled" });
+    } catch {
+      toast({ title: "Failed to update referral program status", variant: "destructive" });
+    }
   };
 
   const handleSaveCfg = async () => {
@@ -989,19 +994,31 @@ function ReferralsTab({ secret }: { secret: string }) {
     if (isNaN(bonusCoins) || bonusCoins < 0) { toast({ title: "Invalid bonus coins value", variant: "destructive" }); return; }
     if (isNaN(commissionPct) || commissionPct < 0 || commissionPct > 100) { toast({ title: "Commission must be 0–100", variant: "destructive" }); return; }
     setCfgSaving(true);
-    await apiFetch("/admin/referral-config", { method: "PUT", headers: h, body: JSON.stringify({ bonusCoins, commissionPct }) });
-    setCfg({ ...cfg, bonusCoins, commissionPct });
-    setCfgSaving(false);
-    toast({ title: "Referral settings saved" });
+    try {
+      const res = await apiFetch("/admin/referral-config", { method: "PUT", headers: h, body: JSON.stringify({ bonusCoins, commissionPct }) });
+      if (!res.ok) throw new Error();
+      setCfg({ ...cfg, bonusCoins, commissionPct });
+      toast({ title: "Referral settings saved" });
+    } catch {
+      toast({ title: "Failed to save referral settings", variant: "destructive" });
+    } finally {
+      setCfgSaving(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
     setDeleting(id);
-    await apiFetch(`/admin/referrals/${id}`, { method: "DELETE", headers: h });
-    setDeleting(null);
-    toast({ title: "Referral relationship removed" });
-    loadRelationships(search);
-    loadAnalytics();
+    try {
+      const res = await apiFetch(`/admin/referrals/${id}`, { method: "DELETE", headers: h });
+      if (!res.ok) throw new Error();
+      toast({ title: "Referral relationship removed" });
+      loadRelationships(search);
+      loadAnalytics();
+    } catch {
+      toast({ title: "Failed to remove referral relationship", variant: "destructive" });
+    } finally {
+      setDeleting(null);
+    }
   };
 
   const liveBonusUsdt = (() => {
