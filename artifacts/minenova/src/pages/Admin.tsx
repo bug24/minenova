@@ -9,6 +9,7 @@ import {
   Users, Wallet, ArrowDownCircle, BarChart3, Cpu, Share2, Package, Settings, RefreshCw,
   ShieldOff, Shield, CircleDollarSign, LayoutDashboard, type LucideIcon,
   Sun, Moon, UserCircle, Copy, RotateCcw, Activity, ChevronRight,
+  Play, Zap, AlertTriangle, ToggleLeft, ToggleRight, Menu, ChevronLeft,
 } from "lucide-react";
 
 function apiFetch(path: string, options?: RequestInit) {
@@ -34,6 +35,11 @@ interface TxRow {
 interface MiningSession {
   id: number; userId: number; username: string | null; hashRate: number;
   boostMultiplier: number; startedAt: string; endsAt: string;
+  miningLevel: number | null; coinRate: number; effectiveBaseRate: number; hasRateOverride: boolean;
+}
+interface MiningConfig {
+  baseCoinRate: number; sessionDurationHours: number; maintenanceMode: boolean;
+  userOverrides: { userId: number; rate: number; username: string }[];
 }
 interface Referral {
   id: number; referrerId: number; referredId: number;
@@ -621,62 +627,270 @@ function TransactionsTab({ secret }: { secret: string }) {
 
 function MiningTab({ secret }: { secret: string }) {
   const { toast } = useToast();
-  const [sessions, setSessions] = useState<MiningSession[]>([]);
-  const [loading, setLoading] = useState(true);
   const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const res = await apiFetch("/admin/mining-sessions", { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
+  // Sessions state
+  const [sessions, setSessions] = useState<MiningSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+
+  // Config state
+  const [config, setConfig] = useState<MiningConfig | null>(null);
+  const [configLoading, setConfigLoading] = useState(true);
+  const [editRate, setEditRate] = useState("");
+  const [editDuration, setEditDuration] = useState("");
+  const [savingConfig, setSavingConfig] = useState(false);
+
+  // Start mining for user
+  const [startUserId, setStartUserId] = useState("");
+  const [starting, setStarting] = useState(false);
+
+  // User rate override
+  const [overrideUserId, setOverrideUserId] = useState("");
+  const [overrideRate, setOverrideRate] = useState("");
+  const [savingOverride, setSavingOverride] = useState(false);
+
+  const loadSessions = useCallback(async () => {
+    setSessionsLoading(true);
+    const res = await apiFetch("/admin/mining-sessions", { headers });
     const data = await res.json();
     setSessions(Array.isArray(data) ? data : []);
-    setLoading(false);
+    setSessionsLoading(false);
   }, [secret]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadConfig = useCallback(async () => {
+    setConfigLoading(true);
+    const res = await apiFetch("/admin/mining-config", { headers });
+    if (res.ok) {
+      const data: MiningConfig = await res.json();
+      setConfig(data);
+      setEditRate(data.baseCoinRate.toString());
+      setEditDuration(data.sessionDurationHours.toString());
+    }
+    setConfigLoading(false);
+  }, [secret]);
 
-  const handleStop = async (id: number, username: string | null) => {
-    if (!confirm(`Force-stop ${username ?? "this user"}'s mining session?`)) return;
-    const res = await apiFetch(`/admin/mining-sessions/${id}/stop`, { method: "POST", headers });
-    if (res.ok) { toast({ title: "Session stopped" }); load(); }
-    else toast({ variant: "destructive", title: "Failed to stop session" });
-  };
+  useEffect(() => { loadSessions(); loadConfig(); }, [loadSessions, loadConfig]);
 
   const timeLeft = (endsAt: string) => {
     const ms = new Date(endsAt).getTime() - Date.now();
     if (ms <= 0) return "Complete";
     const h = Math.floor(ms / 3600000);
     const m = Math.floor((ms % 3600000) / 60000);
-    return `${h}h ${m}m left`;
+    return `${h}h ${m}m`;
+  };
+
+  const handleStop = async (id: number, username: string | null) => {
+    if (!confirm(`Stop ${username ?? "this user"}'s session? Coins earned so far will be preserved.`)) return;
+    const res = await apiFetch(`/admin/mining-sessions/${id}/stop`, { method: "POST", headers });
+    if (res.ok) { toast({ title: "Session stopped" }); loadSessions(); }
+    else toast({ variant: "destructive", title: "Failed to stop session" });
+  };
+
+  const handleReset = async (id: number, username: string | null) => {
+    if (!confirm(`Reset ${username ?? "this user"}'s session? All pending coins will be forfeited.`)) return;
+    const res = await apiFetch(`/admin/mining-sessions/${id}/reset`, { method: "POST", headers });
+    if (res.ok) { toast({ title: "Session reset — coins forfeited" }); loadSessions(); }
+    else toast({ variant: "destructive", title: "Failed to reset session" });
+  };
+
+  const handleSaveConfig = async () => {
+    const rate = parseFloat(editRate);
+    const duration = parseInt(editDuration);
+    if (isNaN(rate) || rate <= 0) { toast({ variant: "destructive", title: "Invalid coin rate" }); return; }
+    if (isNaN(duration) || duration <= 0) { toast({ variant: "destructive", title: "Invalid duration" }); return; }
+    setSavingConfig(true);
+    const res = await apiFetch("/admin/mining-config", { method: "PUT", headers, body: JSON.stringify({ baseCoinRate: rate, sessionDurationHours: duration }) });
+    if (res.ok) { toast({ title: "Mining config saved" }); loadConfig(); }
+    else toast({ variant: "destructive", title: "Failed to save config" });
+    setSavingConfig(false);
+  };
+
+  const handleToggleMaintenance = async () => {
+    if (!config) return;
+    const newVal = !config.maintenanceMode;
+    const res = await apiFetch("/admin/mining-config", { method: "PUT", headers, body: JSON.stringify({ maintenanceMode: newVal }) });
+    if (res.ok) { toast({ title: newVal ? "Maintenance mode ON — mining disabled" : "Maintenance mode OFF — mining enabled" }); loadConfig(); }
+    else toast({ variant: "destructive", title: "Failed to update maintenance mode" });
+  };
+
+  const handleStartMining = async () => {
+    const userId = parseInt(startUserId);
+    if (isNaN(userId) || userId <= 0) { toast({ variant: "destructive", title: "Enter a valid User ID" }); return; }
+    setStarting(true);
+    const res = await apiFetch("/admin/mining/start-for-user", { method: "POST", headers, body: JSON.stringify({ userId }) });
+    if (res.ok) { toast({ title: `Mining started for user #${userId}` }); setStartUserId(""); loadSessions(); }
+    else {
+      const data = await res.json().catch(() => ({}));
+      toast({ variant: "destructive", title: data.error ?? "Failed to start mining" });
+    }
+    setStarting(false);
+  };
+
+  const handleSaveOverride = async () => {
+    const userId = parseInt(overrideUserId);
+    const rate = parseFloat(overrideRate);
+    if (isNaN(userId) || userId <= 0) { toast({ variant: "destructive", title: "Enter a valid User ID" }); return; }
+    if (isNaN(rate) || rate <= 0) { toast({ variant: "destructive", title: "Enter a valid rate" }); return; }
+    setSavingOverride(true);
+    const res = await apiFetch(`/admin/users/${userId}/mining-rate`, { method: "PUT", headers, body: JSON.stringify({ rate }) });
+    if (res.ok) { toast({ title: `Rate override set for user #${userId}` }); setOverrideUserId(""); setOverrideRate(""); loadConfig(); }
+    else toast({ variant: "destructive", title: "Failed to set rate override" });
+    setSavingOverride(false);
+  };
+
+  const handleRemoveOverride = async (userId: number) => {
+    const res = await apiFetch(`/admin/users/${userId}/mining-rate`, { method: "PUT", headers, body: JSON.stringify({ rate: null }) });
+    if (res.ok) { toast({ title: "Override removed" }); loadConfig(); }
+    else toast({ variant: "destructive", title: "Failed to remove override" });
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <p className="text-sm text-muted-foreground">{sessions.length} active session{sessions.length !== 1 ? "s" : ""}</p>
-        <Button variant="outline" size="sm" onClick={load}><RefreshCw className="w-3.5 h-3.5" /></Button>
-      </div>
-      {loading ? <p className="text-muted-foreground text-sm text-center py-8">Loading…</p> : (
-        <div className="space-y-2">
-          {sessions.length === 0 && <p className="text-muted-foreground text-sm text-center py-8">No active sessions</p>}
-          {sessions.map(s => (
-            <div key={s.id} className="bg-card border border-card-border rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
-              <div className="space-y-0.5">
-                <span className="font-semibold">{s.username ?? `User #${s.userId}`}</span>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span>Hash rate: {s.hashRate}</span>
-                  {s.boostMultiplier > 1 && <Badge className="text-xs border bg-purple-500/20 text-purple-400 border-purple-500/30">{s.boostMultiplier}x boost</Badge>}
-                  <span>{timeLeft(s.endsAt)}</span>
-                </div>
-                <p className="text-xs text-muted-foreground">Started: {fmt(s.startedAt)}</p>
-              </div>
-              <Button size="sm" variant="outline" className="text-red-400 border-red-500/30 text-xs h-7 gap-1" onClick={() => handleStop(s.id, s.username)}>
-                <X className="w-3 h-3" /> Force Stop
-              </Button>
-            </div>
-          ))}
+    <div className="space-y-6 max-w-4xl">
+
+      {/* Global Config */}
+      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold flex items-center gap-2"><Zap className="w-4 h-4 text-primary" /> Global Mining Config</h3>
+          {configLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
         </div>
-      )}
+
+        {/* Maintenance mode */}
+        <div className="flex items-center justify-between bg-muted/30 rounded-xl px-4 py-3">
+          <div>
+            <p className="font-medium text-sm">Mining System</p>
+            <p className="text-xs text-muted-foreground">{config?.maintenanceMode ? "Disabled — users cannot start new sessions" : "Active — users can mine normally"}</p>
+          </div>
+          <button onClick={handleToggleMaintenance} className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${config?.maintenanceMode ? "text-red-400" : "text-emerald-400"}`}>
+            {config?.maintenanceMode
+              ? <><ToggleLeft className="w-7 h-7" /> Disabled</>
+              : <><ToggleRight className="w-7 h-7" /> Enabled</>}
+          </button>
+        </div>
+
+        {config?.maintenanceMode && (
+          <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-2 text-red-400 text-sm">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            Maintenance mode is ON — no new mining sessions can be started
+          </div>
+        )}
+
+        {/* Rate and Duration */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Base Coins / Hour</label>
+            <Input value={editRate} onChange={e => setEditRate(e.target.value)} placeholder="0.5" type="number" min="0.001" step="0.1" />
+            <p className="text-xs text-muted-foreground">Per mining level (Lv1 × rate, Lv2 × 2×rate…)</p>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Session Duration (hours)</label>
+            <Input value={editDuration} onChange={e => setEditDuration(e.target.value)} placeholder="12" type="number" min="1" step="1" />
+            <p className="text-xs text-muted-foreground">How long a single mining session lasts</p>
+          </div>
+        </div>
+        <Button size="sm" onClick={handleSaveConfig} disabled={savingConfig} className="gap-1.5">
+          <Save className="w-3.5 h-3.5" /> {savingConfig ? "Saving…" : "Save Config"}
+        </Button>
+      </div>
+
+      {/* Active Sessions */}
+      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold flex items-center gap-2"><Activity className="w-4 h-4 text-primary" /> Active Sessions
+            <Badge className="text-xs border bg-muted text-muted-foreground border-border">{sessions.length}</Badge>
+          </h3>
+          <Button variant="outline" size="sm" onClick={loadSessions}><RefreshCw className="w-3.5 h-3.5" /></Button>
+        </div>
+
+        {sessionsLoading ? (
+          <p className="text-muted-foreground text-sm text-center py-6">Loading…</p>
+        ) : sessions.length === 0 ? (
+          <p className="text-muted-foreground text-sm text-center py-6">No active mining sessions</p>
+        ) : (
+          <div className="space-y-2">
+            {sessions.map(s => (
+              <div key={s.id} className="border border-border rounded-xl p-4">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold">{s.username ?? `User #${s.userId}`}</span>
+                      <Badge className="text-xs border bg-muted text-muted-foreground border-border">Lv {s.miningLevel ?? 1}</Badge>
+                      {s.boostMultiplier > 1 && <Badge className="text-xs border bg-purple-500/20 text-purple-400 border-purple-500/30"><Zap className="w-2.5 h-2.5 mr-0.5 inline" />{s.boostMultiplier}x boost</Badge>}
+                      {s.hasRateOverride && <Badge className="text-xs border bg-orange-500/20 text-orange-400 border-orange-500/30">custom rate</Badge>}
+                    </div>
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                      <span>Rate: <span className="text-foreground font-mono">{s.coinRate.toFixed(3)}</span> coins/hr</span>
+                      <span>Hash: <span className="text-foreground font-mono">{s.hashRate}</span> H/s</span>
+                      <span>⏱ <span className="text-foreground">{timeLeft(s.endsAt)}</span> left</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Started {fmt(s.startedAt)} · Ends {fmt(s.endsAt)}</p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <Button size="sm" variant="outline" className="text-yellow-400 border-yellow-500/30 text-xs h-7 gap-1" onClick={() => handleStop(s.id, s.username)}>
+                      <X className="w-3 h-3" /> Stop
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-red-400 border-red-500/30 text-xs h-7 gap-1" onClick={() => handleReset(s.id, s.username)}>
+                      <RotateCcw className="w-3 h-3" /> Reset
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Start Mining for User */}
+      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+        <h3 className="font-bold flex items-center gap-2"><Play className="w-4 h-4 text-primary" /> Start Mining for User</h3>
+        <p className="text-xs text-muted-foreground">Admin can force-start a 12-hour (or configured duration) mining session for any user by their ID.</p>
+        <div className="flex gap-3">
+          <Input
+            value={startUserId}
+            onChange={e => setStartUserId(e.target.value)}
+            placeholder="User ID (e.g. 42)"
+            type="number"
+            className="max-w-xs"
+            onKeyDown={e => e.key === "Enter" && handleStartMining()}
+          />
+          <Button onClick={handleStartMining} disabled={starting || !startUserId} className="gap-1.5">
+            <Play className="w-3.5 h-3.5" /> {starting ? "Starting…" : "Start Mining"}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">You can find a user's ID in the Users tab.</p>
+      </div>
+
+      {/* User Rate Overrides */}
+      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+        <h3 className="font-bold flex items-center gap-2"><Zap className="w-4 h-4 text-orange-400" /> User-Specific Rate Overrides</h3>
+        <p className="text-xs text-muted-foreground">Override the global mining rate for a specific user. Overrides apply on future sessions and override calculations.</p>
+        <div className="flex gap-3 flex-wrap">
+          <Input value={overrideUserId} onChange={e => setOverrideUserId(e.target.value)} placeholder="User ID" type="number" className="w-36" />
+          <Input value={overrideRate} onChange={e => setOverrideRate(e.target.value)} placeholder="Rate (coins/hr)" type="number" min="0.001" step="0.1" className="w-48" />
+          <Button size="sm" onClick={handleSaveOverride} disabled={savingOverride || !overrideUserId || !overrideRate} className="gap-1.5">
+            <Save className="w-3.5 h-3.5" /> {savingOverride ? "Saving…" : "Set Override"}
+          </Button>
+        </div>
+
+        {config && config.userOverrides.length > 0 && (
+          <div className="space-y-2 mt-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Current Overrides</p>
+            {config.userOverrides.map(o => (
+              <div key={o.userId} className="flex items-center justify-between bg-muted/30 rounded-xl px-4 py-2.5 text-sm">
+                <div>
+                  <span className="font-medium">{o.username}</span>
+                  <span className="text-muted-foreground text-xs ml-2">(ID: {o.userId})</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-orange-400">{o.rate} coins/hr</span>
+                  <Button size="sm" variant="ghost" className="text-red-400 h-6 w-6 p-0" onClick={() => handleRemoveOverride(o.userId)}>
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -968,6 +1182,7 @@ export default function Admin() {
   const [authed, setAuthed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<Tab>("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -1044,76 +1259,113 @@ export default function Admin() {
     { id: "users", label: "Users", icon: Users },
     { id: "withdrawals", label: "Withdrawals", icon: Wallet },
     { id: "transactions", label: "Transactions", icon: BarChart3 },
-    { id: "mining", label: "Mining", icon: Cpu },
+    { id: "mining", label: "Mining Control", icon: Cpu },
     { id: "referrals", label: "Referrals", icon: Share2 },
     { id: "upgrades", label: "Upgrades", icon: Package },
     { id: "settings", label: "Settings", icon: Settings },
     { id: "share", label: "Share Links", icon: ArrowDownCircle },
   ];
 
+  const currentTab = TABS.find(t => t.id === tab);
+
   return (
-    <div className="min-h-screen bg-background">
-      <div className="border-b border-border sticky top-0 bg-background z-10">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <h1 className="text-lg font-black font-serif shrink-0">Admin Panel</h1>
-          <div className="flex gap-2 shrink-0">
-            <Button variant="ghost" size="sm" className="w-8 h-8 p-0" onClick={toggleTheme} title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
-              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </Button>
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowChangePassword(v => !v)}>
-              <KeyRound className="w-3.5 h-3.5" /> Password
-            </Button>
-            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground text-xs" onClick={handleLogout}>
-              <LogOut className="w-3.5 h-3.5" /> Logout
-            </Button>
-          </div>
+    <div className="min-h-screen bg-background flex">
+      {/* Left Sidebar */}
+      <aside className={`shrink-0 border-r border-border bg-background flex flex-col h-screen sticky top-0 z-20 transition-all duration-200 ${sidebarOpen ? "w-52" : "w-14"}`}>
+        {/* Logo / Toggle */}
+        <div className="flex items-center justify-between px-3 py-4 border-b border-border">
+          {sidebarOpen && <span className="text-sm font-black font-serif truncate">Admin Panel</span>}
+          <Button variant="ghost" size="sm" className="w-8 h-8 p-0 shrink-0 ml-auto" onClick={() => setSidebarOpen(v => !v)}>
+            {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+          </Button>
         </div>
 
-        {showChangePassword && (
-          <div className="max-w-6xl mx-auto px-4 pb-3">
-            <div className="bg-card border border-card-border rounded-xl p-4 space-y-3">
-              <div className="flex gap-3 flex-wrap">
-                <div className="relative flex-1 min-w-[160px]">
-                  <Input type={showNewPw ? "text" : "password"} placeholder="New password (min. 8 chars)" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="pr-10" />
-                  <button type="button" onClick={() => setShowNewPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                    {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                <Input type={showNewPw ? "text" : "password"} placeholder="Confirm password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="flex-1 min-w-[160px]" />
-                <Button size="sm" onClick={handleChangePassword} disabled={changingPw || !newPassword || !confirmPassword} className="gap-1">
-                  <Save className="w-3 h-3" /> {changingPw ? "Saving…" : "Save"}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => { setShowChangePassword(false); setNewPassword(""); setConfirmPassword(""); }}><X className="w-3 h-3" /></Button>
-              </div>
-              {newPassword && confirmPassword && newPassword !== confirmPassword && <p className="text-xs text-destructive">Passwords don't match</p>}
-            </div>
-          </div>
-        )}
-
-        <div className="max-w-6xl mx-auto px-4 flex gap-1 overflow-x-auto pb-0 scrollbar-none">
+        {/* Nav items */}
+        <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
           {TABS.map(t => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${tab === t.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              title={!sidebarOpen ? t.label : undefined}
+              className={`w-full flex items-center gap-3 px-2.5 py-2.5 rounded-lg text-sm font-medium transition-colors ${tab === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"} ${!sidebarOpen ? "justify-center" : ""}`}
             >
-              <t.icon className="w-3.5 h-3.5" />
-              {t.label}
+              <t.icon className="w-4 h-4 shrink-0" />
+              {sidebarOpen && <span className="truncate">{t.label}</span>}
             </button>
           ))}
-        </div>
-      </div>
+        </nav>
 
-      <div className="max-w-6xl mx-auto px-4 py-6">
-        {tab === "dashboard" && <DashboardTab secret={secret} />}
-        {tab === "users" && <UsersTab secret={secret} />}
-        {tab === "withdrawals" && <WithdrawalsTab secret={secret} />}
-        {tab === "transactions" && <TransactionsTab secret={secret} />}
-        {tab === "mining" && <MiningTab secret={secret} />}
-        {tab === "referrals" && <ReferralsTab secret={secret} />}
-        {tab === "upgrades" && <UpgradesTab secret={secret} />}
-        {tab === "settings" && <SettingsTab secret={secret} />}
-        {tab === "share" && <ShareMessagesTab secret={secret} />}
+        {/* Footer actions */}
+        <div className={`p-2 border-t border-border space-y-0.5 ${!sidebarOpen ? "flex flex-col items-center" : ""}`}>
+          <button
+            onClick={toggleTheme}
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors w-full ${!sidebarOpen ? "justify-center" : ""}`}
+          >
+            {theme === "dark" ? <Sun className="w-4 h-4 shrink-0" /> : <Moon className="w-4 h-4 shrink-0" />}
+            {sidebarOpen && <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>}
+          </button>
+          <button
+            onClick={() => setShowChangePassword(v => !v)}
+            title="Change password"
+            className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors w-full ${!sidebarOpen ? "justify-center" : ""}`}
+          >
+            <KeyRound className="w-4 h-4 shrink-0" />
+            {sidebarOpen && <span>Change Password</span>}
+          </button>
+          <button
+            onClick={handleLogout}
+            title="Logout"
+            className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-red-400 hover:bg-red-500/10 transition-colors w-full ${!sidebarOpen ? "justify-center" : ""}`}
+          >
+            <LogOut className="w-4 h-4 shrink-0" />
+            {sidebarOpen && <span>Logout</span>}
+          </button>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* Top bar */}
+        <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-3 flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {currentTab && <currentTab.icon className="w-4 h-4 text-primary" />}
+            <h2 className="font-bold">{currentTab?.label}</h2>
+          </div>
+        </div>
+
+        {/* Change password panel */}
+        {showChangePassword && (
+          <div className="px-6 py-3 border-b border-border bg-muted/30">
+            <div className="flex gap-3 flex-wrap max-w-2xl">
+              <div className="relative flex-1 min-w-[160px]">
+                <Input type={showNewPw ? "text" : "password"} placeholder="New password (min. 8 chars)" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="pr-10" />
+                <button type="button" onClick={() => setShowNewPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <Input type={showNewPw ? "text" : "password"} placeholder="Confirm password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="flex-1 min-w-[160px]" />
+              <Button size="sm" onClick={handleChangePassword} disabled={changingPw || !newPassword || !confirmPassword} className="gap-1">
+                <Save className="w-3 h-3" /> {changingPw ? "Saving…" : "Save"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => { setShowChangePassword(false); setNewPassword(""); setConfirmPassword(""); }}><X className="w-3 h-3" /></Button>
+            </div>
+            {newPassword && confirmPassword && newPassword !== confirmPassword && <p className="text-xs text-destructive mt-2">Passwords don't match</p>}
+          </div>
+        )}
+
+        {/* Tab content */}
+        <div className="flex-1 px-6 py-6 overflow-auto">
+          {tab === "dashboard" && <DashboardTab secret={secret} />}
+          {tab === "users" && <UsersTab secret={secret} />}
+          {tab === "withdrawals" && <WithdrawalsTab secret={secret} />}
+          {tab === "transactions" && <TransactionsTab secret={secret} />}
+          {tab === "mining" && <MiningTab secret={secret} />}
+          {tab === "referrals" && <ReferralsTab secret={secret} />}
+          {tab === "upgrades" && <UpgradesTab secret={secret} />}
+          {tab === "settings" && <SettingsTab secret={secret} />}
+          {tab === "share" && <ShareMessagesTab secret={secret} />}
+        </div>
       </div>
     </div>
   );

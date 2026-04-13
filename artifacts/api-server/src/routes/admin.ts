@@ -48,6 +48,8 @@ async function seedAdminConfig() {
     referral_bonus_coins: "250",
     referral_commission_pct: "7",
     maintenance_mode: "false",
+    global_base_coins_per_hour: "0.5",
+    session_duration_hours: "12",
   };
   for (const [key, value] of Object.entries(defaults)) {
     const [existing] = await db
@@ -507,23 +509,157 @@ router.get("/admin/mining-sessions", requireAdmin, async (_req, res): Promise<vo
       startedAt: miningSessionsTable.startedAt,
       endsAt: miningSessionsTable.endsAt,
       username: usersTable.username,
+      miningLevel: usersTable.miningLevel,
     })
     .from(miningSessionsTable)
     .leftJoin(usersTable, eq(miningSessionsTable.userId, usersTable.id))
     .where(and(eq(miningSessionsTable.isActive, true), isNull(miningSessionsTable.claimedAt)))
     .orderBy(desc(miningSessionsTable.startedAt));
 
-  res.json(rows.map(r => ({
-    ...r,
-    startedAt: r.startedAt.toISOString(),
-    endsAt: r.endsAt.toISOString(),
-  })));
+  // Get global base rate and per-user overrides
+  const [globalRateRow] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "global_base_coins_per_hour")).limit(1);
+  const globalBaseRate = globalRateRow ? parseFloat(globalRateRow.value) : 0.5;
+
+  const userIds = rows.map(r => r.userId);
+  let overrideMap: Record<number, number> = {};
+  if (userIds.length > 0) {
+    const overrides = await db.select().from(adminConfigTable).where(
+      sql`key = ANY(ARRAY[${sql.join(userIds.map(id => sql`${"user_rate_override_" + id}`), sql`, `)}])`
+    );
+    for (const o of overrides) {
+      const uid = parseInt(o.key.replace("user_rate_override_", ""));
+      overrideMap[uid] = parseFloat(o.value);
+    }
+  }
+
+  res.json(rows.map(r => {
+    const effectiveRate = overrideMap[r.userId] ?? globalBaseRate;
+    const coinRate = effectiveRate * (r.miningLevel ?? 1) * r.boostMultiplier;
+    return {
+      ...r,
+      coinRate: Math.round(coinRate * 1000) / 1000,
+      effectiveBaseRate: effectiveRate,
+      hasRateOverride: !!overrideMap[r.userId],
+      startedAt: r.startedAt.toISOString(),
+      endsAt: r.endsAt.toISOString(),
+    };
+  }));
 });
 
 router.post("/admin/mining-sessions/:id/stop", requireAdmin, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   await db.update(miningSessionsTable).set({ isActive: false, claimedAt: new Date() }).where(eq(miningSessionsTable.id, id));
   res.json({ success: true });
+});
+
+router.post("/admin/mining-sessions/:id/reset", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  await db.update(miningSessionsTable).set({ isActive: false, claimedAt: new Date(), coinsEarned: 0 }).where(eq(miningSessionsTable.id, id));
+  res.json({ success: true });
+});
+
+// ─── Mining Config ────────────────────────────────────────────────────────────
+
+router.get("/admin/mining-config", requireAdmin, async (_req, res): Promise<void> => {
+  const keys = ["global_base_coins_per_hour", "session_duration_hours", "maintenance_mode"];
+  const rows = await db.select().from(adminConfigTable).where(
+    sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`
+  );
+  const config: Record<string, string> = {};
+  for (const r of rows) config[r.key] = r.value;
+
+  const overrideRows = await db.select().from(adminConfigTable).where(
+    sql`key LIKE ${"user_rate_override_%"}`
+  );
+  const userOverrides = overrideRows.map(r => ({
+    userId: parseInt(r.key.replace("user_rate_override_", "")),
+    rate: parseFloat(r.value),
+  }));
+
+  // Enrich overrides with usernames
+  const overrideUserIds = userOverrides.map(o => o.userId);
+  let usernameMap: Record<number, string> = {};
+  if (overrideUserIds.length > 0) {
+    const users = await db.select({ id: usersTable.id, username: usersTable.username }).from(usersTable)
+      .where(sql`id = ANY(ARRAY[${sql.join(overrideUserIds.map(id => sql`${id}`), sql`, `)}])`);
+    for (const u of users) usernameMap[u.id] = u.username;
+  }
+
+  res.json({
+    baseCoinRate: parseFloat(config.global_base_coins_per_hour ?? "0.5"),
+    sessionDurationHours: parseInt(config.session_duration_hours ?? "12"),
+    maintenanceMode: config.maintenance_mode === "true",
+    userOverrides: userOverrides.map(o => ({ ...o, username: usernameMap[o.userId] ?? `#${o.userId}` })),
+  });
+});
+
+router.put("/admin/mining-config", requireAdmin, async (req, res): Promise<void> => {
+  const schema = z.object({
+    baseCoinRate: z.number().positive().optional(),
+    sessionDurationHours: z.number().int().positive().optional(),
+    maintenanceMode: z.boolean().optional(),
+  });
+  const data = schema.safeParse(req.body);
+  if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
+  if (data.data.baseCoinRate !== undefined) await upsertSetting("global_base_coins_per_hour", data.data.baseCoinRate.toString());
+  if (data.data.sessionDurationHours !== undefined) await upsertSetting("session_duration_hours", data.data.sessionDurationHours.toString());
+  if (data.data.maintenanceMode !== undefined) await upsertSetting("maintenance_mode", data.data.maintenanceMode.toString());
+  res.json({ success: true });
+});
+
+router.put("/admin/users/:id/mining-rate", requireAdmin, async (req, res): Promise<void> => {
+  const userId = parseInt(req.params.id);
+  const schema = z.object({ rate: z.number().positive().nullable() });
+  const data = schema.safeParse(req.body);
+  if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
+  if (data.data.rate === null) {
+    await db.delete(adminConfigTable).where(eq(adminConfigTable.key, `user_rate_override_${userId}`));
+  } else {
+    await upsertSetting(`user_rate_override_${userId}`, data.data.rate.toString());
+  }
+  res.json({ success: true });
+});
+
+router.post("/admin/mining/start-for-user", requireAdmin, async (req, res): Promise<void> => {
+  const schema = z.object({ userId: z.number().int() });
+  const data = schema.safeParse(req.body);
+  if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, data.data.userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+  const [activeSession] = await db.select().from(miningSessionsTable)
+    .where(and(eq(miningSessionsTable.userId, user.id), eq(miningSessionsTable.isActive, true), isNull(miningSessionsTable.claimedAt)))
+    .limit(1);
+  if (activeSession && new Date() < new Date(activeSession.endsAt)) {
+    res.status(400).json({ error: "User already has an active mining session" }); return;
+  }
+
+  const [durationRow] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "session_duration_hours")).limit(1);
+  const [globalRateRow] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "global_base_coins_per_hour")).limit(1);
+  const [userOverrideRow] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable)
+    .where(eq(adminConfigTable.key, `user_rate_override_${user.id}`)).limit(1);
+
+  const durationHours = parseInt(durationRow?.value ?? "12");
+  const baseRate = userOverrideRow ? parseFloat(userOverrideRow.value) : parseFloat(globalRateRow?.value ?? "0.5");
+
+  const now = new Date();
+  const endsAt = new Date(now.getTime() + durationHours * 60 * 60 * 1000);
+
+  const [session] = await db.insert(miningSessionsTable).values({
+    userId: user.id,
+    startedAt: now,
+    endsAt,
+    hashRate: Math.round(10 * user.miningLevel * baseRate / 0.5),
+    boostMultiplier: 1,
+    boostsUsedToday: 0,
+    isActive: true,
+  }).returning();
+
+  res.json({ success: true, session: { ...session, startedAt: session.startedAt.toISOString(), endsAt: session.endsAt.toISOString() } });
 });
 
 // ─── Referrals ────────────────────────────────────────────────────────────────

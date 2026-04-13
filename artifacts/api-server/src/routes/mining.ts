@@ -12,14 +12,29 @@ async function isMaintenanceModeEnabled(): Promise<boolean> {
 
 const router: IRouter = Router();
 
-const SESSION_DURATION_MS = 12 * 60 * 60 * 1000;
 const BASE_HASH_RATE = 10;
 const BASE_COINS_PER_HOUR = 0.5;
 
 const REFERRAL_BONUS_COINS = 250;
 const REFERRAL_COMMISSION_RATE = 0.07;
 
-function computeMiningStatus(session: typeof miningSessionsTable.$inferSelect | null, user: { miningLevel: number }) {
+async function getEffectiveBaseRate(userId: number): Promise<number> {
+  const [userOverride] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable)
+    .where(eq(adminConfigTable.key, `user_rate_override_${userId}`)).limit(1);
+  if (userOverride) return parseFloat(userOverride.value);
+  const [globalRate] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "global_base_coins_per_hour")).limit(1);
+  return globalRate ? parseFloat(globalRate.value) : BASE_COINS_PER_HOUR;
+}
+
+async function getSessionDurationMs(): Promise<number> {
+  const [row] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "session_duration_hours")).limit(1);
+  const hours = row ? parseInt(row.value) : 12;
+  return hours * 60 * 60 * 1000;
+}
+
+function computeMiningStatus(session: typeof miningSessionsTable.$inferSelect | null, user: { miningLevel: number }, baseRate = BASE_COINS_PER_HOUR) {
   const now = new Date();
 
   if (!session || !session.isActive) {
@@ -45,7 +60,7 @@ function computeMiningStatus(session: typeof miningSessionsTable.$inferSelect | 
   const boostActive = session.boostEndsAt && now < new Date(session.boostEndsAt);
   const multiplier = boostActive ? session.boostMultiplier : 1;
 
-  const coinsPerHour = BASE_COINS_PER_HOUR * user.miningLevel * multiplier;
+  const coinsPerHour = baseRate * user.miningLevel * multiplier;
   const accumulatedCoins = elapsedHours * coinsPerHour;
 
   return {
@@ -71,7 +86,8 @@ router.get("/mining/status", requireAuth, async (req, res): Promise<void> => {
     .orderBy(miningSessionsTable.startedAt)
     .limit(1);
 
-  res.json(GetMiningStatusResponse.parse(computeMiningStatus(session ?? null, user)));
+  const baseRate = await getEffectiveBaseRate(req.userId!);
+  res.json(GetMiningStatusResponse.parse(computeMiningStatus(session ?? null, user, baseRate)));
 });
 
 router.post("/mining/start", requireAuth, async (req, res): Promise<void> => {
@@ -97,7 +113,8 @@ router.post("/mining/start", requireAuth, async (req, res): Promise<void> => {
   }
 
   const now = new Date();
-  const endsAt = new Date(now.getTime() + SESSION_DURATION_MS);
+  const sessionDurationMs = await getSessionDurationMs();
+  const endsAt = new Date(now.getTime() + sessionDurationMs);
 
   const [session] = await db
     .insert(miningSessionsTable)
@@ -145,7 +162,8 @@ router.post("/mining/start", requireAuth, async (req, res): Promise<void> => {
     });
   }
 
-  res.json(StartMiningResponse.parse(computeMiningStatus(session, user)));
+  const baseRate = await getEffectiveBaseRate(req.userId!);
+  res.json(StartMiningResponse.parse(computeMiningStatus(session, user, baseRate)));
 });
 
 router.post("/mining/claim", requireAuth, async (req, res): Promise<void> => {
@@ -169,7 +187,8 @@ router.post("/mining/claim", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const statusData = computeMiningStatus(session, user);
+  const baseRate = await getEffectiveBaseRate(req.userId!);
+  const statusData = computeMiningStatus(session, user, baseRate);
   const coinsEarned = statusData.accumulatedCoins;
 
   await db
@@ -281,8 +300,8 @@ router.post("/mining/boost", requireAuth, async (req, res): Promise<void> => {
     .where(eq(miningSessionsTable.id, session.id));
 
   const [updated] = await db.select().from(miningSessionsTable).where(eq(miningSessionsTable.id, session.id)).limit(1);
-
-  res.json(BoostMiningResponse.parse(computeMiningStatus(updated, user)));
+  const baseRate = await getEffectiveBaseRate(req.userId!);
+  res.json(BoostMiningResponse.parse(computeMiningStatus(updated, user, baseRate)));
 });
 
 router.get("/dashboard/summary", requireAuth, async (req, res): Promise<void> => {
