@@ -49,7 +49,7 @@ export default function Upgrades() {
         setPaymentMethod(selectedUpgradeData.coinCost ? "coins" : "usdt");
       }
     }
-  }, [selectedUpgrade]);
+  }, [selectedUpgrade, selectedUpgradeData, canAffordCoins]);
 
   const handlePurchase = () => {
     if (!selectedUpgrade) return;
