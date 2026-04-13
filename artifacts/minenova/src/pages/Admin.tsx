@@ -63,6 +63,7 @@ const PLATFORM_COLORS: Record<string, string> = {
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     pending: "bg-yellow-500/20 text-yellow-500 border-yellow-500/30",
+    approved: "bg-emerald-500/20 text-emerald-500 border-emerald-500/30",
     completed: "bg-emerald-500/20 text-emerald-500 border-emerald-500/30",
     rejected: "bg-red-500/20 text-red-500 border-red-500/30",
     mining: "bg-purple-500/20 text-purple-500 border-purple-500/30",
@@ -78,13 +79,14 @@ function fmtCoins(n: number) { return n.toLocaleString(undefined, { maximumFract
 
 // ─── Dashboard Tab ───────────────────────────────────────────────────────────
 
-function DashboardTab({ headers }: { headers: Record<string, string> }) {
+function DashboardTab({ secret }: { secret: string }) {
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
+  const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
   useEffect(() => {
     apiFetch("/admin/analytics", { headers }).then(r => r.json()).then(setData).finally(() => setLoading(false));
-  }, []);
+  }, [secret]);
 
   if (loading) return <p className="text-muted-foreground text-sm py-8 text-center">Loading…</p>;
   if (!data) return <p className="text-destructive text-sm py-8 text-center">Failed to load analytics</p>;
@@ -115,7 +117,7 @@ function DashboardTab({ headers }: { headers: Record<string, string> }) {
 
 // ─── Users Tab ───────────────────────────────────────────────────────────────
 
-function UsersTab({ headers }: { headers: Record<string, string> }) {
+function UsersTab({ secret }: { secret: string }) {
   const { toast } = useToast();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,17 +125,18 @@ function UsersTab({ headers }: { headers: Record<string, string> }) {
   const [adjustingId, setAdjustingId] = useState<number | null>(null);
   const [adjustDelta, setAdjustDelta] = useState("");
   const [adjustNote, setAdjustNote] = useState("");
+  const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
   const load = useCallback(async () => {
     setLoading(true);
     const q = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : "";
-    const res = await apiFetch(`/admin/users${q}`, { headers });
+    const res = await apiFetch(`/admin/users${q}`, { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
     const data = await res.json();
     setUsers(Array.isArray(data) ? data : []);
     setLoading(false);
-  }, [search]);
+  }, [search, secret]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const handleSuspend = async (u: AdminUser) => {
     await apiFetch(`/admin/users/${u.id}/suspend`, { method: "POST", headers });
@@ -221,24 +224,25 @@ function UsersTab({ headers }: { headers: Record<string, string> }) {
 
 // ─── Withdrawals Tab ─────────────────────────────────────────────────────────
 
-function WithdrawalsTab({ headers }: { headers: Record<string, string> }) {
+function WithdrawalsTab({ secret }: { secret: string }) {
   const { toast } = useToast();
   const [items, setItems] = useState<Withdrawal[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [rejectNote, setRejectNote] = useState<Record<number, string>>({});
   const [rejectingId, setRejectingId] = useState<number | null>(null);
+  const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
   const load = useCallback(async () => {
     setLoading(true);
     const q = filter !== "all" ? `?status=${filter}` : "";
-    const res = await apiFetch(`/admin/withdrawals${q}`, { headers });
+    const res = await apiFetch(`/admin/withdrawals${q}`, { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
     const data = await res.json();
     setItems(Array.isArray(data) ? data : []);
     setLoading(false);
-  }, [filter]);
+  }, [filter, secret]);
 
-  useEffect(() => { load(); }, [filter]);
+  useEffect(() => { load(); }, [load]);
 
   const handleApprove = async (id: number) => {
     const res = await apiFetch(`/admin/withdrawals/${id}/approve`, { method: "POST", headers, body: JSON.stringify({}) });
@@ -254,7 +258,7 @@ function WithdrawalsTab({ headers }: { headers: Record<string, string> }) {
     else toast({ variant: "destructive", title: "Failed to reject" });
   };
 
-  const FILTERS = ["all", "pending", "completed", "rejected"];
+  const FILTERS = ["all", "pending", "approved", "rejected"];
 
   return (
     <div className="space-y-4">
@@ -315,7 +319,7 @@ function WithdrawalsTab({ headers }: { headers: Record<string, string> }) {
 
 // ─── Transactions Tab ────────────────────────────────────────────────────────
 
-function TransactionsTab({ headers }: { headers: Record<string, string> }) {
+function TransactionsTab({ secret }: { secret: string }) {
   const [items, setItems] = useState<TxRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState("all");
@@ -326,13 +330,13 @@ function TransactionsTab({ headers }: { headers: Record<string, string> }) {
     const params = new URLSearchParams();
     if (typeFilter !== "all") params.set("type", typeFilter);
     if (search.trim()) params.set("search", search.trim());
-    const res = await apiFetch(`/admin/transactions?${params}`, { headers });
+    const res = await apiFetch(`/admin/transactions?${params}`, { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
     const data = await res.json();
     setItems(Array.isArray(data) ? data : []);
     setLoading(false);
-  }, [typeFilter, search]);
+  }, [typeFilter, search, secret]);
 
-  useEffect(() => { load(); }, [typeFilter]);
+  useEffect(() => { load(); }, [load]);
 
   const TYPES = ["all", "mining", "referral", "withdrawal", "adjustment"];
 
@@ -375,20 +379,21 @@ function TransactionsTab({ headers }: { headers: Record<string, string> }) {
 
 // ─── Mining Tab ──────────────────────────────────────────────────────────────
 
-function MiningTab({ headers }: { headers: Record<string, string> }) {
+function MiningTab({ secret }: { secret: string }) {
   const { toast } = useToast();
   const [sessions, setSessions] = useState<MiningSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
-    const res = await apiFetch("/admin/mining-sessions", { headers });
+    const res = await apiFetch("/admin/mining-sessions", { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
     const data = await res.json();
     setSessions(Array.isArray(data) ? data : []);
     setLoading(false);
-  };
+  }, [secret]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const handleStop = async (id: number, username: string | null) => {
     if (!confirm(`Force-stop ${username ?? "this user"}'s mining session?`)) return;
@@ -438,16 +443,16 @@ function MiningTab({ headers }: { headers: Record<string, string> }) {
 
 // ─── Referrals Tab ───────────────────────────────────────────────────────────
 
-function ReferralsTab({ headers }: { headers: Record<string, string> }) {
+function ReferralsTab({ secret }: { secret: string }) {
   const [items, setItems] = useState<Referral[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiFetch("/admin/referrals", { headers }).then(r => r.json()).then(data => {
+    apiFetch("/admin/referrals", { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } }).then(r => r.json()).then(data => {
       setItems(Array.isArray(data) ? data : []);
       setLoading(false);
     });
-  }, []);
+  }, [secret]);
 
   return (
     <div className="space-y-2">
@@ -481,16 +486,16 @@ function ReferralsTab({ headers }: { headers: Record<string, string> }) {
 
 // ─── Upgrades Tab ────────────────────────────────────────────────────────────
 
-function UpgradesTab({ headers }: { headers: Record<string, string> }) {
+function UpgradesTab({ secret }: { secret: string }) {
   const [items, setItems] = useState<UpgradePurchase[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiFetch("/admin/upgrade-purchases", { headers }).then(r => r.json()).then(data => {
+    apiFetch("/admin/upgrade-purchases", { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } }).then(r => r.json()).then(data => {
       setItems(Array.isArray(data) ? data : []);
       setLoading(false);
     });
-  }, []);
+  }, [secret]);
 
   return (
     <div className="space-y-2">
@@ -518,7 +523,7 @@ function UpgradesTab({ headers }: { headers: Record<string, string> }) {
 
 // ─── Settings Tab ────────────────────────────────────────────────────────────
 
-function SettingsTab({ headers }: { headers: Record<string, string> }) {
+function SettingsTab({ secret }: { secret: string }) {
   const { toast } = useToast();
   const [settings, setSettings] = useState<Settings>({
     min_withdrawal_usdt: "5",
@@ -528,13 +533,14 @@ function SettingsTab({ headers }: { headers: Record<string, string> }) {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
   useEffect(() => {
-    apiFetch("/admin/settings", { headers }).then(r => r.json()).then(data => {
+    apiFetch("/admin/settings", { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } }).then(r => r.json()).then(data => {
       setSettings(prev => ({ ...prev, ...data }));
       setLoading(false);
     });
-  }, []);
+  }, [secret]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -591,7 +597,7 @@ function SettingsTab({ headers }: { headers: Record<string, string> }) {
 
 // ─── Share Messages Tab ──────────────────────────────────────────────────────
 
-function ShareMessagesTab({ headers }: { headers: Record<string, string> }) {
+function ShareMessagesTab({ secret }: { secret: string }) {
   const { toast } = useToast();
   const [messages, setMessages] = useState<ShareMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -600,16 +606,17 @@ function ShareMessagesTab({ headers }: { headers: Record<string, string> }) {
   const [editActive, setEditActive] = useState(true);
   const [addingPlatform, setAddingPlatform] = useState<Platform | null>(null);
   const [newMessage, setNewMessage] = useState("");
+  const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
-  const fetchMessages = async () => {
+  const fetchMessages = useCallback(async () => {
     setLoading(true);
-    const res = await apiFetch("/admin/share-messages", { headers });
+    const res = await apiFetch("/admin/share-messages", { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
     const data = await res.json();
     setMessages(Array.isArray(data) ? data : []);
     setLoading(false);
-  };
+  }, [secret]);
 
-  useEffect(() => { fetchMessages(); }, []);
+  useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
   const handleSaveEdit = async (id: number) => {
     const res = await apiFetch(`/admin/share-messages/${id}`, { method: "PUT", headers, body: JSON.stringify({ message: editText, isActive: editActive }) });
@@ -851,15 +858,15 @@ export default function Admin() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-6">
-        {tab === "dashboard" && <DashboardTab headers={headers} />}
-        {tab === "users" && <UsersTab headers={headers} />}
-        {tab === "withdrawals" && <WithdrawalsTab headers={headers} />}
-        {tab === "transactions" && <TransactionsTab headers={headers} />}
-        {tab === "mining" && <MiningTab headers={headers} />}
-        {tab === "referrals" && <ReferralsTab headers={headers} />}
-        {tab === "upgrades" && <UpgradesTab headers={headers} />}
-        {tab === "settings" && <SettingsTab headers={headers} />}
-        {tab === "share" && <ShareMessagesTab headers={headers} />}
+        {tab === "dashboard" && <DashboardTab secret={secret} />}
+        {tab === "users" && <UsersTab secret={secret} />}
+        {tab === "withdrawals" && <WithdrawalsTab secret={secret} />}
+        {tab === "transactions" && <TransactionsTab secret={secret} />}
+        {tab === "mining" && <MiningTab secret={secret} />}
+        {tab === "referrals" && <ReferralsTab secret={secret} />}
+        {tab === "upgrades" && <UpgradesTab secret={secret} />}
+        {tab === "settings" && <SettingsTab secret={secret} />}
+        {tab === "share" && <ShareMessagesTab secret={secret} />}
       </div>
     </div>
   );

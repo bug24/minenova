@@ -1,9 +1,14 @@
 import { Router, type IRouter } from "express";
-import { db, miningSessionsTable, usersTable, transactionsTable, referralsTable, referralTransactionsTable } from "@workspace/db";
+import { db, miningSessionsTable, usersTable, transactionsTable, referralsTable, referralTransactionsTable, adminConfigTable } from "@workspace/db";
 import { eq, and, isNull } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { BoostMiningBody, GetMiningStatusResponse, StartMiningResponse, ClaimMiningResponse, BoostMiningResponse, GetDashboardSummaryResponse } from "@workspace/api-zod";
 import { sql } from "drizzle-orm";
+
+async function isMaintenanceModeEnabled(): Promise<boolean> {
+  const [row] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable).where(eq(adminConfigTable.key, "maintenance_mode")).limit(1);
+  return row?.value === "true";
+}
 
 const router: IRouter = Router();
 
@@ -70,6 +75,11 @@ router.get("/mining/status", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.post("/mining/start", requireAuth, async (req, res): Promise<void> => {
+  if (await isMaintenanceModeEnabled()) {
+    res.status(503).json({ error: "Mining is temporarily disabled for maintenance. Please try again later." });
+    return;
+  }
+
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
 
   const [activeSession] = await db
