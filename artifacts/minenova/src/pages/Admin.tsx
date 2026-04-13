@@ -1890,6 +1890,7 @@ const BLANK_AD = {
   title: "",
   type: "video" as AdType,
   urlOrCode: "",
+  providerScript: "",
   durationSeconds: 15,
   placement: "boost",
   isActive: true,
@@ -1920,13 +1921,13 @@ function AdsTab({ secret }: { secret: string }) {
 
   const openCreate = () => { setForm({ ...BLANK_AD }); setEditingId(null); setShowForm(true); };
   const openEdit = (ad: AdminAd) => {
-    setForm({ title: ad.title, type: ad.type, urlOrCode: ad.urlOrCode, durationSeconds: ad.durationSeconds, placement: ad.placement, isActive: ad.isActive });
+    setForm({ title: ad.title, type: ad.type, urlOrCode: ad.urlOrCode ?? "", providerScript: ad.providerScript ?? "", durationSeconds: ad.durationSeconds, placement: ad.placement, isActive: ad.isActive });
     setEditingId(ad.id);
     setShowForm(true);
   };
 
   const handleSave = async () => {
-    if (!form.title.trim() || !form.urlOrCode.trim()) { toast({ variant: "destructive", title: "Title and URL/Code are required" }); return; }
+    if (!form.title.trim()) { toast({ variant: "destructive", title: "Title is required" }); return; }
     setSaving(true);
     try {
       const body = JSON.stringify({ ...form, durationSeconds: Number(form.durationSeconds) });
@@ -1955,8 +1956,8 @@ function AdsTab({ secret }: { secret: string }) {
     if (res.ok) { toast({ title: "Deleted" }); fetchAds(); }
   };
 
-  const urlLabel = form.type === "script" ? "Embed / Script Code" : "URL";
-  const urlPlaceholder = form.type === "script" ? "<script>…</script> or <div>…</div>" : "https://example.com/ad.mp4";
+  const urlLabel = form.type === "script" ? "Ad unit code" : "URL";
+  const urlPlaceholder = form.type === "script" ? "<ins class='adsbygoogle'>…</ins>" : "https://example.com/ad.mp4";
 
   return (
     <div className="space-y-4">
@@ -2027,6 +2028,15 @@ function AdsTab({ secret }: { secret: string }) {
                   placeholder={urlPlaceholder}
                 />
               )}
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Provider script (optional)</label>
+              <textarea
+                value={form.providerScript}
+                onChange={e => setForm(f => ({ ...f, providerScript: e.target.value }))}
+                placeholder={`<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-xxxxxxxxxxxxxxxx" crossorigin="anonymous"></script>`}
+                className="w-full text-sm bg-background border border-border rounded-md p-3 resize-none min-h-[92px] font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+              />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Placement</label>

@@ -221,7 +221,7 @@ router.post("/mining/claim", requireAuth, async (req, res): Promise<void> => {
 
   await db
     .update(miningSessionsTable)
-    .set({ claimedAt: now, isActive: false, coinsEarned })
+    .set({ claimedAt: now, isActive: false, coinsEarned, notificationSent: true })
     .where(eq(miningSessionsTable.id, session.id));
 
   const newBalance = user.coinBalance + coinsEarned;
