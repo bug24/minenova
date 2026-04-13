@@ -957,18 +957,23 @@ router.get("/admin/settings", requireAdmin, async (_req, res): Promise<void> => 
 });
 
 router.put("/admin/settings", requireAdmin, async (req, res): Promise<void> => {
+  const boolStr = z.enum(["true", "false"]);
   const schema = z.object({
-    min_withdrawal_usdt: z.string().optional(),
-    referral_bonus_coins: z.string().optional(),
-    referral_commission_pct: z.string().optional(),
-    maintenance_mode: z.string().optional(),
-    global_base_coins_per_hour: z.string().optional(),
-    session_duration_hours: z.string().optional(),
-    referral_disabled: z.string().optional(),
-    mining_disabled: z.string().optional(),
+    min_withdrawal_usdt: z.string().refine(v => !isNaN(parseFloat(v)) && parseFloat(v) >= 0, "Must be a non-negative number").optional(),
+    referral_bonus_coins: z.string().refine(v => !isNaN(parseFloat(v)) && parseFloat(v) >= 0, "Must be a non-negative number").optional(),
+    referral_commission_pct: z.string().refine(v => { const n = parseFloat(v); return !isNaN(n) && n >= 0 && n <= 100; }, "Must be 0–100").optional(),
+    maintenance_mode: boolStr.optional(),
+    global_base_coins_per_hour: z.string().refine(v => !isNaN(parseFloat(v)) && parseFloat(v) > 0, "Must be a positive number").optional(),
+    session_duration_hours: z.string().refine(v => Number.isInteger(Number(v)) && Number(v) >= 1, "Must be a positive integer").optional(),
+    referral_disabled: boolStr.optional(),
+    mining_disabled: boolStr.optional(),
   });
   const data = schema.safeParse(req.body);
-  if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
+  if (!data.success) {
+    const msg = data.error.issues[0]?.message ?? "Invalid input";
+    res.status(400).json({ error: msg });
+    return;
+  }
   for (const [key, value] of Object.entries(data.data)) {
     if (value !== undefined) await upsertSetting(key, value);
   }

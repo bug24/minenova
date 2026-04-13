@@ -1486,12 +1486,13 @@ function UpgradesTab({ secret }: { secret: string }) {
 
 // ─── Settings Tab ────────────────────────────────────────────────────────────
 
-function Toggle({ on, onChange, danger }: { on: boolean; onChange: (v: boolean) => void; danger?: boolean }) {
+function Toggle({ on, onChange, danger, disabled }: { on: boolean; onChange: (v: boolean) => void; danger?: boolean; disabled?: boolean }) {
   return (
     <button
       type="button"
-      onClick={() => onChange(!on)}
-      className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${on ? (danger ? "bg-red-500" : "bg-purple-600") : "bg-muted"}`}
+      onClick={() => { if (!disabled) onChange(!on); }}
+      disabled={disabled}
+      className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${on ? (danger ? "bg-red-500" : "bg-purple-600") : "bg-muted"} ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
     >
       <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${on ? "translate-x-4" : ""}`} />
     </button>
@@ -1590,6 +1591,7 @@ function SettingsTab({ secret }: { secret: string }) {
             <Toggle
               on={settings.mining_disabled !== "true"}
               danger={false}
+              disabled={isSaving("mining_disabled")}
               onChange={v => saveSetting("mining_disabled", v ? "false" : "true")}
             />
           </div>
@@ -1641,6 +1643,7 @@ function SettingsTab({ secret }: { secret: string }) {
             {isSaved("referral_disabled") && <span className="text-xs text-green-400">Saved ✓</span>}
             <Toggle
               on={settings.referral_disabled !== "true"}
+              disabled={isSaving("referral_disabled")}
               onChange={v => saveSetting("referral_disabled", v ? "false" : "true")}
             />
           </div>
@@ -1710,6 +1713,7 @@ function SettingsTab({ secret }: { secret: string }) {
             <Toggle
               on={settings.maintenance_mode === "true"}
               danger
+              disabled={isSaving("maintenance_mode")}
               onChange={v => saveSetting("maintenance_mode", v ? "true" : "false")}
             />
           </div>
