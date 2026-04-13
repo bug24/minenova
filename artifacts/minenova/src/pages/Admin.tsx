@@ -1544,7 +1544,11 @@ function UpgradesTab({ secret }: { secret: string }) {
     const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
     const r = await apiFetch(`/admin/upgrades/${deletingId}`, { method: "DELETE", headers });
     if (r.ok) { toast({ title: "Package deleted" }); setDeletingId(null); load(); }
-    else { toast({ variant: "destructive", title: "Delete failed" }); }
+    else {
+      const d = await r.json().catch(() => ({}));
+      toast({ variant: "destructive", title: "Cannot delete", description: d.error ?? "Delete failed" });
+      setDeletingId(null);
+    }
   };
 
   const PkgForm = ({ value, onChange }: { value: Partial<UpgradePackage>; onChange: (v: Partial<UpgradePackage>) => void }) => (

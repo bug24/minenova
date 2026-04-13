@@ -990,6 +990,15 @@ router.put("/admin/upgrades/:id", requireAdmin, async (req, res): Promise<void> 
 router.delete("/admin/upgrades/:id", requireAdmin, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  const [ownerRow] = await db
+    .select({ id: userUpgradesTable.id })
+    .from(userUpgradesTable)
+    .where(eq(userUpgradesTable.upgradeId, id))
+    .limit(1);
+  if (ownerRow) {
+    res.status(409).json({ error: "Cannot delete: users have purchased this upgrade. Edit the package instead or adjust pricing/boost values." });
+    return;
+  }
   await db.delete(upgradesTable).where(eq(upgradesTable.id, id));
   res.json({ success: true });
 });
