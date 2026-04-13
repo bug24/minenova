@@ -10,6 +10,21 @@ async function isMaintenanceModeEnabled(): Promise<boolean> {
   return row?.value === "true";
 }
 
+async function isReferralDisabled(): Promise<boolean> {
+  const [row] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable).where(eq(adminConfigTable.key, "referral_disabled")).limit(1);
+  return row?.value === "true";
+}
+
+async function getReferralBonusCoins(): Promise<number> {
+  const [row] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable).where(eq(adminConfigTable.key, "referral_bonus_coins")).limit(1);
+  return row ? parseFloat(row.value) : REFERRAL_BONUS_COINS;
+}
+
+async function getReferralCommissionRate(): Promise<number> {
+  const [row] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable).where(eq(adminConfigTable.key, "referral_commission_pct")).limit(1);
+  return row ? parseFloat(row.value) / 100 : REFERRAL_COMMISSION_RATE;
+}
+
 const router: IRouter = Router();
 
 const BASE_HASH_RATE = 10;
@@ -129,37 +144,41 @@ router.post("/mining/start", requireAuth, async (req, res): Promise<void> => {
     })
     .returning();
 
-  const [referralRecord] = await db
-    .select()
-    .from(referralsTable)
-    .where(and(eq(referralsTable.referredId, req.userId!), eq(referralsTable.bonusPaid, false)))
-    .limit(1);
+  if (!(await isReferralDisabled())) {
+    const [referralRecord] = await db
+      .select()
+      .from(referralsTable)
+      .where(and(eq(referralsTable.referredId, req.userId!), eq(referralsTable.bonusPaid, false)))
+      .limit(1);
 
-  if (referralRecord) {
-    await db
-      .update(usersTable)
-      .set({ coinBalance: sql`coin_balance + ${REFERRAL_BONUS_COINS}`, totalEarned: sql`total_earned + ${REFERRAL_BONUS_COINS}` })
-      .where(eq(usersTable.id, referralRecord.referrerId));
+    if (referralRecord) {
+      const bonusCoins = await getReferralBonusCoins();
 
-    await db
-      .update(referralsTable)
-      .set({ bonusPaid: true, totalEarned: sql`total_earned + ${REFERRAL_BONUS_COINS}` })
-      .where(eq(referralsTable.id, referralRecord.id));
+      await db
+        .update(usersTable)
+        .set({ coinBalance: sql`coin_balance + ${bonusCoins}`, totalEarned: sql`total_earned + ${bonusCoins}` })
+        .where(eq(usersTable.id, referralRecord.referrerId));
 
-    await db.insert(referralTransactionsTable).values({
-      referrerId: referralRecord.referrerId,
-      referredId: req.userId!,
-      rewardType: "bonus",
-      amount: REFERRAL_BONUS_COINS,
-    });
+      await db
+        .update(referralsTable)
+        .set({ bonusPaid: true, totalEarned: sql`total_earned + ${bonusCoins}` })
+        .where(eq(referralsTable.id, referralRecord.id));
 
-    await db.insert(transactionsTable).values({
-      userId: referralRecord.referrerId,
-      type: "referral",
-      amount: REFERRAL_BONUS_COINS,
-      status: "completed",
-      description: `Referral activation bonus for user #${req.userId}`,
-    });
+      await db.insert(referralTransactionsTable).values({
+        referrerId: referralRecord.referrerId,
+        referredId: req.userId!,
+        rewardType: "bonus",
+        amount: bonusCoins,
+      });
+
+      await db.insert(transactionsTable).values({
+        userId: referralRecord.referrerId,
+        type: "referral",
+        amount: bonusCoins,
+        status: "completed",
+        description: `Referral activation bonus for user #${req.userId}`,
+      });
+    }
   }
 
   const baseRate = await getEffectiveBaseRate(req.userId!);
@@ -212,40 +231,43 @@ router.post("/mining/claim", requireAuth, async (req, res): Promise<void> => {
     description: "Mining session reward",
   });
 
-  const [referralRecord] = await db
-    .select()
-    .from(referralsTable)
-    .where(eq(referralsTable.referredId, req.userId!))
-    .limit(1);
+  if (!(await isReferralDisabled())) {
+    const [referralRecord] = await db
+      .select()
+      .from(referralsTable)
+      .where(eq(referralsTable.referredId, req.userId!))
+      .limit(1);
 
-  if (referralRecord) {
-    const commissionCoins = Math.round(coinsEarned * REFERRAL_COMMISSION_RATE * 100) / 100;
+    if (referralRecord) {
+      const commissionRate = await getReferralCommissionRate();
+      const commissionCoins = Math.round(coinsEarned * commissionRate * 100) / 100;
 
-    if (commissionCoins > 0) {
-      await db
-        .update(usersTable)
-        .set({ coinBalance: sql`coin_balance + ${commissionCoins}`, totalEarned: sql`total_earned + ${commissionCoins}` })
-        .where(eq(usersTable.id, referralRecord.referrerId));
+      if (commissionCoins > 0) {
+        await db
+          .update(usersTable)
+          .set({ coinBalance: sql`coin_balance + ${commissionCoins}`, totalEarned: sql`total_earned + ${commissionCoins}` })
+          .where(eq(usersTable.id, referralRecord.referrerId));
 
-      await db
-        .update(referralsTable)
-        .set({ totalEarned: sql`total_earned + ${commissionCoins}` })
-        .where(eq(referralsTable.id, referralRecord.id));
+        await db
+          .update(referralsTable)
+          .set({ totalEarned: sql`total_earned + ${commissionCoins}` })
+          .where(eq(referralsTable.id, referralRecord.id));
 
-      await db.insert(referralTransactionsTable).values({
-        referrerId: referralRecord.referrerId,
-        referredId: req.userId!,
-        rewardType: "commission",
-        amount: commissionCoins,
-      });
+        await db.insert(referralTransactionsTable).values({
+          referrerId: referralRecord.referrerId,
+          referredId: req.userId!,
+          rewardType: "commission",
+          amount: commissionCoins,
+        });
 
-      await db.insert(transactionsTable).values({
-        userId: referralRecord.referrerId,
-        type: "referral",
-        amount: commissionCoins,
-        status: "completed",
-        description: `7% mining commission from user #${req.userId}`,
-      });
+        await db.insert(transactionsTable).values({
+          userId: referralRecord.referrerId,
+          type: "referral",
+          amount: commissionCoins,
+          status: "completed",
+          description: `${Math.round(commissionRate * 100)}% mining commission from user #${req.userId}`,
+        });
+      }
     }
   }
 

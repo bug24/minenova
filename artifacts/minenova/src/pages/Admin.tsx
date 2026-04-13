@@ -46,6 +46,18 @@ interface Referral {
   referrerUsername: string; referredUsername: string;
   totalEarned: number; bonusPaid: boolean; createdAt: string;
 }
+interface ReferralConfig {
+  bonusCoins: number; commissionPct: number; referralDisabled: boolean;
+}
+interface ReferralStat {
+  userId: number; username: string; referralCount: number;
+  totalBonus: number; totalCommission: number; total: number;
+}
+interface SuspiciousReferral {
+  referralId: number; referrerId: number; referredId: number;
+  referrerUsername: string; referredUsername: string;
+  reason: string; createdAt: string;
+}
 interface UpgradePurchase {
   id: number; userId: number; upgradeId: number; username: string | null;
   upgradeName: string | null; tier: number | null; usdtCost: number | null; purchasedAt: string;
@@ -898,24 +910,222 @@ function MiningTab({ secret }: { secret: string }) {
 // ─── Referrals Tab ───────────────────────────────────────────────────────────
 
 function ReferralsTab({ secret }: { secret: string }) {
-  const [items, setItems] = useState<Referral[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+  const h = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
-  useEffect(() => {
-    apiFetch("/admin/referrals", { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } }).then(r => r.json()).then(data => {
-      setItems(Array.isArray(data) ? data : []);
-      setLoading(false);
-    });
+  // Config section
+  const [cfg, setCfg] = useState<ReferralConfig | null>(null);
+  const [cfgLoading, setCfgLoading] = useState(true);
+  const [cfgSaving, setCfgSaving] = useState(false);
+  const [bonusCoinsInput, setBonusCoinsInput] = useState("");
+  const [commissionPctInput, setCommissionPctInput] = useState("");
+
+  // Suspicious section
+  const [suspicious, setSuspicious] = useState<SuspiciousReferral[]>([]);
+  const [suspLoading, setSuspLoading] = useState(true);
+
+  // Stats section
+  const [stats, setStats] = useState<ReferralStat[]>([]);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  // All relationships section
+  const [items, setItems] = useState<Referral[]>([]);
+  const [relLoading, setRelLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [deleting, setDeleting] = useState<number | null>(null);
+
+  const loadAll = useCallback(() => {
+    setCfgLoading(true); setSuspLoading(true); setStatsLoading(true); setRelLoading(true);
+
+    apiFetch("/admin/referral-config", { headers: h }).then(r => r.json()).then((d: ReferralConfig) => {
+      setCfg(d);
+      setBonusCoinsInput(String(d.bonusCoins));
+      setCommissionPctInput(String(d.commissionPct));
+      setCfgLoading(false);
+    }).catch(() => setCfgLoading(false));
+
+    apiFetch("/admin/referral-suspicious", { headers: h }).then(r => r.json()).then((d: SuspiciousReferral[]) => {
+      setSuspicious(Array.isArray(d) ? d : []);
+      setSuspLoading(false);
+    }).catch(() => setSuspLoading(false));
+
+    apiFetch("/admin/referral-stats", { headers: h }).then(r => r.json()).then((d: ReferralStat[]) => {
+      setStats(Array.isArray(d) ? d : []);
+      setStatsLoading(false);
+    }).catch(() => setStatsLoading(false));
+
+    apiFetch("/admin/referrals", { headers: h }).then(r => r.json()).then((d: Referral[]) => {
+      setItems(Array.isArray(d) ? d : []);
+      setRelLoading(false);
+    }).catch(() => setRelLoading(false));
   }, [secret]);
 
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const handleToggleDisabled = async () => {
+    if (!cfg) return;
+    const newVal = !cfg.referralDisabled;
+    await apiFetch("/admin/referral-config", { method: "PUT", headers: h, body: JSON.stringify({ referralDisabled: newVal }) });
+    setCfg({ ...cfg, referralDisabled: newVal });
+    toast({ title: newVal ? "Referral program disabled" : "Referral program enabled" });
+  };
+
+  const handleSaveCfg = async () => {
+    if (!cfg) return;
+    const bonusCoins = parseFloat(bonusCoinsInput);
+    const commissionPct = parseFloat(commissionPctInput);
+    if (isNaN(bonusCoins) || bonusCoins < 0) { toast({ title: "Invalid bonus coins value", variant: "destructive" }); return; }
+    if (isNaN(commissionPct) || commissionPct < 0 || commissionPct > 100) { toast({ title: "Commission must be 0–100", variant: "destructive" }); return; }
+    setCfgSaving(true);
+    await apiFetch("/admin/referral-config", { method: "PUT", headers: h, body: JSON.stringify({ bonusCoins, commissionPct }) });
+    setCfg({ ...cfg, bonusCoins, commissionPct });
+    setCfgSaving(false);
+    toast({ title: "Referral settings saved" });
+  };
+
+  const handleDelete = async (id: number) => {
+    setDeleting(id);
+    await apiFetch(`/admin/referrals/${id}`, { method: "DELETE", headers: h });
+    setItems(prev => prev.filter(r => r.id !== id));
+    setDeleting(null);
+    toast({ title: "Referral relationship removed" });
+  };
+
+  const filteredItems = search.trim()
+    ? items.filter(r => r.referrerUsername.toLowerCase().includes(search.toLowerCase()) || r.referredUsername.toLowerCase().includes(search.toLowerCase()))
+    : items;
+
   return (
-    <div className="space-y-2">
-      {loading ? <p className="text-muted-foreground text-sm text-center py-8">Loading…</p> : (
-        <>
-          {items.length === 0 && <p className="text-muted-foreground text-sm text-center py-8">No referral relationships</p>}
-          {items.map(r => (
+    <div className="space-y-6">
+
+      {/* ── Section 1: Program Settings ── */}
+      <div className="bg-card border border-card-border rounded-xl p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="font-semibold text-sm">Program Settings</p>
+          {cfgLoading ? null : (
+            <button
+              onClick={handleToggleDisabled}
+              className={`flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${cfg?.referralDisabled ? "bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"}`}
+            >
+              {cfg?.referralDisabled ? <><ToggleLeft className="w-3.5 h-3.5" /> Program OFF</> : <><ToggleRight className="w-3.5 h-3.5" /> Program ON</>}
+            </button>
+          )}
+        </div>
+        {cfgLoading ? (
+          <p className="text-muted-foreground text-sm text-center py-4">Loading…</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Referral Bonus (coins)</label>
+              <Input
+                type="number" min="0"
+                value={bonusCoinsInput}
+                onChange={e => setBonusCoinsInput(e.target.value)}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Commission Rate (%)</label>
+              <Input
+                type="number" min="0" max="100" step="0.1"
+                value={commissionPctInput}
+                onChange={e => setCommissionPctInput(e.target.value)}
+                className="h-9"
+              />
+            </div>
+            <div className="col-span-2">
+              <Button size="sm" onClick={handleSaveCfg} disabled={cfgSaving} className="w-full">
+                {cfgSaving ? "Saving…" : "Save Settings"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Section 2: Suspicious Activity ── */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-400" /> Suspicious Activity
+        </p>
+        {suspLoading ? (
+          <p className="text-muted-foreground text-sm text-center py-4">Loading…</p>
+        ) : suspicious.length === 0 ? (
+          <div className="bg-card border border-card-border rounded-xl p-4 text-center text-sm text-muted-foreground">No suspicious activity detected</div>
+        ) : (
+          suspicious.map(s => (
+            <div key={s.referralId} className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 space-y-1.5">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-medium text-amber-400">{s.referrerUsername}</span>
+                <span className="text-muted-foreground">→</span>
+                <span className="font-medium">{s.referredUsername}</span>
+                <Badge className="ml-auto text-xs border bg-amber-500/20 text-amber-400 border-amber-500/30">Flagged</Badge>
+              </div>
+              <p className="text-xs text-amber-300/80">{s.reason}</p>
+              <p className="text-xs text-muted-foreground">{fmt(s.createdAt)}</p>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* ── Section 3: Top Referrers ── */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Earnings per Referrer</p>
+        {statsLoading ? (
+          <p className="text-muted-foreground text-sm text-center py-4">Loading…</p>
+        ) : stats.length === 0 ? (
+          <div className="bg-card border border-card-border rounded-xl p-4 text-center text-sm text-muted-foreground">No referral earnings yet</div>
+        ) : (
+          <div className="bg-card border border-card-border rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-card-border text-xs text-muted-foreground">
+                  <th className="text-left px-4 py-2.5 font-medium">User</th>
+                  <th className="text-right px-4 py-2.5 font-medium">Referrals</th>
+                  <th className="text-right px-4 py-2.5 font-medium">Bonus</th>
+                  <th className="text-right px-4 py-2.5 font-medium">Commission</th>
+                  <th className="text-right px-4 py-2.5 font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-card-border">
+                {stats.map((s, i) => (
+                  <tr key={s.userId} className={i % 2 === 0 ? "bg-muted/10" : ""}>
+                    <td className="px-4 py-2.5 font-medium truncate max-w-[120px]">{s.username}</td>
+                    <td className="px-4 py-2.5 text-right text-muted-foreground">{s.referralCount}</td>
+                    <td className="px-4 py-2.5 text-right text-purple-400">{fmtCoins(s.totalBonus)}</td>
+                    <td className="px-4 py-2.5 text-right text-blue-400">{fmtCoins(s.totalCommission)}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-emerald-400">{fmtCoins(s.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Section 4: All Relationships ── */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">All Relationships</p>
+          <Button variant="ghost" size="sm" onClick={loadAll} className="h-6 w-6 p-0">
+            <RefreshCw className="w-3 h-3" />
+          </Button>
+        </div>
+        <Input
+          placeholder="Search by username…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="h-9"
+        />
+        {relLoading ? (
+          <p className="text-muted-foreground text-sm text-center py-4">Loading…</p>
+        ) : filteredItems.length === 0 ? (
+          <div className="text-center text-sm text-muted-foreground py-6">
+            {search ? "No matches found" : "No referral relationships"}
+          </div>
+        ) : (
+          filteredItems.map(r => (
             <div key={r.id} className="bg-card border border-card-border rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
-              <div className="space-y-0.5">
+              <div className="space-y-0.5 min-w-0">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="font-medium">{r.referrerUsername}</span>
                   <span className="text-muted-foreground">→</span>
@@ -930,10 +1140,18 @@ function ReferralsTab({ secret }: { secret: string }) {
                 </div>
                 <p className="text-xs text-muted-foreground">{fmt(r.createdAt)}</p>
               </div>
+              <Button
+                variant="ghost" size="sm"
+                className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-8 w-8 p-0 shrink-0"
+                disabled={deleting === r.id}
+                onClick={() => handleDelete(r.id)}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
             </div>
-          ))}
-        </>
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 }

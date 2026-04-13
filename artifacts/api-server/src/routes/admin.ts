@@ -7,6 +7,7 @@ import {
   transactionsTable,
   miningSessionsTable,
   referralsTable,
+  referralTransactionsTable,
   upgradesTable,
   userUpgradesTable,
 } from "@workspace/db";
@@ -50,6 +51,7 @@ async function seedAdminConfig() {
     maintenance_mode: "false",
     global_base_coins_per_hour: "0.5",
     session_duration_hours: "12",
+    referral_disabled: "false",
   };
   for (const [key, value] of Object.entries(defaults)) {
     const [existing] = await db
@@ -664,7 +666,9 @@ router.post("/admin/mining/start-for-user", requireAdmin, async (req, res): Prom
 
 // ─── Referrals ────────────────────────────────────────────────────────────────
 
-router.get("/admin/referrals", requireAdmin, async (_req, res): Promise<void> => {
+router.get("/admin/referrals", requireAdmin, async (req, res): Promise<void> => {
+  const search = (req.query.search as string | undefined)?.trim().toLowerCase() ?? "";
+
   const rows = await db
     .select({
       id: referralsTable.id,
@@ -677,16 +681,198 @@ router.get("/admin/referrals", requireAdmin, async (_req, res): Promise<void> =>
     .from(referralsTable)
     .orderBy(desc(referralsTable.createdAt));
 
-  const userMap: Record<number, string> = {};
   const allUsers = await db.select({ id: usersTable.id, username: usersTable.username }).from(usersTable);
+  const userMap: Record<number, string> = {};
   for (const u of allUsers) userMap[u.id] = u.username;
 
-  res.json(rows.map(r => ({
+  const enriched = rows.map(r => ({
     ...r,
     referrerUsername: userMap[r.referrerId] ?? `#${r.referrerId}`,
     referredUsername: userMap[r.referredId] ?? `#${r.referredId}`,
     createdAt: r.createdAt.toISOString(),
-  })));
+  }));
+
+  const filtered = search
+    ? enriched.filter(r =>
+        r.referrerUsername.toLowerCase().includes(search) ||
+        r.referredUsername.toLowerCase().includes(search)
+      )
+    : enriched;
+
+  res.json(filtered);
+});
+
+router.delete("/admin/referrals/:id", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  await db.delete(referralsTable).where(eq(referralsTable.id, id));
+  res.json({ success: true });
+});
+
+// ─── Referral Config ──────────────────────────────────────────────────────────
+
+router.get("/admin/referral-config", requireAdmin, async (_req, res): Promise<void> => {
+  const keys = ["referral_bonus_coins", "referral_commission_pct", "referral_disabled"];
+  const rows = await db.select().from(adminConfigTable).where(
+    sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`
+  );
+  const cfg: Record<string, string> = {};
+  for (const r of rows) cfg[r.key] = r.value;
+  res.json({
+    bonusCoins: parseFloat(cfg.referral_bonus_coins ?? "250"),
+    commissionPct: parseFloat(cfg.referral_commission_pct ?? "7"),
+    referralDisabled: cfg.referral_disabled === "true",
+  });
+});
+
+router.put("/admin/referral-config", requireAdmin, async (req, res): Promise<void> => {
+  const schema = z.object({
+    bonusCoins: z.number().nonnegative().optional(),
+    commissionPct: z.number().min(0).max(100).optional(),
+    referralDisabled: z.boolean().optional(),
+  });
+  const data = schema.safeParse(req.body);
+  if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
+  if (data.data.bonusCoins !== undefined) await upsertSetting("referral_bonus_coins", data.data.bonusCoins.toString());
+  if (data.data.commissionPct !== undefined) await upsertSetting("referral_commission_pct", data.data.commissionPct.toString());
+  if (data.data.referralDisabled !== undefined) await upsertSetting("referral_disabled", data.data.referralDisabled.toString());
+  res.json({ success: true });
+});
+
+// ─── Referral Stats ───────────────────────────────────────────────────────────
+
+router.get("/admin/referral-stats", requireAdmin, async (_req, res): Promise<void> => {
+  const txRows = await db
+    .select({
+      referrerId: referralTransactionsTable.referrerId,
+      rewardType: referralTransactionsTable.rewardType,
+      amount: referralTransactionsTable.amount,
+    })
+    .from(referralTransactionsTable);
+
+  const referralCountRows = await db
+    .select({ referrerId: referralsTable.referrerId })
+    .from(referralsTable);
+
+  const countMap: Record<number, number> = {};
+  for (const r of referralCountRows) {
+    countMap[r.referrerId] = (countMap[r.referrerId] ?? 0) + 1;
+  }
+
+  const statsMap: Record<number, { totalBonus: number; totalCommission: number }> = {};
+  for (const tx of txRows) {
+    if (!statsMap[tx.referrerId]) statsMap[tx.referrerId] = { totalBonus: 0, totalCommission: 0 };
+    if (tx.rewardType === "bonus") statsMap[tx.referrerId].totalBonus += tx.amount;
+    if (tx.rewardType === "commission") statsMap[tx.referrerId].totalCommission += tx.amount;
+  }
+
+  const allUserIds = [...new Set([...Object.keys(statsMap).map(Number), ...Object.keys(countMap).map(Number)])];
+  const users = allUserIds.length > 0
+    ? await db.select({ id: usersTable.id, username: usersTable.username }).from(usersTable)
+        .where(sql`id = ANY(ARRAY[${sql.join(allUserIds.map(id => sql`${id}`), sql`, `)}])`)
+    : [];
+  const userMap: Record<number, string> = {};
+  for (const u of users) userMap[u.id] = u.username;
+
+  const result = allUserIds.map(uid => {
+    const stats = statsMap[uid] ?? { totalBonus: 0, totalCommission: 0 };
+    return {
+      userId: uid,
+      username: userMap[uid] ?? `#${uid}`,
+      referralCount: countMap[uid] ?? 0,
+      totalBonus: Math.round(stats.totalBonus * 100) / 100,
+      totalCommission: Math.round(stats.totalCommission * 100) / 100,
+      total: Math.round((stats.totalBonus + stats.totalCommission) * 100) / 100,
+    };
+  }).sort((a, b) => b.total - a.total);
+
+  res.json(result);
+});
+
+// ─── Referral Suspicious ──────────────────────────────────────────────────────
+
+router.get("/admin/referral-suspicious", requireAdmin, async (_req, res): Promise<void> => {
+  const referrals = await db
+    .select({
+      id: referralsTable.id,
+      referrerId: referralsTable.referrerId,
+      referredId: referralsTable.referredId,
+      createdAt: referralsTable.createdAt,
+    })
+    .from(referralsTable)
+    .orderBy(desc(referralsTable.createdAt));
+
+  const allUserIds = [...new Set(referrals.flatMap(r => [r.referrerId, r.referredId]))];
+  const users = allUserIds.length > 0
+    ? await db.select({ id: usersTable.id, username: usersTable.username, createdAt: usersTable.createdAt }).from(usersTable)
+        .where(sql`id = ANY(ARRAY[${sql.join(allUserIds.map(id => sql`${id}`), sql`, `)}])`)
+    : [];
+  const userMap: Record<number, { username: string; createdAt: Date }> = {};
+  for (const u of users) userMap[u.id] = { username: u.username, createdAt: u.createdAt };
+
+  // Commission per referrer for >10x average detection
+  const txRows = await db
+    .select({ referrerId: referralTransactionsTable.referrerId, amount: referralTransactionsTable.amount, rewardType: referralTransactionsTable.rewardType })
+    .from(referralTransactionsTable)
+    .where(eq(referralTransactionsTable.rewardType, "commission"));
+
+  const commissionMap: Record<number, number> = {};
+  for (const tx of txRows) {
+    commissionMap[tx.referrerId] = (commissionMap[tx.referrerId] ?? 0) + tx.amount;
+  }
+  const commissionValues = Object.values(commissionMap);
+  const avgCommission = commissionValues.length > 0 ? commissionValues.reduce((a, b) => a + b, 0) / commissionValues.length : 0;
+
+  // Count same-day pairs per referrer
+  const quickPairsByReferrer: Record<number, number> = {};
+  const flagged: { referralId: number; referrerId: number; referredId: number; referrerUsername: string; referredUsername: string; reason: string; createdAt: string }[] = [];
+
+  for (const r of referrals) {
+    const referrer = userMap[r.referrerId];
+    const referred = userMap[r.referredId];
+    if (!referrer || !referred) continue;
+
+    const hoursBetweenAccountCreation = Math.abs(referrer.createdAt.getTime() - referred.createdAt.getTime()) / (1000 * 60 * 60);
+
+    if (hoursBetweenAccountCreation < 24) {
+      quickPairsByReferrer[r.referrerId] = (quickPairsByReferrer[r.referrerId] ?? 0) + 1;
+    }
+  }
+
+  const seenIds = new Set<number>();
+  for (const r of referrals) {
+    const referrer = userMap[r.referrerId];
+    const referred = userMap[r.referredId];
+    if (!referrer || !referred) continue;
+
+    const hoursBetweenAccountCreation = Math.abs(referrer.createdAt.getTime() - referred.createdAt.getTime()) / (1000 * 60 * 60);
+    const reasons: string[] = [];
+
+    if (hoursBetweenAccountCreation < 24) {
+      reasons.push(`Both accounts created within ${Math.round(hoursBetweenAccountCreation)}h of each other`);
+    }
+    if ((quickPairsByReferrer[r.referrerId] ?? 0) > 5) {
+      reasons.push(`Referrer has ${quickPairsByReferrer[r.referrerId]} referrals where both accounts were created within 24h`);
+    }
+    if (avgCommission > 0 && (commissionMap[r.referrerId] ?? 0) > avgCommission * 10) {
+      reasons.push(`Referrer earned ${Math.round(commissionMap[r.referrerId])} coins commission (>10× average of ${Math.round(avgCommission)})`);
+    }
+
+    if (reasons.length > 0 && !seenIds.has(r.id)) {
+      seenIds.add(r.id);
+      flagged.push({
+        referralId: r.id,
+        referrerId: r.referrerId,
+        referredId: r.referredId,
+        referrerUsername: referrer.username,
+        referredUsername: referred.username,
+        reason: reasons.join(" · "),
+        createdAt: r.createdAt.toISOString(),
+      });
+    }
+  }
+
+  res.json(flagged);
 });
 
 // ─── Upgrade Purchases ────────────────────────────────────────────────────────
