@@ -7,9 +7,9 @@ let vapidConfigured = false;
 
 function ensureVapid(): boolean {
   if (vapidConfigured) return true;
-  const pub = process.env["VAPID_PUBLIC_KEY"];
-  const priv = process.env["VAPID_PRIVATE_KEY"];
-  const subject = process.env["VAPID_SUBJECT"];
+  const pub = process.env["PUSH_PUB_KEY"];
+  const priv = process.env["PUSH_PRIV_KEY"];
+  const subject = process.env["PUSH_CONTACT"];
   if (!pub || !priv || !subject) return false;
   try {
     webpush.setVapidDetails(subject, pub, priv);
