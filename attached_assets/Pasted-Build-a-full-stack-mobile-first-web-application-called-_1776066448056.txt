@@ -1,0 +1,229 @@
+Build a full-stack mobile-first web application called "MineNova".
+
+TECH STACK:
+
+Frontend: React (with Tailwind CSS)
+Backend: Node.js (Express)
+Database: PostgreSQL
+Authentication: JWT-based auth
+State management: simple React state or Context API
+
+CORE FEATURES:
+
+USER AUTHENTICATION
+Register (email, username, password)
+Login
+JWT session handling
+Referral system (unique referral code per user)
+USER WALLET SYSTEM
+
+Each user has:
+
+coin_balance
+pending_balance
+total_earned
+total_withdrawn
+
+Conversion:
+
+1 USDT = 1000 coins
+Minimum withdrawal = 5000 coins
+MINING SYSTEM
+Base mining rate = 15 coins/hour
+Mining session lasts 6 hours max
+Daily cap = 120 coins
+
+When user clicks "Start Mining":
+
+Create mining session with start_time and end_time
+
+When user clicks "Claim":
+
+Calculate earnings based on:
+duration * rate * boost_multiplier
+
+IMPORTANT:
+
+Do NOT calculate mining in real-time
+Only calculate on claim
+BOOST SYSTEM (VERY IMPORTANT)
+
+Boost types:
+
+2x boost (30 minutes)
+5x boost (1 hour)
+
+CRITICAL RULE:
+
+Boost MUST NOT activate unless ad is successfully loaded and completed
+
+IMPLEMENT:
+
+Simulate ad system with callback:
+onAdLoaded → allow play
+onAdCompleted → activate boost
+
+If ad is skipped or not loaded:
+
+DO NOT activate boost
+
+Store boost in database:
+
+multiplier
+duration
+expiry_time
+TASK / EARN SYSTEM
+Tasks include:
+Watch ad
+Daily login
+External offers
+
+Each task:
+
+reward_amount
+completion status
+
+Prevent:
+
+duplicate reward claims
+UPGRADE SYSTEM
+
+Upgrade tiers:
+
+Level 1:
+
+Cost: 500 coins
++20% speed
+Daily cap: 140
+
+Level 2:
+
+Cost: 1500 coins
++50% speed
+Daily cap: 180
+
+Level 3:
+
+Cost: 3000 coins
++100% speed
+Daily cap: 250
+
+Level 4:
+
+Cost: 6000 coins
++150% speed
+Daily cap: 350
+
+Level 5 (Auto Miner):
+
+Cost: 10000 coins
++200% speed
+Daily cap: 500
+Auto mining enabled
+
+Upgrades must:
+
+Deduct coins
+Persist user level
+Affect mining calculations
+GAME SYSTEM (SKILL-BASED)
+Create simple game: "Tap Speed Game"
+
+Game flow:
+
+Entry fee: 100 coins
+2–5 players join
+Each plays
+Highest score wins
+
+Reward:
+
+Total pool minus 20% platform fee
+
+Example:
+
+5 players → 500 coins
+Winner gets 400
+Platform keeps 100
+USDT DEPOSIT SYSTEM
+User selects coin package:
+500 coins = 3 USDT
+1500 coins = 10 USDT
+Show:
+wallet address
+unique reference code
+
+User submits:
+
+transaction hash
+
+Admin manually verifies deposit
+
+Upon approval:
+
+credit user coins
+WITHDRAWAL SYSTEM
+Minimum: 5000 coins
+Convert coins → USDT
+
+Create withdrawal request:
+
+status: pending
+
+Admin must approve before processing
+
+ADMIN DASHBOARD
+
+Admin panel must include:
+
+User management
+Approve deposits
+Approve withdrawals
+View transactions
+Adjust mining rates
+Adjust daily caps
+Manage tasks
+AD MANAGEMENT SYSTEM (VERY IMPORTANT)
+
+Admin should be able to:
+
+Add ad units (video ads)
+Set:
+ad type
+reward
+duration
+
+Frontend:
+
+Ads must load before reward or boost is triggered
+
+Simulate ad provider with:
+
+loading state
+success callback
+failure handling
+ANTI-CHEAT SYSTEM
+Track user IP and device
+Prevent multiple accounts abuse
+Prevent multiple reward claims
+Add simple rate limiting
+UI PAGES
+Login / Register
+Dashboard (mining screen)
+Boost screen
+Earn/Tasks screen
+Upgrade screen
+Game lobby
+Wallet
+Referral page
+Admin dashboard
+IMPORTANT RULES
+All earnings must respect daily cap
+Boost must require ad completion
+No direct coin injection without validation
+All transactions must be logged
+BONUS (OPTIONAL)
+Leaderboard system
+Push notifications (basic simulation)
+
+Build this as a working MVP with clean UI and functional backend APIs.
