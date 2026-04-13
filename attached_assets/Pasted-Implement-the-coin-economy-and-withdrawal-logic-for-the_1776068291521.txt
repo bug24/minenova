@@ -1,0 +1,124 @@
+Implement the coin economy and withdrawal logic for the MineNova app with the following rules:
+
+---
+
+COIN CONVERSION:
+
+* 1 USDT = 1000 coins
+* Minimum withdrawal = 5 USDT
+* Therefore, minimum withdrawal in coins = 5000 coins
+
+---
+
+USER WALLET STRUCTURE:
+
+Each user must have:
+
+* coin_balance
+* pending_balance
+* total_earned
+* total_withdrawn
+
+---
+
+MINING EARNINGS:
+
+* Coins are accumulated into pending_balance
+* When user clicks "Claim", move earnings from pending_balance to coin_balance
+
+---
+
+WITHDRAWAL LOGIC:
+
+When user clicks "Withdraw":
+
+1. Check if coin_balance >= 5000
+
+   * If NO:
+
+     * Show message: "Minimum withdrawal is 5000 coins (5 USDT)"
+     * Disable withdrawal button
+
+   * If YES:
+
+     * Show withdrawal screen
+
+---
+
+WITHDRAWAL SCREEN UI:
+
+Display:
+
+* Current coin balance
+* Equivalent USDT value (coin_balance / 1000)
+
+Example:
+"Your balance: 5200 coins (~5.2 USDT)"
+
+---
+
+IMPORTANT FEATURE (UPGRADE INSTEAD OF WITHDRAW):
+
+On the withdrawal screen:
+
+Add two buttons:
+
+1. "Withdraw Now"
+2. "Upgrade Instead"
+
+---
+
+UPGRADE BUTTON BEHAVIOR:
+
+When user clicks "Upgrade Instead":
+
+* Redirect to Upgrade page
+* Highlight upgrade options that are close to user's balance
+
+Example:
+If user has 5200 coins:
+
+* Suggest:
+
+  * 6000 coin upgrade (Level 4)
+
+Show message:
+"Upgrade your mining power instead of withdrawing and earn faster"
+
+---
+
+WITHDRAWAL PROCESS:
+
+When user confirms withdrawal:
+
+* Deduct coins from coin_balance
+* Create withdrawal record:
+
+  * user_id
+  * coins_deducted
+  * usdt_amount (coins / 1000)
+  * status = "pending"
+
+---
+
+IMPORTANT RULES:
+
+* Do NOT allow withdrawal below 5000 coins
+
+* Always convert coins to USDT using:
+  usdt = coins / 1000
+
+* Round USDT to 2 decimal places
+
+---
+
+OPTIONAL UX IMPROVEMENT:
+
+If user balance is close to upgrade level:
+
+* Show prompt:
+  "You are close to upgrading your mining level. Upgrade now for better earnings."
+
+---
+
+Ensure all calculations are handled on the backend and validated before processing.

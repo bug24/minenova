@@ -63,7 +63,7 @@ export default function WithdrawalTicker() {
 
   return (
     <div
-      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 ${animating === "in" ? "ticker-in" : animating === "out" ? "ticker-out" : ""}`}
+      className={`fixed bottom-[5.5rem] left-1/2 -translate-x-1/2 z-50 ${animating === "in" ? "ticker-in" : animating === "out" ? "ticker-out" : ""}`}
       data-testid="withdrawal-ticker"
     >
       <div className="bg-card border border-border rounded-full px-4 py-2 shadow-lg flex items-center gap-2 text-sm whitespace-nowrap">
