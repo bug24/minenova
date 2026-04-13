@@ -3,27 +3,29 @@ import { useGetUpgrades, usePurchaseUpgrade, getGetUpgradesQueryKey } from "@wor
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetWallet } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Zap, CheckCircle2, Cpu, TrendingUp, Lock, Copy, DollarSign } from "lucide-react";
-
-const BASE_COINS_PER_HOUR = 0.5;
-const SESSIONS_PER_DAY = 2;
-const SESSION_HOURS = 12;
-const COINS_PER_USDT = 1000;
-
-function calcDailyUsdt(tier: number): number {
-  const miningLevel = tier + 1;
-  const coinsPerDay = BASE_COINS_PER_HOUR * miningLevel * SESSION_HOURS * SESSIONS_PER_DAY;
-  return coinsPerDay / COINS_PER_USDT;
-}
+import { CheckCircle2, Copy, Cpu } from "lucide-react";
 
 interface PurchaseResult {
   usdtAddress: string | null | undefined;
   paymentTag: string | null | undefined;
   message: string;
   usdtCost?: number | null;
+}
+
+const BADGE_STYLES: Record<string, string> = {
+  Popular: "bg-purple-600 text-white",
+  "Best Value": "bg-pink-600 text-white",
+  Elite: "bg-emerald-600 text-white",
+  USDT: "bg-amber-500 text-white",
+  Auto: "bg-blue-600 text-white",
+};
+
+function getBuyButtonClass(tier: number): string {
+  if (tier <= 2) return "from-blue-500 to-cyan-400";
+  if (tier <= 4) return "from-orange-500 to-amber-400";
+  return "from-emerald-500 to-teal-400";
 }
 
 export default function Upgrades() {
@@ -58,149 +60,162 @@ export default function Upgrades() {
   const selectedUpgradeData = upgrades?.find(u => u.id === selectedUpgrade);
   const coinBalance = wallet?.totalBalance ?? 0;
 
+  const getBadgeLabel = (upgrade: NonNullable<typeof upgrades>[number]) => {
+    if (upgrade.badge) return upgrade.badge;
+    if (upgrade.isAutoMining) return "Auto";
+    if (upgrade.usdtCost && !upgrade.coinCost) return "USDT";
+    return null;
+  };
+
   return (
-    <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-6">
+    <div className="p-4 pb-24 max-w-lg mx-auto space-y-5">
       <div>
-        <h1 className="text-2xl font-bold font-serif">Upgrade Mining Rig</h1>
-        <p className="text-muted-foreground text-sm mt-0.5">Increase your mining power and earn more</p>
+        <h1 className="text-2xl font-bold">Upgrade Mining Rig</h1>
+        <p className="text-muted-foreground text-sm mt-0.5">Boost your speed and earn more coins per session</p>
       </div>
 
-      <div className="bg-card border border-card-border rounded-xl p-4 flex items-center justify-between">
+      <div className="bg-card border border-card-border rounded-2xl p-4 flex items-center justify-between">
         <div>
           <p className="text-xs text-muted-foreground">Your Coin Balance</p>
-          <p className="text-2xl font-bold text-primary">{coinBalance.toFixed(2)} <span className="text-sm text-muted-foreground">coins</span></p>
+          <p className="text-2xl font-bold text-primary">{coinBalance.toFixed(2)} <span className="text-sm text-muted-foreground font-normal">coins</span></p>
         </div>
         <Cpu className="w-8 h-8 text-muted-foreground" />
       </div>
 
       {isLoading ? (
-        <div className="space-y-3">
-          {[...Array(4)].map((_, i) => <div key={i} className="h-36 bg-muted rounded-2xl animate-pulse" />)}
+        <div className="space-y-4">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="h-32 bg-muted rounded-2xl animate-pulse" />
+          ))}
         </div>
       ) : (
         <div className="space-y-4">
-          {upgrades?.map(upgrade => (
-            <div
-              key={upgrade.id}
-              className={`bg-card border rounded-2xl p-5 transition-all ${upgrade.owned ? "border-emerald-500/30 opacity-80" : "border-card-border"}`}
-              data-testid={`upgrade-card-${upgrade.id}`}
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-semibold">{upgrade.name}</h3>
-                    <Badge variant="secondary" className="text-xs">Tier {upgrade.tier}</Badge>
-                    {upgrade.isAutoMining && <Badge className="text-xs bg-purple-500/20 text-purple-500 border-0">Auto</Badge>}
-                    {upgrade.owned && <Badge className="text-xs bg-emerald-500/20 text-emerald-500 border-0">Owned</Badge>}
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-3">{upgrade.description}</p>
-
-                  <div className="flex flex-wrap gap-3 mb-3">
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <TrendingUp className="w-3.5 h-3.5 text-primary" />
-                      <span>+{upgrade.hashRateBoost} MH/s</span>
+          {upgrades?.map(upgrade => {
+            const badgeLabel = getBadgeLabel(upgrade);
+            const buttonGradient = getBuyButtonClass(upgrade.tier);
+            return (
+              <div
+                key={upgrade.id}
+                className={`relative bg-card border rounded-2xl overflow-hidden transition-all ${upgrade.owned ? "border-emerald-500/40" : "border-card-border"}`}
+                data-testid={`upgrade-card-${upgrade.id}`}
+              >
+                <div className="p-5 pb-4">
+                  <div className="flex items-start gap-4">
+                    <div className="text-3xl shrink-0 mt-0.5">{upgrade.icon ?? "⚡"}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <h3 className="font-bold text-base leading-tight">{upgrade.name}</h3>
+                        {badgeLabel && (
+                          <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full shrink-0 ${BADGE_STYLES[badgeLabel] ?? "bg-primary text-white"}`}>
+                            {badgeLabel}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-snug">{upgrade.description}</p>
+                      <div className="flex items-center gap-3 mt-2.5 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <span className="text-primary font-semibold">+{upgrade.hashRateBoost}%</span> speed
+                        </span>
+                        <span className="text-border">•</span>
+                        <span className="flex items-center gap-1">
+                          <span className="font-semibold text-foreground/80">{upgrade.dailyCapBoost}</span> daily cap
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Zap className="w-3.5 h-3.5 text-accent" />
-                      <span>+{upgrade.dailyCapBoost} daily cap</span>
-                    </div>
-                  </div>
-                  <div className="inline-flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2.5 py-1">
-                    <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
-                    <span className="text-xs font-semibold text-emerald-500">
-                      Earn ~${calcDailyUsdt(upgrade.tier).toFixed(3)} USDT/day
-                    </span>
                   </div>
                 </div>
 
-                <div className="text-right flex-shrink-0">
-                  {upgrade.owned ? (
-                    <div className="flex items-center gap-1.5 text-emerald-500 text-sm font-medium">
-                      <CheckCircle2 className="w-4 h-4" />
-                      Active
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {upgrade.coinCost && (
-                        <p className="text-sm font-semibold">{upgrade.coinCost} coins</p>
-                      )}
-                      {upgrade.usdtCost && (
-                        <p className="text-sm font-semibold text-accent">${upgrade.usdtCost} USDT</p>
-                      )}
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setSelectedUpgrade(upgrade.id);
-                          setPaymentMethod(upgrade.coinCost ? "coins" : "usdt");
-                        }}
-                        className="mt-2 gap-1.5"
-                        data-testid={`button-upgrade-${upgrade.id}`}
-                      >
-                        <Lock className="w-3.5 h-3.5" />
-                        Upgrade
-                      </Button>
-                    </div>
-                  )}
-                </div>
+                {upgrade.owned ? (
+                  <div className="mx-4 mb-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    <span className="text-sm font-semibold text-emerald-500">Active</span>
+                  </div>
+                ) : (
+                  <div className="px-4 pb-4">
+                    <button
+                      onClick={() => {
+                        setSelectedUpgrade(upgrade.id);
+                        setPaymentMethod(upgrade.coinCost ? "coins" : "usdt");
+                      }}
+                      data-testid={`button-upgrade-${upgrade.id}`}
+                      className={`w-full py-3 rounded-xl font-bold text-white text-sm bg-gradient-to-r ${buttonGradient} hover:opacity-90 active:scale-[0.98] transition-all shadow-md`}
+                    >
+                      {upgrade.coinCost
+                        ? `Buy for ${upgrade.coinCost.toLocaleString()} coins`
+                        : `Buy for $${upgrade.usdtCost} USDT`}
+                    </button>
+                  </div>
+                )}
               </div>
+            );
+          })}
+
+          {(!upgrades || upgrades.length === 0) && (
+            <div className="text-center py-12 text-muted-foreground text-sm">
+              No upgrade packages available yet.
             </div>
-          ))}
+          )}
         </div>
       )}
 
-      {/* Purchase Dialog */}
+      {/* Purchase Confirm Dialog */}
       <Dialog open={!!selectedUpgrade} onOpenChange={(open) => !open && setSelectedUpgrade(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Purchase Upgrade</DialogTitle>
+            <DialogTitle>Confirm Upgrade</DialogTitle>
           </DialogHeader>
           {selectedUpgradeData && (
             <div className="space-y-4 pt-2">
-              <div className="bg-muted rounded-xl p-4">
-                <h3 className="font-semibold">{selectedUpgradeData.name}</h3>
-                <p className="text-sm text-muted-foreground mt-1">{selectedUpgradeData.description}</p>
+              <div className="flex items-start gap-3 bg-muted rounded-xl p-4">
+                <span className="text-3xl">{selectedUpgradeData.icon ?? "⚡"}</span>
+                <div>
+                  <h3 className="font-semibold">{selectedUpgradeData.name}</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">{selectedUpgradeData.description}</p>
+                </div>
               </div>
 
-              <div>
-                <p className="text-sm font-medium mb-2">Payment Method</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {selectedUpgradeData.coinCost && (
+              {selectedUpgradeData.coinCost && selectedUpgradeData.usdtCost && (
+                <div>
+                  <p className="text-sm font-medium mb-2">Payment Method</p>
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       onClick={() => setPaymentMethod("coins")}
                       className={`p-3 rounded-xl border text-left transition-all ${paymentMethod === "coins" ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}
                     >
-                      <p className="text-sm font-semibold">{selectedUpgradeData.coinCost} coins</p>
-                      <p className="text-xs text-muted-foreground">From your balance</p>
+                      <p className="text-sm font-semibold">{selectedUpgradeData.coinCost.toLocaleString()} coins</p>
+                      <p className="text-xs text-muted-foreground">From balance</p>
                     </button>
-                  )}
-                  {selectedUpgradeData.usdtCost && (
                     <button
                       onClick={() => setPaymentMethod("usdt")}
-                      className={`p-3 rounded-xl border text-left transition-all ${paymentMethod === "usdt" ? "border-accent bg-accent/10" : "border-border hover:border-accent/50"}`}
+                      className={`p-3 rounded-xl border text-left transition-all ${paymentMethod === "usdt" ? "border-amber-500 bg-amber-500/10" : "border-border hover:border-amber-500/50"}`}
                     >
-                      <p className="text-sm font-semibold text-accent">${selectedUpgradeData.usdtCost} USDT</p>
+                      <p className="text-sm font-semibold text-amber-500">${selectedUpgradeData.usdtCost} USDT</p>
                       <p className="text-xs text-muted-foreground">USDT payment</p>
                     </button>
-                  )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {paymentMethod === "coins" && (
-                <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground">
+                <div className={`rounded-lg p-3 text-xs ${coinBalance < (selectedUpgradeData.coinCost ?? 0) ? "bg-destructive/10 text-destructive" : "bg-muted/50 text-muted-foreground"}`}>
                   Your balance: <strong>{coinBalance.toFixed(2)} coins</strong>
                   {coinBalance < (selectedUpgradeData.coinCost ?? 0) && (
-                    <span className="text-destructive ml-2">Insufficient balance</span>
+                    <span className="ml-2">— Insufficient balance</span>
                   )}
                 </div>
               )}
 
               <Button
-                className="w-full"
+                className={`w-full bg-gradient-to-r ${getBuyButtonClass(selectedUpgradeData.tier)} border-0 text-white hover:opacity-90`}
                 onClick={handlePurchase}
                 disabled={purchaseUpgrade.isPending || (paymentMethod === "coins" && coinBalance < (selectedUpgradeData.coinCost ?? 0))}
                 data-testid="button-confirm-purchase"
               >
-                {purchaseUpgrade.isPending ? "Processing..." : `Purchase with ${paymentMethod === "coins" ? "Coins" : "USDT"}`}
+                {purchaseUpgrade.isPending ? "Processing..." : (
+                  paymentMethod === "coins"
+                    ? `Buy for ${selectedUpgradeData.coinCost?.toLocaleString()} coins`
+                    : `Buy for $${selectedUpgradeData.usdtCost} USDT`
+                )}
               </Button>
             </div>
           )}
@@ -211,24 +226,26 @@ export default function Upgrades() {
       <Dialog open={resultOpen} onOpenChange={(open) => { setResultOpen(open); if (!open) setHasSent(false); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{purchaseResult?.usdtAddress ? (hasSent ? "Payment Received" : "Complete Your Payment") : "Upgrade Activated"}</DialogTitle>
+            <DialogTitle>{purchaseResult?.usdtAddress ? (hasSent ? "Payment Received" : "Complete Your Payment") : "Upgrade Activated!"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            {hasSent ? (
+            {!purchaseResult?.usdtAddress ? (
+              <div className="text-center py-4 space-y-3">
+                <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+                </div>
+                <p className="font-semibold text-foreground">{purchaseResult?.message}</p>
+                <Button className="w-full" onClick={() => setResultOpen(false)}>Done</Button>
+              </div>
+            ) : hasSent ? (
               <div className="space-y-4">
                 <div className="text-center py-2">
                   <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
                     <CheckCircle2 className="w-7 h-7 text-emerald-500" />
                   </div>
-                  <p className="font-semibold text-foreground">Transfer Confirmed</p>
+                  <p className="font-semibold">Transfer Confirmed</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Thank you for sending <strong>${purchaseResult?.usdtCost} USDT</strong>. Your upgrade is being processed.
-                  </p>
-                </div>
-                <div className="bg-primary/10 border border-primary/20 rounded-xl p-4">
-                  <p className="text-sm font-semibold text-primary mb-1">⏱ Please allow 2–12 hours</p>
-                  <p className="text-xs text-muted-foreground">
-                    Our team will verify your payment and activate your upgrade within 2–12 hours. You'll see it reflected on this page once confirmed.
+                    Your upgrade is being processed. Allow 2–12 hours for activation.
                   </p>
                 </div>
                 <Button className="w-full" onClick={() => setResultOpen(false)}>Got it</Button>
@@ -236,39 +253,37 @@ export default function Upgrades() {
             ) : (
               <>
                 <p className="text-sm text-muted-foreground">{purchaseResult?.message} TRC20 network.</p>
-                {purchaseResult?.usdtAddress && (
-                  <div className="space-y-3">
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Send USDT to (TRC20)</p>
+                    <div className="flex gap-2">
+                      <div className="flex-1 bg-muted rounded-lg px-3 py-2 text-xs font-mono break-all">{purchaseResult.usdtAddress}</div>
+                      <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(purchaseResult.usdtAddress ?? "")}>
+                        <Copy className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                  {purchaseResult.paymentTag && (
                     <div>
-                      <p className="text-xs font-medium text-muted-foreground mb-1">Send USDT to (TRC20)</p>
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Payment Tag (Required)</p>
                       <div className="flex gap-2">
-                        <div className="flex-1 bg-muted rounded-lg px-3 py-2 text-xs font-mono break-all">{purchaseResult.usdtAddress}</div>
-                        <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(purchaseResult.usdtAddress ?? "")}>
+                        <div className="flex-1 bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 font-mono font-bold text-primary text-sm">{purchaseResult.paymentTag}</div>
+                        <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(purchaseResult.paymentTag ?? "")}>
                           <Copy className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     </div>
-                    {purchaseResult.paymentTag && (
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground mb-1">Payment Tag (Required)</p>
-                        <div className="flex gap-2">
-                          <div className="flex-1 bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 font-mono font-bold text-primary text-sm">{purchaseResult.paymentTag}</div>
-                          <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(purchaseResult.paymentTag ?? "")}>
-                            <Copy className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
-                      <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                        Always include your payment tag in the memo/note field. Without it we cannot process your upgrade.
-                      </p>
-                    </div>
-                    <Button className="w-full gap-2" onClick={() => setHasSent(true)}>
-                      <CheckCircle2 className="w-4 h-4" />
-                      I have sent ${purchaseResult.usdtCost} USDT
-                    </Button>
+                  )}
+                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
+                    <p className="text-xs text-yellow-600 dark:text-yellow-400">
+                      Always include your payment tag in the memo/note field. Without it we cannot process your upgrade.
+                    </p>
                   </div>
-                )}
+                  <Button className="w-full gap-2" onClick={() => setHasSent(true)}>
+                    <CheckCircle2 className="w-4 h-4" />
+                    I have sent ${purchaseResult.usdtCost} USDT
+                  </Button>
+                </div>
               </>
             )}
           </div>

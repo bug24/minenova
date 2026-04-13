@@ -134,8 +134,24 @@ async function seedDefaultMessages() {
   }
 }
 
+const DEFAULT_UPGRADES = [
+  { tier: 1, name: "Speed Boost I", description: "Increase your mining speed by 20% permanently", hashRateBoost: 20, dailyCapBoost: 140, coinCost: 500, usdtCost: null, isAutoMining: false, sortOrder: 1, badge: null, icon: "⚡" },
+  { tier: 2, name: "Speed Boost II", description: "Increase mining speed to 1.5x permanently", hashRateBoost: 50, dailyCapBoost: 180, coinCost: 1500, usdtCost: null, isAutoMining: false, sortOrder: 2, badge: "Popular", icon: "🚀" },
+  { tier: 3, name: "Speed Boost III", description: "Double your mining speed permanently (2x base)", hashRateBoost: 100, dailyCapBoost: 250, coinCost: 3000, usdtCost: null, isAutoMining: false, sortOrder: 3, badge: null, icon: "⛏️" },
+  { tier: 4, name: "Mining Level 4", description: "Elite mining tier — 2.5x base mining speed", hashRateBoost: 150, dailyCapBoost: 350, coinCost: 6000, usdtCost: null, isAutoMining: false, sortOrder: 4, badge: "Best Value", icon: "💎" },
+  { tier: 5, name: "Auto Miner Pro", description: "Maximum speed (3x) with automatic mining sessions", hashRateBoost: 200, dailyCapBoost: 500, coinCost: 10000, usdtCost: null, isAutoMining: true, sortOrder: 5, badge: "Elite", icon: "🤖" },
+];
+
+async function seedUpgrades() {
+  const existing = await db.select({ id: upgradesTable.id }).from(upgradesTable).limit(1);
+  if (existing.length === 0) {
+    await db.insert(upgradesTable).values(DEFAULT_UPGRADES);
+  }
+}
+
 seedAdminConfig().catch(console.error);
 seedDefaultMessages().catch(console.error);
+seedUpgrades().catch(console.error);
 
 // ─── Share Messages ────────────────────────────────────────────────────────────
 
@@ -919,6 +935,63 @@ router.get("/admin/referral-suspicious", requireAdmin, async (_req, res): Promis
   }
 
   res.json(flagged);
+});
+
+// ─── Upgrade Packages CRUD ────────────────────────────────────────────────────
+
+router.get("/admin/upgrades", requireAdmin, async (_req, res): Promise<void> => {
+  const rows = await db.select().from(upgradesTable).orderBy(upgradesTable.sortOrder);
+  res.json(rows);
+});
+
+router.post("/admin/upgrades", requireAdmin, async (req, res): Promise<void> => {
+  const schema = z.object({
+    name: z.string().min(1),
+    description: z.string().min(1),
+    tier: z.number().int().min(1),
+    hashRateBoost: z.number().min(0),
+    dailyCapBoost: z.number().min(0),
+    coinCost: z.number().min(0).nullable().optional(),
+    usdtCost: z.number().min(0).nullable().optional(),
+    isAutoMining: z.boolean().default(false),
+    sortOrder: z.number().int().default(0),
+    badge: z.string().nullable().optional(),
+    icon: z.string().nullable().optional(),
+  });
+  const data = schema.safeParse(req.body);
+  if (!data.success) { res.status(400).json({ error: data.error.issues[0]?.message ?? "Invalid input" }); return; }
+  const [row] = await db.insert(upgradesTable).values(data.data).returning();
+  res.json(row);
+});
+
+router.put("/admin/upgrades/:id", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  const schema = z.object({
+    name: z.string().min(1).optional(),
+    description: z.string().min(1).optional(),
+    tier: z.number().int().min(1).optional(),
+    hashRateBoost: z.number().min(0).optional(),
+    dailyCapBoost: z.number().min(0).optional(),
+    coinCost: z.number().min(0).nullable().optional(),
+    usdtCost: z.number().min(0).nullable().optional(),
+    isAutoMining: z.boolean().optional(),
+    sortOrder: z.number().int().optional(),
+    badge: z.string().nullable().optional(),
+    icon: z.string().nullable().optional(),
+  });
+  const data = schema.safeParse(req.body);
+  if (!data.success) { res.status(400).json({ error: data.error.issues[0]?.message ?? "Invalid input" }); return; }
+  const [row] = await db.update(upgradesTable).set(data.data).where(eq(upgradesTable.id, id)).returning();
+  if (!row) { res.status(404).json({ error: "Upgrade not found" }); return; }
+  res.json(row);
+});
+
+router.delete("/admin/upgrades/:id", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  await db.delete(upgradesTable).where(eq(upgradesTable.id, id));
+  res.json({ success: true });
 });
 
 // ─── Upgrade Purchases ────────────────────────────────────────────────────────

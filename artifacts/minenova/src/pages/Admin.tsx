@@ -63,6 +63,12 @@ interface UpgradePurchase {
   id: number; userId: number; upgradeId: number; username: string | null;
   upgradeName: string | null; tier: number | null; usdtCost: number | null; purchasedAt: string;
 }
+interface UpgradePackage {
+  id: number; name: string; description: string; tier: number;
+  hashRateBoost: number; dailyCapBoost: number; coinCost: number | null;
+  usdtCost: number | null; isAutoMining: boolean; sortOrder: number;
+  badge: string | null; icon: string | null;
+}
 interface Analytics {
   totalUsers: number; activeMiners: number; totalCoinsDistributed: number;
   totalUsdtWithdrawn: number; totalReferralPayout: number; pendingWithdrawals: number;
@@ -1462,23 +1468,225 @@ function ReferralsTab({ secret }: { secret: string }) {
 
 // ─── Upgrades Tab ────────────────────────────────────────────────────────────
 
-function UpgradesTab({ secret }: { secret: string }) {
-  const [items, setItems] = useState<UpgradePurchase[]>([]);
-  const [loading, setLoading] = useState(true);
+const EMPTY_PACKAGE: Omit<UpgradePackage, "id"> = {
+  name: "", description: "", tier: 1, hashRateBoost: 0, dailyCapBoost: 0,
+  coinCost: null, usdtCost: null, isAutoMining: false, sortOrder: 0, badge: null, icon: null,
+};
 
-  useEffect(() => {
-    apiFetch("/admin/upgrade-purchases", { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } }).then(r => r.json()).then(data => {
-      setItems(Array.isArray(data) ? data : []);
+function UpgradesTab({ secret }: { secret: string }) {
+  const [packages, setPackages] = useState<UpgradePackage[]>([]);
+  const [purchases, setPurchases] = useState<UpgradePurchase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingPkg, setEditingPkg] = useState<UpgradePackage | null>(null);
+  const [newPkg, setNewPkg] = useState<Omit<UpgradePackage, "id"> | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const { toast } = useToast();
+
+  const load = useCallback(() => {
+    const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
+    setLoading(true);
+    Promise.all([
+      apiFetch("/admin/upgrades", { headers }).then(r => r.json()),
+      apiFetch("/admin/upgrade-purchases", { headers }).then(r => r.json()),
+    ]).then(([pkgs, purch]) => {
+      setPackages(Array.isArray(pkgs) ? pkgs : []);
+      setPurchases(Array.isArray(purch) ? purch : []);
       setLoading(false);
     });
   }, [secret]);
 
+  useEffect(() => { load(); }, [load]);
+
+  const saveEdit = async () => {
+    if (!editingPkg) return;
+    const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
+    const r = await apiFetch(`/admin/upgrades/${editingPkg.id}`, {
+      method: "PUT", headers,
+      body: JSON.stringify({
+        name: editingPkg.name, description: editingPkg.description,
+        tier: Number(editingPkg.tier), hashRateBoost: Number(editingPkg.hashRateBoost),
+        dailyCapBoost: Number(editingPkg.dailyCapBoost),
+        coinCost: editingPkg.coinCost ? Number(editingPkg.coinCost) : null,
+        usdtCost: editingPkg.usdtCost ? Number(editingPkg.usdtCost) : null,
+        isAutoMining: editingPkg.isAutoMining,
+        sortOrder: Number(editingPkg.sortOrder),
+        badge: editingPkg.badge || null,
+        icon: editingPkg.icon || null,
+      }),
+    });
+    if (r.ok) { toast({ title: "Package saved" }); setEditingPkg(null); load(); }
+    else { const d = await r.json(); toast({ variant: "destructive", title: d.error ?? "Save failed" }); }
+  };
+
+  const saveNew = async () => {
+    if (!newPkg) return;
+    const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
+    const r = await apiFetch("/admin/upgrades", {
+      method: "POST", headers,
+      body: JSON.stringify({
+        name: newPkg.name, description: newPkg.description,
+        tier: Number(newPkg.tier), hashRateBoost: Number(newPkg.hashRateBoost),
+        dailyCapBoost: Number(newPkg.dailyCapBoost),
+        coinCost: newPkg.coinCost ? Number(newPkg.coinCost) : null,
+        usdtCost: newPkg.usdtCost ? Number(newPkg.usdtCost) : null,
+        isAutoMining: newPkg.isAutoMining,
+        sortOrder: Number(newPkg.sortOrder),
+        badge: newPkg.badge || null,
+        icon: newPkg.icon || null,
+      }),
+    });
+    if (r.ok) { toast({ title: "Package created" }); setNewPkg(null); load(); }
+    else { const d = await r.json(); toast({ variant: "destructive", title: d.error ?? "Create failed" }); }
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingId) return;
+    const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
+    const r = await apiFetch(`/admin/upgrades/${deletingId}`, { method: "DELETE", headers });
+    if (r.ok) { toast({ title: "Package deleted" }); setDeletingId(null); load(); }
+    else { toast({ variant: "destructive", title: "Delete failed" }); }
+  };
+
+  const PkgForm = ({ value, onChange }: { value: Partial<UpgradePackage>; onChange: (v: Partial<UpgradePackage>) => void }) => (
+    <div className="grid grid-cols-2 gap-3 text-sm">
+      <div className="col-span-2">
+        <label className="text-xs text-muted-foreground mb-1 block">Name</label>
+        <Input value={value.name ?? ""} onChange={e => onChange({ ...value, name: e.target.value })} placeholder="e.g. Speed Boost II" />
+      </div>
+      <div className="col-span-2">
+        <label className="text-xs text-muted-foreground mb-1 block">Description</label>
+        <Input value={value.description ?? ""} onChange={e => onChange({ ...value, description: e.target.value })} placeholder="Short description" />
+      </div>
+      <div>
+        <label className="text-xs text-muted-foreground mb-1 block">Tier</label>
+        <Input type="number" min={1} value={value.tier ?? 1} onChange={e => onChange({ ...value, tier: Number(e.target.value) })} />
+      </div>
+      <div>
+        <label className="text-xs text-muted-foreground mb-1 block">Sort Order</label>
+        <Input type="number" value={value.sortOrder ?? 0} onChange={e => onChange({ ...value, sortOrder: Number(e.target.value) })} />
+      </div>
+      <div>
+        <label className="text-xs text-muted-foreground mb-1 block">Speed Boost %</label>
+        <Input type="number" min={0} value={value.hashRateBoost ?? 0} onChange={e => onChange({ ...value, hashRateBoost: Number(e.target.value) })} />
+      </div>
+      <div>
+        <label className="text-xs text-muted-foreground mb-1 block">Daily Cap</label>
+        <Input type="number" min={0} value={value.dailyCapBoost ?? 0} onChange={e => onChange({ ...value, dailyCapBoost: Number(e.target.value) })} />
+      </div>
+      <div>
+        <label className="text-xs text-muted-foreground mb-1 block">Coin Cost (blank = none)</label>
+        <Input type="number" min={0} value={value.coinCost ?? ""} onChange={e => onChange({ ...value, coinCost: e.target.value ? Number(e.target.value) : null })} placeholder="0" />
+      </div>
+      <div>
+        <label className="text-xs text-muted-foreground mb-1 block">USDT Cost (blank = none)</label>
+        <Input type="number" min={0} step="0.01" value={value.usdtCost ?? ""} onChange={e => onChange({ ...value, usdtCost: e.target.value ? Number(e.target.value) : null })} placeholder="0.00" />
+      </div>
+      <div>
+        <label className="text-xs text-muted-foreground mb-1 block">Icon (emoji)</label>
+        <Input value={value.icon ?? ""} onChange={e => onChange({ ...value, icon: e.target.value })} placeholder="⚡" />
+      </div>
+      <div>
+        <label className="text-xs text-muted-foreground mb-1 block">Badge (Popular/Best Value/Elite)</label>
+        <Input value={value.badge ?? ""} onChange={e => onChange({ ...value, badge: e.target.value })} placeholder="Popular" />
+      </div>
+      <div className="col-span-2 flex items-center gap-2">
+        <input type="checkbox" id="autoMining" checked={!!value.isAutoMining} onChange={e => onChange({ ...value, isAutoMining: e.target.checked })} className="w-4 h-4" />
+        <label htmlFor="autoMining" className="text-xs text-muted-foreground">Auto-Mining enabled</label>
+      </div>
+    </div>
+  );
+
+  if (loading) return <p className="text-muted-foreground text-sm text-center py-8">Loading…</p>;
+
   return (
-    <div className="space-y-2">
-      {loading ? <p className="text-muted-foreground text-sm text-center py-8">Loading…</p> : (
-        <>
-          {items.length === 0 && <p className="text-muted-foreground text-sm text-center py-8">No upgrade purchases yet</p>}
-          {items.map(u => (
+    <div className="space-y-6">
+      {/* Manage Packages */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold">Manage Packages</h3>
+          <Button size="sm" className="gap-1.5" onClick={() => setNewPkg({ ...EMPTY_PACKAGE })}>
+            <Plus className="w-3.5 h-3.5" /> Add Package
+          </Button>
+        </div>
+
+        {/* Add new package form */}
+        {newPkg && (
+          <div className="bg-card border border-primary/40 rounded-xl p-4 mb-3 space-y-3">
+            <p className="text-xs font-semibold text-primary">New Package</p>
+            <PkgForm value={newPkg} onChange={v => setNewPkg(v as Omit<UpgradePackage, "id">)} />
+            <div className="flex gap-2 pt-1">
+              <Button size="sm" onClick={saveNew} className="gap-1"><Save className="w-3.5 h-3.5" /> Save</Button>
+              <Button size="sm" variant="ghost" onClick={() => setNewPkg(null)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {packages.length === 0 && <p className="text-muted-foreground text-sm text-center py-6">No packages yet. Add one above.</p>}
+          {packages.map(pkg => (
+            <div key={pkg.id}>
+              {editingPkg?.id === pkg.id ? (
+                <div className="bg-card border border-primary/40 rounded-xl p-4 space-y-3">
+                  <p className="text-xs font-semibold text-primary">Editing: {pkg.name}</p>
+                  <PkgForm value={editingPkg} onChange={v => setEditingPkg(v as UpgradePackage)} />
+                  <div className="flex gap-2 pt-1">
+                    <Button size="sm" onClick={saveEdit} className="gap-1"><Save className="w-3.5 h-3.5" /> Save</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditingPkg(null)}>Cancel</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-card border border-card-border rounded-xl p-3 flex items-center gap-3">
+                  <span className="text-xl">{pkg.icon ?? "⚡"}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm">{pkg.name}</span>
+                      <Badge variant="secondary" className="text-xs">Tier {pkg.tier}</Badge>
+                      {pkg.badge && <Badge className={`text-xs border-0 ${pkg.badge === "Popular" ? "bg-purple-500/20 text-purple-400" : pkg.badge === "Best Value" ? "bg-pink-500/20 text-pink-400" : "bg-emerald-500/20 text-emerald-400"}`}>{pkg.badge}</Badge>}
+                      {pkg.isAutoMining && <Badge className="text-xs bg-blue-500/20 text-blue-400 border-0">Auto</Badge>}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">{pkg.description}</p>
+                    <div className="flex gap-3 text-xs text-muted-foreground mt-1">
+                      {pkg.coinCost && <span className="text-primary font-medium">{pkg.coinCost.toLocaleString()} coins</span>}
+                      {pkg.usdtCost && <span className="text-amber-500 font-medium">${pkg.usdtCost} USDT</span>}
+                      <span>+{pkg.hashRateBoost}% speed</span>
+                      <span>Cap: {pkg.dailyCapBoost}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <Button size="sm" variant="ghost" onClick={() => setEditingPkg({ ...pkg })} className="h-8 w-8 p-0">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setDeletingId(pkg.id)} className="h-8 w-8 p-0 text-destructive hover:text-destructive">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Delete Confirm */}
+      {deletingId && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-card-border rounded-2xl p-6 max-w-sm w-full space-y-4">
+            <h3 className="font-semibold">Delete Package?</h3>
+            <p className="text-sm text-muted-foreground">This will permanently remove the package. Users who already own it keep their upgrade.</p>
+            <div className="flex gap-2">
+              <Button variant="destructive" className="flex-1" onClick={confirmDelete}>Delete</Button>
+              <Button variant="ghost" className="flex-1" onClick={() => setDeletingId(null)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Purchase History */}
+      <div>
+        <h3 className="font-semibold mb-3">Purchase History</h3>
+        {purchases.length === 0 && <p className="text-muted-foreground text-sm text-center py-6">No upgrade purchases yet</p>}
+        <div className="space-y-2">
+          {purchases.map(u => (
             <div key={u.id} className="bg-card border border-card-border rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2">
@@ -1491,8 +1699,8 @@ function UpgradesTab({ secret }: { secret: string }) {
               {u.usdtCost && <p className="text-sm font-bold text-emerald-400">${u.usdtCost.toFixed(2)} USDT</p>}
             </div>
           ))}
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

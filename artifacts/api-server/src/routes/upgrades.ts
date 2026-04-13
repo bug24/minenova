@@ -29,6 +29,8 @@ router.get("/upgrades", requireAuth, async (req, res): Promise<void> => {
     usdtCost: u.usdtCost,
     owned: ownedSet.has(u.id),
     isAutoMining: u.isAutoMining,
+    badge: u.badge ?? null,
+    icon: u.icon ?? null,
   }));
 
   res.json(GetUpgradesResponse.parse(result));
@@ -80,7 +82,7 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
     }
 
     const newBalance = user.coinBalance - upgrade.coinCost;
-    const newLevel = user.miningLevel + 1;
+    const newLevel = Math.max(user.miningLevel, upgrade.tier);
 
     await db.update(usersTable).set({ coinBalance: newBalance, miningLevel: newLevel }).where(eq(usersTable.id, req.userId!));
     await db.insert(userUpgradesTable).values({ userId: req.userId!, upgradeId });

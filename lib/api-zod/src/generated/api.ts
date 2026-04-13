@@ -224,6 +224,8 @@ export const GetUpgradesResponseItem = zod.object({
   usdtCost: zod.number().nullish(),
   owned: zod.boolean(),
   isAutoMining: zod.boolean(),
+  badge: zod.string().nullish(),
+  icon: zod.string().nullish(),
 });
 export const GetUpgradesResponse = zod.array(GetUpgradesResponseItem);
 
