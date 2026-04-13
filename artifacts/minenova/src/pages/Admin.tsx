@@ -258,7 +258,7 @@ function WithdrawalsTab({ secret }: { secret: string }) {
     else toast({ variant: "destructive", title: "Failed to reject" });
   };
 
-  const FILTERS = ["all", "pending", "completed", "rejected"];
+  const FILTERS = ["all", "pending", "approved", "rejected"];
 
   return (
     <div className="space-y-4">

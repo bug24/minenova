@@ -27,15 +27,6 @@ async function getAdminPassword(): Promise<string> {
   return row?.value ?? DEFAULT_PASSWORD;
 }
 
-async function getSettingValue(key: string, fallback: string): Promise<string> {
-  const [row] = await db
-    .select({ value: adminConfigTable.value })
-    .from(adminConfigTable)
-    .where(eq(adminConfigTable.key, key))
-    .limit(1);
-  return row?.value ?? fallback;
-}
-
 async function upsertSetting(key: string, value: string): Promise<void> {
   const [existing] = await db
     .select({ key: adminConfigTable.key })
@@ -204,7 +195,7 @@ router.get("/admin/analytics", requireAdmin, async (_req, res): Promise<void> =>
   const [totalUsersRow] = await db.select({ count: sql<number>`count(*)::int` }).from(usersTable);
   const [activeMinersRow] = await db.select({ count: sql<number>`count(*)::int` }).from(miningSessionsTable).where(and(eq(miningSessionsTable.isActive, true), isNull(miningSessionsTable.claimedAt)));
   const [coinsRow] = await db.select({ sum: sql<number>`coalesce(sum(total_earned), 0)` }).from(usersTable);
-  const [withdrawnRow] = await db.select({ sum: sql<number>`coalesce(sum(amount), 0)` }).from(transactionsTable).where(and(eq(transactionsTable.type, "withdrawal"), eq(transactionsTable.status, "completed")));
+  const [withdrawnRow] = await db.select({ sum: sql<number>`coalesce(sum(amount), 0)` }).from(transactionsTable).where(and(eq(transactionsTable.type, "withdrawal"), eq(transactionsTable.status, "approved")));
   const [refPayoutRow] = await db.select({ sum: sql<number>`coalesce(sum(amount), 0)` }).from(transactionsTable).where(eq(transactionsTable.type, "referral"));
   const [pendingRow] = await db.select({ count: sql<number>`count(*)::int` }).from(transactionsTable).where(and(eq(transactionsTable.type, "withdrawal"), eq(transactionsTable.status, "pending")));
 
@@ -317,7 +308,7 @@ router.post("/admin/users/:id/adjust-balance", requireAdmin, async (req, res): P
 router.get("/admin/withdrawals", requireAdmin, async (req, res): Promise<void> => {
   const status = req.query.status as string | undefined;
   const conditions = [eq(transactionsTable.type, "withdrawal")];
-  if (status && ["pending", "completed", "rejected"].includes(status)) {
+  if (status && ["pending", "approved", "rejected"].includes(status)) {
     conditions.push(eq(transactionsTable.status, status));
   }
 
@@ -352,7 +343,7 @@ router.post("/admin/withdrawals/:id/approve", requireAdmin, async (req, res): Pr
   if (!tx) { res.status(404).json({ error: "Withdrawal not found" }); return; }
   if (tx.status !== "pending") { res.status(400).json({ error: "Only pending withdrawals can be approved" }); return; }
 
-  await db.update(transactionsTable).set({ status: "completed", adminNote: data.data.adminNote ?? null }).where(eq(transactionsTable.id, id));
+  await db.update(transactionsTable).set({ status: "approved", adminNote: data.data.adminNote ?? null }).where(eq(transactionsTable.id, id));
   res.json({ success: true });
 });
 
@@ -453,9 +444,6 @@ router.post("/admin/mining-sessions/:id/stop", requireAdmin, async (req, res): P
 // ─── Referrals ────────────────────────────────────────────────────────────────
 
 router.get("/admin/referrals", requireAdmin, async (_req, res): Promise<void> => {
-  const referrers = db.select({ id: usersTable.id, username: usersTable.username }).from(usersTable).as("referrers");
-  const referred = db.select({ id: usersTable.id, username: usersTable.username }).from(usersTable).as("referred");
-
   const rows = await db
     .select({
       id: referralsTable.id,
