@@ -8,58 +8,9 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { Pickaxe, Zap, TrendingUp, Bell, BellOff } from "lucide-react";
+import { Pickaxe, Zap, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
-
-function getAuthHeader(): Record<string, string> {
-  const token = localStorage.getItem("minenova_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-async function subscribeToNotifications(): Promise<boolean> {
-  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return false;
-  if (Notification.permission === "denied") return false;
-
-  let permission = Notification.permission;
-  if (permission === "default") {
-    permission = await Notification.requestPermission();
-  }
-  if (permission !== "granted") return false;
-
-  const registration = await navigator.serviceWorker.ready;
-
-  const keyRes = await fetch("/api/notifications/vapid-public-key", {
-    headers: { ...getAuthHeader() },
-  });
-  if (!keyRes.ok) return false;
-  const { publicKey } = await keyRes.json() as { publicKey: string };
-
-  const existing = await registration.pushManager.getSubscription();
-  if (existing) await existing.unsubscribe();
-
-  const keyBytes = Uint8Array.from(
-    atob(publicKey.replace(/-/g, "+").replace(/_/g, "/")),
-    (c) => c.charCodeAt(0),
-  );
-
-  const sub = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: keyBytes,
-  });
-
-  const subJson = sub.toJSON();
-  await fetch("/api/notifications/subscribe", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeader(),
-    },
-    body: JSON.stringify(subJson),
-  });
-
-  return true;
-}
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) return "00:00:00";
@@ -75,31 +26,6 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const [countdown, setCountdown] = useState("--:--:--");
   const [displayCoins, setDisplayCoins] = useState(0);
-  const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
-    () => {
-      if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
-      return Notification.permission;
-    }
-  );
-  const [notifLoading, setNotifLoading] = useState(false);
-
-  const handleEnableNotifications = async () => {
-    setNotifLoading(true);
-    try {
-      const ok = await subscribeToNotifications();
-      if (ok) {
-        setNotifPermission("granted");
-        toast({ title: "Notifications enabled!", description: "We'll notify you when mining completes." });
-      } else {
-        setNotifPermission(Notification.permission as NotificationPermission);
-        toast({ variant: "destructive", title: "Could not enable notifications", description: "Check your browser notification settings." });
-      }
-    } catch {
-      toast({ variant: "destructive", title: "Error", description: "Could not enable notifications." });
-    } finally {
-      setNotifLoading(false);
-    }
-  };
 
   const { data: status, isLoading } = useGetMiningStatus();
   const { data: summary } = useGetDashboardSummary();
@@ -147,11 +73,6 @@ export default function Dashboard() {
       onSuccess: () => {
         toast({ title: "Mining started!", description: "Your 12-hour session is running." });
         invalidate();
-        subscribeToNotifications()
-          .then((ok) => {
-            if (ok) setNotifPermission("granted");
-          })
-          .catch(() => {});
       },
       onError: (err: unknown) => {
         const msg = (err as { data?: { error?: string } })?.data?.error ?? "Could not start mining";
@@ -381,38 +302,6 @@ export default function Dashboard() {
           </button>
         </Link>
       </div>
-
-      {/* Notification opt-in */}
-      {notifPermission !== "unsupported" && notifPermission !== "granted" && (
-        <button
-          onClick={handleEnableNotifications}
-          disabled={notifLoading || notifPermission === "denied"}
-          className="w-full flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{
-            background: "rgba(168,85,247,0.08)",
-            border: "1px solid rgba(168,85,247,0.25)",
-          }}
-          data-testid="button-enable-notifications"
-        >
-          <div className="w-8 h-8 rounded-xl bg-purple-500/20 flex items-center justify-center flex-shrink-0">
-            {notifPermission === "denied" ? (
-              <BellOff className="w-4 h-4 text-muted-foreground" />
-            ) : (
-              <Bell className="w-4 h-4 text-primary" />
-            )}
-          </div>
-          <div>
-            <p className="text-sm font-bold text-foreground">
-              {notifPermission === "denied" ? "Notifications blocked" : notifLoading ? "Enabling…" : "Enable notifications"}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {notifPermission === "denied"
-                ? "Allow in browser settings"
-                : "Get alerted when mining ends"}
-            </p>
-          </div>
-        </button>
-      )}
     </div>
   );
 }

@@ -13,8 +13,6 @@ export const upgradesTable = pgTable("upgrades", {
   usdtCost: real("usdt_cost"),
   isAutoMining: boolean("is_auto_mining").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
-  badge: text("badge"),
-  icon: text("icon"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

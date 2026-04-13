@@ -8,8 +8,6 @@ import walletRouter from "./wallet";
 import upgradesRouter from "./upgrades";
 import leaderboardRouter from "./leaderboard";
 import adminRouter from "./admin";
-import adsRouter from "./ads";
-import notificationsRouter from "./notifications";
 
 const router: IRouter = Router();
 
@@ -22,7 +20,5 @@ router.use(walletRouter);
 router.use(upgradesRouter);
 router.use(leaderboardRouter);
 router.use(adminRouter);
-router.use(adsRouter);
-router.use(notificationsRouter);
 
 export default router;

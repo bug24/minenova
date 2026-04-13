@@ -111,11 +111,6 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  if (user.isSuspended) {
-    res.status(403).json({ error: "Account suspended. Contact support." });
-    return;
-  }
-
   const token = generateToken(user.id);
 
   res.json({
