@@ -6,7 +6,7 @@ import { requireAuth } from "../middlewares/requireAuth";
 const router: IRouter = Router();
 
 router.get("/notifications/vapid-public-key", requireAuth, (_req, res) => {
-  const key = process.env["PUSH_PUB_KEY"];
+  const key = process.env["VAPID_PUBLIC_KEY"];
   if (!key) return res.status(503).json({ error: "Push notifications not configured" });
   res.json({ publicKey: key });
 });

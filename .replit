@@ -45,8 +45,3 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-VAPID_PUBLIC_KEY = "BCkohQVpYWp1Fntu-Celg72vO2YyjsEFAmD7sona7PRBUHdjz8UJ7NofxGFZ9vkaP1I_VdmT8tvh2VLJoQxRaCE"
-VAPID_CONTACT_URL = "mailto:admin@minenova.app"
-PUSH_PUB_KEY = "BGqP0ItD9tuNR_6mZ1h1pbQO6PLfAsleZF9fhEyfzIyuPTAoLzMnjtRqVsVab5GLmpiwegiVhskwQKsV5-CbdPM"
-PUSH_PRIV_KEY = "qoGgarXbVSFcg6OHi8--jGjSzk6mXSMhsVROOFuFLl0"
-PUSH_CONTACT = "mailto:admin@minenova.app"

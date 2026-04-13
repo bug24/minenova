@@ -38,9 +38,14 @@ async function subscribeToNotifications(): Promise<boolean> {
   const existing = await registration.pushManager.getSubscription();
   if (existing) await existing.unsubscribe();
 
+  const keyBytes = Uint8Array.from(
+    atob(publicKey.replace(/-/g, "+").replace(/_/g, "/")),
+    (c) => c.charCodeAt(0),
+  );
+
   const sub = await registration.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey: publicKey,
+    applicationServerKey: keyBytes,
   });
 
   const subJson = sub.toJSON();
