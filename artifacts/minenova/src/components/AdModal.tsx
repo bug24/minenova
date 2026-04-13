@@ -17,11 +17,10 @@ interface AdModalProps {
   totalAds: number;
   currentAd: number;
   gradient: string;
-  autoActivate: boolean;
   onComplete: () => void;
 }
 
-export default function AdModal({ ad, totalAds, currentAd, gradient, autoActivate, onComplete }: AdModalProps) {
+export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete }: AdModalProps) {
   const [elapsed, setElapsed] = useState(0);
   const [canSkip, setCanSkip] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -42,7 +41,6 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, autoActivat
         if (next >= total) {
           clearInterval(interval);
           setCanSkip(true);
-          if (autoActivate) onComplete();
           return total;
         }
         return next;
@@ -132,8 +130,8 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, autoActivat
         {/* Action */}
         <div className="px-4 pb-4 pt-2">
           <button
-            onClick={() => onComplete()}
-            disabled={!canSkip && !autoActivate}
+            onClick={() => canSkip && onComplete()}
+            disabled={!canSkip}
             className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
             style={canSkip ? { background: gradient } : { background: "rgba(255,255,255,0.1)" }}
           >
