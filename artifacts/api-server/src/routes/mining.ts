@@ -10,6 +10,11 @@ async function isMaintenanceModeEnabled(): Promise<boolean> {
   return row?.value === "true";
 }
 
+async function isMiningDisabled(): Promise<boolean> {
+  const [row] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable).where(eq(adminConfigTable.key, "mining_disabled")).limit(1);
+  return row?.value === "true";
+}
+
 async function isReferralDisabled(): Promise<boolean> {
   const [row] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable).where(eq(adminConfigTable.key, "referral_disabled")).limit(1);
   return row?.value === "true";
@@ -106,6 +111,10 @@ router.get("/mining/status", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.post("/mining/start", requireAuth, async (req, res): Promise<void> => {
+  if (await isMiningDisabled()) {
+    res.status(403).json({ error: "Mining is currently disabled by the administrator." });
+    return;
+  }
   if (await isMaintenanceModeEnabled()) {
     res.status(503).json({ error: "Mining is temporarily disabled for maintenance. Please try again later." });
     return;

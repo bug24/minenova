@@ -69,7 +69,16 @@ interface Analytics {
 interface WithdrawalStats {
   pendingCount: number; pendingValue: number; approvedTotal: number; rejectedTotal: number;
 }
-interface Settings { min_withdrawal_usdt: string; referral_bonus_coins: string; referral_commission_pct: string; maintenance_mode: string; }
+interface Settings {
+  min_withdrawal_usdt: string;
+  referral_bonus_coins: string;
+  referral_commission_pct: string;
+  maintenance_mode: string;
+  global_base_coins_per_hour: string;
+  session_duration_hours: string;
+  referral_disabled: string;
+  mining_disabled: string;
+}
 interface ShareMessage { id: number; platform: string; message: string; isActive: boolean; sortOrder: number; }
 interface UserReferral { id: number; referredId: number; referredUsername: string; totalEarned: number; bonusPaid: boolean; createdAt: string; }
 interface UserTransaction { id: number; type: string; amount: number; status: string; description: string; adminNote: string | null; createdAt: string; }
@@ -1477,74 +1486,249 @@ function UpgradesTab({ secret }: { secret: string }) {
 
 // ─── Settings Tab ────────────────────────────────────────────────────────────
 
+function Toggle({ on, onChange, danger }: { on: boolean; onChange: (v: boolean) => void; danger?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!on)}
+      className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${on ? (danger ? "bg-red-500" : "bg-purple-600") : "bg-muted"}`}
+    >
+      <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${on ? "translate-x-4" : ""}`} />
+    </button>
+  );
+}
+
 function SettingsTab({ secret }: { secret: string }) {
   const { toast } = useToast();
-  const [settings, setSettings] = useState<Settings>({
+  const h = useMemo(() => ({ "x-admin-secret": secret, "Content-Type": "application/json" }), [secret]);
+
+  const DEFAULTS: Settings = {
     min_withdrawal_usdt: "5",
     referral_bonus_coins: "250",
     referral_commission_pct: "7",
     maintenance_mode: "false",
-  });
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
-
-  useEffect(() => {
-    apiFetch("/admin/settings", { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } }).then(r => r.json()).then(data => {
-      setSettings(prev => ({ ...prev, ...data }));
-      setLoading(false);
-    });
-  }, [secret]);
-
-  const handleSave = async () => {
-    setSaving(true);
-    const res = await apiFetch("/admin/settings", { method: "PUT", headers, body: JSON.stringify(settings) });
-    if (res.ok) toast({ title: "Settings saved" });
-    else toast({ variant: "destructive", title: "Failed to save settings" });
-    setSaving(false);
+    global_base_coins_per_hour: "0.5",
+    session_duration_hours: "12",
+    referral_disabled: "false",
+    mining_disabled: "false",
   };
 
-  if (loading) return <p className="text-muted-foreground text-sm py-8 text-center">Loading…</p>;
+  const [settings, setSettings] = useState<Settings>(DEFAULTS);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<Record<string, boolean>>({});
+  // Change-password state
+  const [newPw, setNewPw] = useState("");
+  const [savingPw, setSavingPw] = useState(false);
+
+  useEffect(() => {
+    apiFetch("/admin/settings", { headers: h })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((data: Partial<Settings>) => { setSettings(prev => ({ ...prev, ...data })); setLoading(false); })
+      .catch(() => { toast({ variant: "destructive", title: "Failed to load settings" }); setLoading(false); });
+  }, [h, toast]);
+
+  const saveSetting = async (key: keyof Settings, value: string) => {
+    setSaving(p => ({ ...p, [key]: true }));
+    try {
+      const res = await apiFetch("/admin/settings", { method: "PUT", headers: h, body: JSON.stringify({ [key]: value }) });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Failed"); }
+      toast({ title: "Saved" });
+      setSettings(p => ({ ...p, [key]: value }));
+    } catch (e: unknown) {
+      toast({ variant: "destructive", title: e instanceof Error ? e.message : "Failed to save" });
+    } finally {
+      setSaving(p => ({ ...p, [key]: false }));
+    }
+  };
+
+  const handleSavePw = async () => {
+    if (!newPw.trim()) { toast({ variant: "destructive", title: "Password cannot be empty" }); return; }
+    setSavingPw(true);
+    try {
+      const res = await apiFetch("/admin/change-password", { method: "POST", headers: h, body: JSON.stringify({ newPassword: newPw }) });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Failed"); }
+      toast({ title: "Password changed" });
+      setNewPw("");
+    } catch (e: unknown) {
+      toast({ variant: "destructive", title: e instanceof Error ? e.message : "Failed" });
+    } finally {
+      setSavingPw(false); }
+  };
+
+  if (loading) return <p className="text-muted-foreground text-sm py-8 text-center">Loading settings…</p>;
+
+  const isSaving = (key: keyof Settings) => saving[key] === true;
 
   return (
-    <div className="max-w-md space-y-5">
+    <div className="max-w-lg space-y-5">
+
+      {/* ── Mining ── */}
       <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
-        <h3 className="font-semibold text-sm">Economy Settings</h3>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground font-medium">Minimum Withdrawal (USDT)</label>
-            <Input type="number" value={settings.min_withdrawal_usdt} onChange={e => setSettings(p => ({ ...p, min_withdrawal_usdt: e.target.value }))} />
+        <h3 className="font-semibold text-sm text-purple-400">Mining</h3>
+
+        {/* Mining enabled/disabled toggle */}
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Mining system</p>
+            <p className="text-xs text-muted-foreground">
+              {settings.mining_disabled === "true" ? "Mining is OFF — users cannot start sessions" : "Mining is ON — users can start sessions normally"}
+            </p>
           </div>
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground font-medium">Referral Bonus (coins)</label>
-            <Input type="number" value={settings.referral_bonus_coins} onChange={e => setSettings(p => ({ ...p, referral_bonus_coins: e.target.value }))} />
+          <div className="flex items-center gap-2">
+            <Toggle
+              on={settings.mining_disabled !== "true"}
+              danger={false}
+              onChange={v => saveSetting("mining_disabled", v ? "false" : "true")}
+            />
+            {isSaving("mining_disabled") && <span className="text-xs text-muted-foreground">Saving…</span>}
           </div>
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground font-medium">Referral Commission (%)</label>
-            <Input type="number" value={settings.referral_commission_pct} onChange={e => setSettings(p => ({ ...p, referral_commission_pct: e.target.value }))} />
+        </div>
+
+        {/* Global mining rate */}
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Global base rate (coins / hour)</label>
+          <div className="flex gap-2">
+            <Input
+              type="number" step="0.01" min="0"
+              value={settings.global_base_coins_per_hour}
+              onChange={e => setSettings(p => ({ ...p, global_base_coins_per_hour: e.target.value }))}
+            />
+            <Button size="sm" disabled={isSaving("global_base_coins_per_hour")} onClick={() => saveSetting("global_base_coins_per_hour", settings.global_base_coins_per_hour)}>
+              {isSaving("global_base_coins_per_hour") ? "…" : "Save"}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">≈ ${(parseFloat(settings.global_base_coins_per_hour || "0") / 1000 * 12).toFixed(4)} USDT per 12-hour session</p>
+        </div>
+
+        {/* Session duration */}
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Session duration (hours)</label>
+          <div className="flex gap-2">
+            <Input
+              type="number" step="1" min="1"
+              value={settings.session_duration_hours}
+              onChange={e => setSettings(p => ({ ...p, session_duration_hours: e.target.value }))}
+            />
+            <Button size="sm" disabled={isSaving("session_duration_hours")} onClick={() => saveSetting("session_duration_hours", settings.session_duration_hours)}>
+              {isSaving("session_duration_hours") ? "…" : "Save"}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">Only applies to new sessions — active sessions are unaffected</p>
+        </div>
+      </div>
+
+      {/* ── Referrals ── */}
+      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+        <h3 className="font-semibold text-sm text-purple-400">Referrals</h3>
+
+        {/* Referral enabled/disabled toggle */}
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Referral system</p>
+            <p className="text-xs text-muted-foreground">
+              {settings.referral_disabled === "true" ? "Referrals are OFF — no bonuses or commissions paid" : "Referrals are ON — bonuses and commissions active"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Toggle
+              on={settings.referral_disabled !== "true"}
+              onChange={v => saveSetting("referral_disabled", v ? "false" : "true")}
+            />
+            {isSaving("referral_disabled") && <span className="text-xs text-muted-foreground">Saving…</span>}
+          </div>
+        </div>
+
+        {/* Referral bonus coins */}
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Bonus coins per referral</label>
+          <div className="flex gap-2">
+            <Input
+              type="number" step="1" min="0"
+              value={settings.referral_bonus_coins}
+              onChange={e => setSettings(p => ({ ...p, referral_bonus_coins: e.target.value }))}
+            />
+            <Button size="sm" disabled={isSaving("referral_bonus_coins")} onClick={() => saveSetting("referral_bonus_coins", settings.referral_bonus_coins)}>
+              {isSaving("referral_bonus_coins") ? "…" : "Save"}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">≈ ${(parseFloat(settings.referral_bonus_coins || "0") / 1000).toFixed(3)} USDT</p>
+        </div>
+
+        {/* Referral commission */}
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Commission rate (%)</label>
+          <div className="flex gap-2">
+            <Input
+              type="number" step="0.1" min="0" max="100"
+              value={settings.referral_commission_pct}
+              onChange={e => setSettings(p => ({ ...p, referral_commission_pct: e.target.value }))}
+            />
+            <Button size="sm" disabled={isSaving("referral_commission_pct")} onClick={() => saveSetting("referral_commission_pct", settings.referral_commission_pct)}>
+              {isSaving("referral_commission_pct") ? "…" : "Save"}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">Referrer earns this % of their referral's mining coins</p>
+        </div>
+      </div>
+
+      {/* ── Economy ── */}
+      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+        <h3 className="font-semibold text-sm text-purple-400">Economy</h3>
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Minimum withdrawal (USDT)</label>
+          <div className="flex gap-2">
+            <Input
+              type="number" step="0.5" min="0"
+              value={settings.min_withdrawal_usdt}
+              onChange={e => setSettings(p => ({ ...p, min_withdrawal_usdt: e.target.value }))}
+            />
+            <Button size="sm" disabled={isSaving("min_withdrawal_usdt")} onClick={() => saveSetting("min_withdrawal_usdt", settings.min_withdrawal_usdt)}>
+              {isSaving("min_withdrawal_usdt") ? "…" : "Save"}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">≈ {Math.round(parseFloat(settings.min_withdrawal_usdt || "0") * 1000).toLocaleString()} coins</p>
+        </div>
+      </div>
+
+      {/* ── System ── */}
+      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+        <h3 className="font-semibold text-sm text-purple-400">System</h3>
+
+        {/* Maintenance mode */}
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Maintenance mode</p>
+            <p className="text-xs text-muted-foreground">
+              {settings.maintenance_mode === "true" ? "Site is in maintenance — new sessions blocked" : "Site is live and operating normally"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Toggle
+              on={settings.maintenance_mode === "true"}
+              danger
+              onChange={v => saveSetting("maintenance_mode", v ? "true" : "false")}
+            />
+            {isSaving("maintenance_mode") && <span className="text-xs text-muted-foreground">Saving…</span>}
+          </div>
+        </div>
+
+        {/* Change password */}
+        <div className="border-t border-card-border pt-4 space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Change admin password</label>
+          <div className="flex gap-2">
+            <Input
+              type="password"
+              placeholder="New password (min 8 chars)"
+              value={newPw}
+              onChange={e => setNewPw(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleSavePw(); }}
+            />
+            <Button size="sm" disabled={savingPw} onClick={handleSavePw}>
+              {savingPw ? "…" : "Save"}
+            </Button>
           </div>
         </div>
       </div>
-      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-3">
-        <h3 className="font-semibold text-sm">System</h3>
-        <label className="flex items-center gap-3 cursor-pointer">
-          <button
-            type="button"
-            onClick={() => setSettings(p => ({ ...p, maintenance_mode: p.maintenance_mode === "true" ? "false" : "true" }))}
-            className={`relative w-10 h-6 rounded-full transition-colors ${settings.maintenance_mode === "true" ? "bg-red-500" : "bg-muted"}`}
-          >
-            <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${settings.maintenance_mode === "true" ? "translate-x-4" : ""}`} />
-          </button>
-          <div>
-            <p className="text-sm font-medium">Maintenance Mode</p>
-            <p className="text-xs text-muted-foreground">Blocks new mining sessions when enabled</p>
-          </div>
-        </label>
-      </div>
-      <Button onClick={handleSave} disabled={saving} className="gap-1.5">
-        <Save className="w-3.5 h-3.5" />
-        {saving ? "Saving…" : "Save Settings"}
-      </Button>
     </div>
   );
 }

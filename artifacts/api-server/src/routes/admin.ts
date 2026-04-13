@@ -52,6 +52,7 @@ async function seedAdminConfig() {
     global_base_coins_per_hour: "0.5",
     session_duration_hours: "12",
     referral_disabled: "false",
+    mining_disabled: "false",
   };
   for (const [key, value] of Object.entries(defaults)) {
     const [existing] = await db
@@ -944,7 +945,11 @@ router.get("/admin/upgrade-purchases", requireAdmin, async (_req, res): Promise<
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
 router.get("/admin/settings", requireAdmin, async (_req, res): Promise<void> => {
-  const keys = ["min_withdrawal_usdt", "referral_bonus_coins", "referral_commission_pct", "maintenance_mode"];
+  const keys = [
+    "min_withdrawal_usdt", "referral_bonus_coins", "referral_commission_pct",
+    "maintenance_mode", "global_base_coins_per_hour", "session_duration_hours",
+    "referral_disabled", "mining_disabled",
+  ];
   const rows = await db.select().from(adminConfigTable).where(sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`);
   const settings: Record<string, string> = {};
   for (const r of rows) settings[r.key] = r.value;
@@ -957,6 +962,10 @@ router.put("/admin/settings", requireAdmin, async (req, res): Promise<void> => {
     referral_bonus_coins: z.string().optional(),
     referral_commission_pct: z.string().optional(),
     maintenance_mode: z.string().optional(),
+    global_base_coins_per_hour: z.string().optional(),
+    session_duration_hours: z.string().optional(),
+    referral_disabled: z.string().optional(),
+    mining_disabled: z.string().optional(),
   });
   const data = schema.safeParse(req.body);
   if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
