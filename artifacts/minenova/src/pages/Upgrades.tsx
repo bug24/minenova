@@ -28,7 +28,7 @@ function getBuyButtonClass(tier: number): string {
 }
 
 export default function Upgrades() {
-  const { data: upgrades, isLoading } = useGetUpgrades();
+  const { data: upgrades, isLoading, isError } = useGetUpgrades();
   const { data: wallet } = useGetWallet();
   const purchaseUpgrade = usePurchaseUpgrade();
   const queryClient = useQueryClient();
@@ -87,6 +87,11 @@ export default function Upgrades() {
           {[...Array(5)].map((_, i) => (
             <div key={i} className="h-32 bg-muted rounded-2xl animate-pulse" />
           ))}
+        </div>
+      ) : isError ? (
+        <div className="bg-destructive/10 border border-destructive/20 rounded-2xl p-6 text-center">
+          <p className="text-sm font-medium text-destructive mb-1">Could not load upgrades</p>
+          <p className="text-xs text-muted-foreground">Please refresh the page and try again.</p>
         </div>
       ) : (
         <div className="space-y-4">
