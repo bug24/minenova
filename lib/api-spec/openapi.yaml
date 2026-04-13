@@ -523,6 +523,7 @@ components:
       properties:
         boostType:
           type: string
+          enum: [single, double, triple]
       required:
         - boostType
 

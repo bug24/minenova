@@ -64,8 +64,17 @@ export interface ClaimResult {
   message: string;
 }
 
+export type BoostBodyBoostType = typeof BoostBodyBoostType[keyof typeof BoostBodyBoostType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const BoostBodyBoostType = {
+  single: 'single',
+  double: 'double',
+  triple: 'triple',
+} as const;
+
 export interface BoostBody {
-  boostType: string;
+  boostType: BoostBodyBoostType;
 }
 
 export interface Task {

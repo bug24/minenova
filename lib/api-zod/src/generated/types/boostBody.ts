@@ -6,6 +6,14 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export type BoostBodyBoostType = typeof BoostBodyBoostType[keyof typeof BoostBodyBoostType];
+
+export const BoostBodyBoostType = {
+  single: 'single',
+  double: 'double',
+  triple: 'triple',
+} as const;
+
 export interface BoostBody {
-  boostType: string;
+  boostType: BoostBodyBoostType;
 }

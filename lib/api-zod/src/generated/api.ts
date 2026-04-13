@@ -103,7 +103,7 @@ export const ClaimMiningResponse = zod.object({
  * @summary Apply a boost to mining (after watching ad)
  */
 export const BoostMiningBody = zod.object({
-  boostType: zod.string(),
+  boostType: zod.enum(['single', 'double', 'triple']),
 });
 
 export const BoostMiningResponse = zod.object({
