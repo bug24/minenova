@@ -3,10 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   Pencil, Trash2, Plus, Save, X, Check, KeyRound, LogOut, Eye, EyeOff,
   Users, Wallet, ArrowDownCircle, BarChart3, Cpu, Share2, Package, Settings, RefreshCw,
   ShieldOff, Shield, CircleDollarSign, LayoutDashboard, type LucideIcon,
+  Sun, Moon, UserCircle, Copy, RotateCcw, Activity, ChevronRight,
 } from "lucide-react";
 
 function apiFetch(path: string, options?: RequestInit) {
@@ -48,6 +50,15 @@ interface Analytics {
 }
 interface Settings { min_withdrawal_usdt: string; referral_bonus_coins: string; referral_commission_pct: string; maintenance_mode: string; }
 interface ShareMessage { id: number; platform: string; message: string; isActive: boolean; sortOrder: number; }
+interface UserReferral { id: number; referredId: number; referredUsername: string; totalEarned: number; bonusPaid: boolean; createdAt: string; }
+interface UserTransaction { id: number; type: string; amount: number; status: string; description: string; adminNote: string | null; createdAt: string; }
+interface UserProfile extends AdminUser {
+  activeSession: { id: number; startedAt: string; endsAt: string; hashRate: number; boostMultiplier: number } | null;
+  referrals: UserReferral[];
+  referredByUsername: string | null;
+  totalReferralEarned: number;
+  transactions: UserTransaction[];
+}
 
 type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share";
 
@@ -76,6 +87,223 @@ function StatusBadge({ status }: { status: string }) {
 
 function fmt(d: string) { return new Date(d).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }); }
 function fmtCoins(n: number) { return n.toLocaleString(undefined, { maximumFractionDigits: 2 }); }
+
+// ─── User Profile Modal ───────────────────────────────────────────────────────
+
+function UserProfileModal({ userId, secret, onClose, onRefreshList }: { userId: number; secret: string; onClose: () => void; onRefreshList: () => void }) {
+  const { toast } = useToast();
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [resettingPw, setResettingPw] = useState(false);
+  const [newPw, setNewPw] = useState<string | null>(null);
+  const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
+
+  const loadProfile = useCallback(async () => {
+    setLoading(true);
+    const res = await apiFetch(`/admin/users/${userId}`, { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
+    const data = await res.json();
+    setProfile(res.ok ? data : null);
+    setLoading(false);
+  }, [userId, secret]);
+
+  useEffect(() => { loadProfile(); }, [loadProfile]);
+
+  const handleSuspend = async () => {
+    if (!profile) return;
+    await apiFetch(`/admin/users/${userId}/suspend`, { method: "POST", headers });
+    toast({ title: profile.isSuspended ? "User unsuspended" : "User suspended" });
+    loadProfile(); onRefreshList();
+  };
+
+  const handleResetPassword = async () => {
+    if (!confirm("Generate a new random password for this user?")) return;
+    setResettingPw(true);
+    const res = await apiFetch(`/admin/users/${userId}/reset-password`, { method: "POST", headers });
+    if (res.ok) {
+      const data = await res.json();
+      setNewPw(data.newPassword);
+      toast({ title: "Password reset" });
+    } else toast({ variant: "destructive", title: "Failed to reset password" });
+    setResettingPw(false);
+  };
+
+  const timeLeft = (endsAt: string) => {
+    const ms = new Date(endsAt).getTime() - Date.now();
+    if (ms <= 0) return "Complete";
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    return `${h}h ${m}m left`;
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-end bg-black/50 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-lg h-full bg-background border-l border-border overflow-y-auto shadow-2xl flex flex-col">
+        <div className="sticky top-0 bg-background border-b border-border px-5 py-4 flex items-center justify-between z-10">
+          <div className="flex items-center gap-2">
+            <UserCircle className="w-5 h-5 text-primary" />
+            <span className="font-bold text-lg">{loading ? "Loading…" : (profile?.username ?? "User not found")}</span>
+            {profile?.isSuspended && <Badge className="text-xs border bg-red-500/20 text-red-400 border-red-500/30">Suspended</Badge>}
+          </div>
+          <Button variant="ghost" size="sm" className="w-8 h-8 p-0" onClick={onClose}><X className="w-4 h-4" /></Button>
+        </div>
+
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center py-20">
+            <p className="text-muted-foreground text-sm">Loading profile…</p>
+          </div>
+        ) : !profile ? (
+          <div className="flex-1 flex items-center justify-center py-20">
+            <p className="text-destructive text-sm">Failed to load user profile</p>
+          </div>
+        ) : (
+          <div className="p-5 space-y-5">
+            {/* Basic Info */}
+            <div className="bg-card border border-card-border rounded-2xl p-4 space-y-3">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Account</h3>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <div><span className="text-muted-foreground text-xs">Email</span><p className="font-medium truncate">{profile.email}</p></div>
+                <div><span className="text-muted-foreground text-xs">Referral Code</span><p className="font-mono font-medium">#{profile.referralCode}</p></div>
+                <div><span className="text-muted-foreground text-xs">Joined</span><p>{fmt(profile.createdAt)}</p></div>
+                <div><span className="text-muted-foreground text-xs">Mining Level</span><p className="font-medium">Level {profile.miningLevel}</p></div>
+              </div>
+            </div>
+
+            {/* Wallet Balance */}
+            <div className="bg-card border border-card-border rounded-2xl p-4 space-y-3">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Wallet</h3>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="bg-muted/50 rounded-xl p-3">
+                  <p className="text-xs text-muted-foreground">Balance</p>
+                  <p className="text-lg font-bold text-primary">{fmtCoins(profile.coinBalance)}</p>
+                  <p className="text-xs text-muted-foreground">coins</p>
+                </div>
+                <div className="bg-muted/50 rounded-xl p-3">
+                  <p className="text-xs text-muted-foreground">Total Earned</p>
+                  <p className="text-lg font-bold text-emerald-400">{fmtCoins(profile.totalEarned)}</p>
+                  <p className="text-xs text-muted-foreground">coins</p>
+                </div>
+                <div className="bg-muted/50 rounded-xl p-3">
+                  <p className="text-xs text-muted-foreground">Withdrawn</p>
+                  <p className="text-lg font-bold text-orange-400">${profile.totalWithdrawn.toFixed(2)}</p>
+                  <p className="text-xs text-muted-foreground">USDT</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Mining Status */}
+            <div className="bg-card border border-card-border rounded-2xl p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <Activity className="w-3.5 h-3.5 text-muted-foreground" />
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mining Status</h3>
+              </div>
+              {profile.activeSession ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
+                    <span className="text-sm font-medium text-emerald-400">Active</span>
+                    {profile.activeSession.boostMultiplier > 1 && (
+                      <Badge className="text-xs border bg-purple-500/20 text-purple-400 border-purple-500/30">{profile.activeSession.boostMultiplier}x boost</Badge>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                    <span>Hash rate: {profile.activeSession.hashRate}</span>
+                    <span>{timeLeft(profile.activeSession.endsAt)}</span>
+                    <span>Started: {fmt(profile.activeSession.startedAt)}</span>
+                    <span>Ends: {fmt(profile.activeSession.endsAt)}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No active mining session</p>
+              )}
+            </div>
+
+            {/* Referral Stats */}
+            <div className="bg-card border border-card-border rounded-2xl p-4 space-y-3">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Referrals</h3>
+              {profile.referredByUsername && (
+                <p className="text-xs text-muted-foreground">Referred by: <span className="font-medium text-foreground">{profile.referredByUsername}</span></p>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-muted/50 rounded-xl p-3 text-center">
+                  <p className="text-xs text-muted-foreground">People Referred</p>
+                  <p className="text-xl font-bold">{profile.referrals.length}</p>
+                </div>
+                <div className="bg-muted/50 rounded-xl p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Commission Earned</p>
+                  <p className="text-xl font-bold text-sky-400">{fmtCoins(profile.totalReferralEarned)}</p>
+                </div>
+              </div>
+              {profile.referrals.length > 0 && (
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {profile.referrals.map(r => (
+                    <div key={r.id} className="flex items-center justify-between text-xs py-1 border-b border-border last:border-0">
+                      <div className="flex items-center gap-1.5">
+                        <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                        <span className="font-medium">{r.referredUsername}</span>
+                        {r.bonusPaid && <Badge className="text-xs border bg-emerald-500/20 text-emerald-500 border-emerald-500/30 px-1 py-0">Bonus paid</Badge>}
+                      </div>
+                      <span className="text-muted-foreground">{fmtCoins(r.totalEarned)} coins</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Transaction History */}
+            <div className="bg-card border border-card-border rounded-2xl p-4 space-y-3">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Transaction History</h3>
+              {profile.transactions.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-2">No transactions yet</p>
+              ) : (
+                <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                  {profile.transactions.map(t => (
+                    <div key={t.id} className="flex items-center justify-between text-xs py-1.5 border-b border-border last:border-0">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <StatusBadge status={t.type} />
+                          <StatusBadge status={t.status} />
+                        </div>
+                        <p className="text-muted-foreground">{t.description}</p>
+                        <p className="text-muted-foreground">{fmt(t.createdAt)}</p>
+                      </div>
+                      <span className={`font-bold ${t.amount < 0 ? "text-red-400" : "text-emerald-400"}`}>
+                        {t.amount >= 0 ? "+" : ""}{fmtCoins(t.amount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Reset Password */}
+            {newPw ? (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 space-y-2">
+                <p className="text-xs font-semibold text-emerald-400">New password generated — share with the user:</p>
+                <div className="flex items-center gap-2">
+                  <code className="font-mono text-base font-bold text-foreground bg-muted px-3 py-1.5 rounded-lg flex-1">{newPw}</code>
+                  <Button size="sm" variant="outline" className="gap-1 shrink-0" onClick={() => { navigator.clipboard.writeText(newPw); toast({ title: "Copied!" }); }}>
+                    <Copy className="w-3 h-3" /> Copy
+                  </Button>
+                </div>
+                <Button size="sm" variant="ghost" className="text-xs text-muted-foreground" onClick={() => setNewPw(null)}>Dismiss</Button>
+              </div>
+            ) : null}
+
+            {/* Actions */}
+            <div className="flex flex-wrap gap-2 pb-2">
+              <Button size="sm" variant="outline" className={`gap-1.5 text-xs ${profile.isSuspended ? "text-emerald-500" : "text-orange-400"}`} onClick={handleSuspend}>
+                {profile.isSuspended ? <><Shield className="w-3.5 h-3.5" /> Unsuspend</> : <><ShieldOff className="w-3.5 h-3.5" /> Suspend</>}
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleResetPassword} disabled={resettingPw}>
+                <RotateCcw className="w-3.5 h-3.5" /> {resettingPw ? "Resetting…" : "Reset Password"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ─── Dashboard Tab ───────────────────────────────────────────────────────────
 
@@ -125,6 +353,7 @@ function UsersTab({ secret }: { secret: string }) {
   const [adjustingId, setAdjustingId] = useState<number | null>(null);
   const [adjustDelta, setAdjustDelta] = useState("");
   const [adjustNote, setAdjustNote] = useState("");
+  const [profileUserId, setProfileUserId] = useState<number | null>(null);
   const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
   const load = useCallback(async () => {
@@ -203,6 +432,9 @@ function UsersTab({ secret }: { secret: string }) {
                 </div>
               ) : (
                 <div className="flex gap-2 flex-wrap">
+                  <Button size="sm" variant="outline" className="gap-1 text-xs h-7 text-primary border-primary/30" onClick={() => setProfileUserId(u.id)}>
+                    <UserCircle className="w-3 h-3" /> View Profile
+                  </Button>
                   <Button size="sm" variant="outline" className="gap-1 text-xs h-7" onClick={() => { setAdjustingId(u.id); setAdjustDelta(""); setAdjustNote(""); }}>
                     <CircleDollarSign className="w-3 h-3" /> Adjust Balance
                   </Button>
@@ -217,6 +449,14 @@ function UsersTab({ secret }: { secret: string }) {
             </div>
           ))}
         </div>
+      )}
+      {profileUserId !== null && (
+        <UserProfileModal
+          userId={profileUserId}
+          secret={secret}
+          onClose={() => setProfileUserId(null)}
+          onRefreshList={load}
+        />
       )}
     </div>
   );
@@ -722,6 +962,7 @@ function ShareMessagesTab({ secret }: { secret: string }) {
 
 export default function Admin() {
   const { toast } = useToast();
+  const { theme, toggleTheme } = useTheme();
   const [secret, setSecret] = useState("");
   const [showSecret, setShowSecret] = useState(false);
   const [authed, setAuthed] = useState(false);
@@ -776,6 +1017,9 @@ export default function Admin() {
   if (!authed) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <Button variant="ghost" size="sm" className="absolute top-4 right-4 w-9 h-9 p-0" onClick={toggleTheme}>
+          {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </Button>
         <div className="w-full max-w-sm space-y-4">
           <div className="text-center">
             <h1 className="text-2xl font-black font-serif text-foreground">Admin Panel</h1>
@@ -813,6 +1057,9 @@ export default function Admin() {
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <h1 className="text-lg font-black font-serif shrink-0">Admin Panel</h1>
           <div className="flex gap-2 shrink-0">
+            <Button variant="ghost" size="sm" className="w-8 h-8 p-0" onClick={toggleTheme} title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
+              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </Button>
             <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowChangePassword(v => !v)}>
               <KeyRound className="w-3.5 h-3.5" /> Password
             </Button>

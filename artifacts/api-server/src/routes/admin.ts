@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import { eq, and, isNull, or, ilike, sql, desc, type SQL } from "drizzle-orm";
 import { z } from "zod";
+import { hashPassword } from "../lib/auth";
 
 const router: IRouter = Router();
 
@@ -250,6 +251,78 @@ router.get("/admin/users", requireAdmin, async (req, res): Promise<void> => {
       .orderBy(desc(usersTable.createdAt));
   }
   res.json(rows.map(u => ({ ...u, createdAt: u.createdAt.toISOString() })));
+});
+
+router.get("/admin/users/:id", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid user ID" }); return; }
+
+  const [user] = await db.select({
+    id: usersTable.id, username: usersTable.username, email: usersTable.email,
+    coinBalance: usersTable.coinBalance, miningLevel: usersTable.miningLevel,
+    totalEarned: usersTable.totalEarned, totalWithdrawn: usersTable.totalWithdrawn,
+    isSuspended: usersTable.isSuspended, referralCode: usersTable.referralCode,
+    createdAt: usersTable.createdAt,
+  }).from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+  const [activeSession] = await db
+    .select({ id: miningSessionsTable.id, startedAt: miningSessionsTable.startedAt, endsAt: miningSessionsTable.endsAt, hashRate: miningSessionsTable.hashRate, boostMultiplier: miningSessionsTable.boostMultiplier })
+    .from(miningSessionsTable)
+    .where(and(eq(miningSessionsTable.userId, id), eq(miningSessionsTable.isActive, true), isNull(miningSessionsTable.claimedAt)))
+    .limit(1);
+
+  const referrals = await db
+    .select({ id: referralsTable.id, referredId: referralsTable.referredId, totalEarned: referralsTable.totalEarned, bonusPaid: referralsTable.bonusPaid, createdAt: referralsTable.createdAt })
+    .from(referralsTable)
+    .where(eq(referralsTable.referrerId, id))
+    .orderBy(desc(referralsTable.createdAt));
+
+  const referredUserIds = referrals.map(r => r.referredId);
+  const referredUsersMap: Record<number, string> = {};
+  if (referredUserIds.length > 0) {
+    const referredUsers = await db.select({ id: usersTable.id, username: usersTable.username }).from(usersTable).where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(referredUserIds.map(i => sql`${i}`), sql`, `)}])`);
+    for (const u of referredUsers) referredUsersMap[u.id] = u.username;
+  }
+
+  const [referredByRow] = await db
+    .select({ referrerId: referralsTable.referrerId })
+    .from(referralsTable).where(eq(referralsTable.referredId, id)).limit(1);
+  let referredByUsername: string | null = null;
+  if (referredByRow) {
+    const [refUser] = await db.select({ username: usersTable.username }).from(usersTable).where(eq(usersTable.id, referredByRow.referrerId)).limit(1);
+    referredByUsername = refUser?.username ?? null;
+  }
+
+  const transactions = await db
+    .select({ id: transactionsTable.id, type: transactionsTable.type, amount: transactionsTable.amount, status: transactionsTable.status, description: transactionsTable.description, adminNote: transactionsTable.adminNote, createdAt: transactionsTable.createdAt })
+    .from(transactionsTable).where(eq(transactionsTable.userId, id)).orderBy(desc(transactionsTable.createdAt)).limit(30);
+
+  const totalReferralEarned = referrals.reduce((s, r) => s + r.totalEarned, 0);
+
+  res.json({
+    ...user,
+    createdAt: user.createdAt.toISOString(),
+    activeSession: activeSession ? { ...activeSession, startedAt: activeSession.startedAt.toISOString(), endsAt: activeSession.endsAt.toISOString() } : null,
+    referrals: referrals.map(r => ({ ...r, referredUsername: referredUsersMap[r.referredId] ?? `#${r.referredId}`, createdAt: r.createdAt.toISOString() })),
+    referredByUsername,
+    totalReferralEarned,
+    transactions: transactions.map(t => ({ ...t, createdAt: t.createdAt.toISOString() })),
+  });
+});
+
+router.post("/admin/users/:id/reset-password", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid user ID" }); return; }
+
+  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
+  const newPassword = Array.from({ length: 10 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  const hashed = hashPassword(newPassword);
+
+  const [updated] = await db.update(usersTable).set({ passwordHash: hashed }).where(eq(usersTable.id, id)).returning({ id: usersTable.id });
+  if (!updated) { res.status(404).json({ error: "User not found" }); return; }
+
+  res.json({ success: true, newPassword });
 });
 
 router.post("/admin/users/:id/suspend", requireAdmin, async (req, res): Promise<void> => {
