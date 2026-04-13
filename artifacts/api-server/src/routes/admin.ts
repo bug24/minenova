@@ -335,40 +335,52 @@ router.get("/admin/withdrawals", requireAdmin, async (req, res): Promise<void> =
 
 router.post("/admin/withdrawals/:id/approve", requireAdmin, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
+  if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid withdrawal ID" }); return; }
   const schema = z.object({ adminNote: z.string().optional() });
   const data = schema.safeParse(req.body);
   if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
 
-  const [tx] = await db.select().from(transactionsTable).where(and(eq(transactionsTable.id, id), eq(transactionsTable.type, "withdrawal"))).limit(1);
-  if (!tx) { res.status(404).json({ error: "Withdrawal not found" }); return; }
-  if (tx.status !== "pending") { res.status(400).json({ error: "Only pending withdrawals can be approved" }); return; }
+  await db.transaction(async (trx) => {
+    const [tx] = await trx.select().from(transactionsTable).where(and(eq(transactionsTable.id, id), eq(transactionsTable.type, "withdrawal"))).limit(1);
+    if (!tx) { res.status(404).json({ error: "Withdrawal not found" }); return; }
+    if (tx.status !== "pending") { res.status(400).json({ error: "Only pending withdrawals can be approved" }); return; }
 
-  await db.update(transactionsTable).set({ status: "approved", adminNote: data.data.adminNote ?? null }).where(eq(transactionsTable.id, id));
-  res.json({ success: true });
+    const updated = await trx.update(transactionsTable)
+      .set({ status: "approved", adminNote: data.data.adminNote ?? null })
+      .where(and(eq(transactionsTable.id, id), eq(transactionsTable.status, "pending")));
+    if (!updated) { res.status(409).json({ error: "Withdrawal was already processed" }); return; }
+    res.json({ success: true });
+  });
 });
 
 router.post("/admin/withdrawals/:id/reject", requireAdmin, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
+  if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid withdrawal ID" }); return; }
   const schema = z.object({ adminNote: z.string().optional() });
   const data = schema.safeParse(req.body);
   if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
 
-  const [tx] = await db.select().from(transactionsTable).where(and(eq(transactionsTable.id, id), eq(transactionsTable.type, "withdrawal"))).limit(1);
-  if (!tx) { res.status(404).json({ error: "Withdrawal not found" }); return; }
-  if (tx.status !== "pending") { res.status(400).json({ error: "Only pending withdrawals can be rejected" }); return; }
+  await db.transaction(async (trx) => {
+    const [tx] = await trx.select().from(transactionsTable).where(and(eq(transactionsTable.id, id), eq(transactionsTable.type, "withdrawal"))).limit(1);
+    if (!tx) { res.status(404).json({ error: "Withdrawal not found" }); return; }
+    if (tx.status !== "pending") { res.status(400).json({ error: "Only pending withdrawals can be rejected" }); return; }
 
-  const refundCoins = tx.amount * COINS_PER_USDT;
-  await db.update(usersTable).set({ coinBalance: sql`coin_balance + ${refundCoins}`, totalWithdrawn: sql`total_withdrawn - ${tx.amount}` }).where(eq(usersTable.id, tx.userId));
-  await db.update(transactionsTable).set({ status: "rejected", adminNote: data.data.adminNote ?? null }).where(eq(transactionsTable.id, id));
-  await db.insert(transactionsTable).values({
-    userId: tx.userId,
-    type: "adjustment",
-    amount: refundCoins,
-    status: "completed",
-    description: `Refund for rejected withdrawal #${id}`,
+    const updated = await trx.update(transactionsTable)
+      .set({ status: "rejected", adminNote: data.data.adminNote ?? null })
+      .where(and(eq(transactionsTable.id, id), eq(transactionsTable.status, "pending")));
+    if (!updated) { res.status(409).json({ error: "Withdrawal was already processed" }); return; }
+
+    const refundCoins = tx.amount * COINS_PER_USDT;
+    await trx.update(usersTable).set({ coinBalance: sql`coin_balance + ${refundCoins}`, totalWithdrawn: sql`total_withdrawn - ${tx.amount}` }).where(eq(usersTable.id, tx.userId));
+    await trx.insert(transactionsTable).values({
+      userId: tx.userId,
+      type: "adjustment",
+      amount: refundCoins,
+      status: "completed",
+      description: `Refund for rejected withdrawal #${id}`,
+    });
+    res.json({ success: true });
   });
-
-  res.json({ success: true });
 });
 
 // ─── Transactions ─────────────────────────────────────────────────────────────
