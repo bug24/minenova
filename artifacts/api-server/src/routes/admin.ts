@@ -144,14 +144,14 @@ const DEFAULT_UPGRADES = [
 
 async function seedUpgrades() {
   for (const upgrade of DEFAULT_UPGRADES) {
-    const existing = await db
-      .select({ id: upgradesTable.id })
+    const [existing] = await db
+      .select({ id: upgradesTable.id, icon: upgradesTable.icon })
       .from(upgradesTable)
       .where(eq(upgradesTable.tier, upgrade.tier))
       .limit(1);
-    if (existing.length === 0) {
+    if (!existing) {
       await db.insert(upgradesTable).values(upgrade);
-    } else {
+    } else if (existing.icon === null) {
       await db
         .update(upgradesTable)
         .set({
