@@ -66,6 +66,7 @@ export default function Boost() {
 
   const [adState, setAdState] = useState<Record<string, AdState>>({});
   const [adProgress, setAdProgress] = useState<Record<string, number>>({});
+  const [activatingTier, setActivatingTier] = useState<string | null>(null);
 
   const boostsUsed = status?.boostsUsedToday ?? 0;
   const boostsRemaining = Math.max(0, 3 - boostsUsed);
@@ -80,7 +81,12 @@ export default function Boost() {
       toast({ variant: "destructive", title: "Limit reached", description: "You've used all 3 boosts for today." });
       return;
     }
+    if (activatingTier !== null) {
+      toast({ variant: "destructive", title: "Ad in progress", description: "Please wait for the current ad to finish." });
+      return;
+    }
 
+    setActivatingTier(tier.id);
     setAdState(s => ({ ...s, [tier.id]: "watching" }));
     setAdProgress(s => ({ ...s, [tier.id]: 0 }));
 
@@ -109,12 +115,14 @@ export default function Boost() {
         setTimeout(() => {
           setAdState(s => ({ ...s, [tier.id]: "idle" }));
           setAdProgress(s => ({ ...s, [tier.id]: 0 }));
+          setActivatingTier(null);
         }, 2000);
       },
       onError: (err: unknown) => {
         const msg = (err as { data?: { error?: string } })?.data?.error ?? "Could not apply boost";
         toast({ variant: "destructive", title: "Error", description: msg });
         setAdState(s => ({ ...s, [tier.id]: "idle" }));
+        setActivatingTier(null);
       },
     });
   };
