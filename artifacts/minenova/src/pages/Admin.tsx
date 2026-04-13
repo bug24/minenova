@@ -513,9 +513,10 @@ function WithdrawalsTab({ secret }: { secret: string }) {
 
   const loadStats = useCallback(() => {
     setStatsLoading(true);
-    apiFetch("/admin/withdrawal-stats", { headers: h }).then(r => r.json()).then((d: WithdrawalStats) => {
-      setStats(d); setStatsLoading(false);
-    }).catch(() => setStatsLoading(false));
+    apiFetch("/admin/withdrawal-stats", { headers: h })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((d: WithdrawalStats) => { setStats(d); setStatsLoading(false); })
+      .catch(() => { toast({ variant: "destructive", title: "Failed to load withdrawal stats" }); setStatsLoading(false); });
   }, [secret]);
 
   const loadList = useCallback((q: string, f: string) => {
@@ -523,18 +524,18 @@ function WithdrawalsTab({ secret }: { secret: string }) {
     const params = new URLSearchParams();
     if (f !== "all") params.set("status", f);
     if (q.trim()) params.set("search", q.trim());
-    apiFetch(`/admin/withdrawals?${params}`, { headers: h }).then(r => r.json()).then((d: Withdrawal[]) => {
-      setItems(Array.isArray(d) ? d : []);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    apiFetch(`/admin/withdrawals?${params}`, { headers: h })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((d: Withdrawal[]) => { setItems(Array.isArray(d) ? d : []); setLoading(false); })
+      .catch(() => { toast({ variant: "destructive", title: "Failed to load withdrawals" }); setLoading(false); });
   }, [secret]);
 
   const loadMinWithdrawal = useCallback(() => {
     setMinWdLoading(true);
-    apiFetch("/admin/settings", { headers: h }).then(r => r.json()).then((d: Settings) => {
-      setMinWithdrawal(d.min_withdrawal_usdt ?? "5");
-      setMinWdLoading(false);
-    }).catch(() => setMinWdLoading(false));
+    apiFetch("/admin/settings", { headers: h })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((d: Settings) => { setMinWithdrawal(d.min_withdrawal_usdt ?? "5"); setMinWdLoading(false); })
+      .catch(() => { toast({ variant: "destructive", title: "Failed to load settings" }); setMinWdLoading(false); });
   }, [secret]);
 
   useEffect(() => { loadStats(); loadMinWithdrawal(); }, [loadStats, loadMinWithdrawal]);
@@ -555,9 +556,11 @@ function WithdrawalsTab({ secret }: { secret: string }) {
 
   const handleApprove = async (id: number) => {
     setProcessing(id);
+    const rawNote = noteInput[id] ?? "";
+    const adminNote = rawNote.trim() === "" ? null : rawNote.trim();
     try {
       const res = await apiFetch(`/admin/withdrawals/${id}/approve`, {
-        method: "POST", headers: h, body: JSON.stringify({ adminNote: noteInput[id] ?? "" }),
+        method: "POST", headers: h, body: JSON.stringify({ adminNote }),
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Failed"); }
       toast({ title: "Withdrawal approved" });
@@ -570,9 +573,11 @@ function WithdrawalsTab({ secret }: { secret: string }) {
 
   const handleReject = async (id: number) => {
     setProcessing(id);
+    const rawNote = noteInput[id] ?? "";
+    const adminNote = rawNote.trim() === "" ? null : rawNote.trim();
     try {
       const res = await apiFetch(`/admin/withdrawals/${id}/reject`, {
-        method: "POST", headers: h, body: JSON.stringify({ adminNote: noteInput[id] ?? "" }),
+        method: "POST", headers: h, body: JSON.stringify({ adminNote }),
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Failed"); }
       toast({ title: "Withdrawal rejected · Coins refunded" });
