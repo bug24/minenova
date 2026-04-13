@@ -990,7 +990,8 @@ router.put("/admin/settings", requireAdmin, async (req, res): Promise<void> => {
 const adCreateSchema = z.object({
   title: z.string().min(1),
   type: z.enum(["video", "image", "script", "external_link"]),
-  urlOrCode: z.string().min(1),
+  urlOrCode: z.string().optional(),
+  providerScript: z.string().optional(),
   durationSeconds: z.number().int().min(1).default(15),
   placement: z.string().min(1).default("boost"),
   isActive: z.boolean().default(true),

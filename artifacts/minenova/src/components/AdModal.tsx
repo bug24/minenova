@@ -5,7 +5,8 @@ export interface AdData {
   id: number;
   title: string;
   type: "video" | "image" | "script" | "external_link";
-  urlOrCode: string;
+  urlOrCode: string | null;
+  providerScript?: string | null;
   durationSeconds: number;
   placement: string;
   isActive: boolean;
@@ -43,13 +44,27 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
   }, [ad.id, currentAd, total]);
 
   useEffect(() => {
+    if (ad.providerScript) {
+      const scriptUrlMatch = ad.providerScript.match(/src=["']([^"']+)["']/i);
+      const scriptId = scriptUrlMatch?.[1] ?? ad.providerScript;
+      if (!document.querySelector(`script[data-ad-provider="${scriptId}"]`)) {
+        const wrapper = document.createElement("div");
+        wrapper.innerHTML = ad.providerScript;
+        const script = wrapper.querySelector("script");
+        if (script) {
+          script.setAttribute("data-ad-provider", scriptId);
+          document.head.appendChild(script);
+        }
+      }
+    }
     if (ad.type === "script" && scriptRef.current) {
       const div = scriptRef.current;
       div.innerHTML = "";
+      const code = ad.urlOrCode ?? ad.providerScript ?? "";
       const range = document.createRange();
       range.selectNodeContents(div);
       range.deleteContents();
-      const fragment = range.createContextualFragment(ad.urlOrCode);
+      const fragment = range.createContextualFragment(code);
       div.appendChild(fragment);
     }
   }, [ad]);
@@ -78,7 +93,7 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
         <div className="relative bg-black w-full" style={{ minHeight: 220 }}>
           {ad.type === "image" && (
             <img
-              src={ad.urlOrCode}
+              src={ad.urlOrCode ?? ""}
               alt={ad.title}
               className="w-full object-contain"
               style={{ maxHeight: 320 }}
@@ -86,7 +101,7 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
           )}
           {ad.type === "video" && (
             <video
-              src={ad.urlOrCode}
+              src={ad.urlOrCode ?? ""}
               autoPlay
               muted
               playsInline
@@ -96,7 +111,7 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
           )}
           {ad.type === "external_link" && (
             <iframe
-              src={ad.urlOrCode}
+              src={ad.urlOrCode ?? ""}
               title={ad.title}
               sandbox="allow-scripts allow-same-origin allow-popups"
               className="w-full"
