@@ -1,13 +1,16 @@
 import { Router, type IRouter } from "express";
 import { db, upgradesTable, userUpgradesTable, usersTable, transactionsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { PurchaseUpgradeParams, PurchaseUpgradeBody, GetUpgradesResponse, PurchaseUpgradeResponse } from "@workspace/api-zod";
 import { generatePaymentTag } from "../lib/auth";
 
 const router: IRouter = Router();
 
-const USDT_DEPOSIT_ADDRESS = "TRX_PLACEHOLDER_ADDRESS_CONFIGURE_ME";
+async function getUsdtDepositAddress(): Promise<string> {
+  const rows = await db.execute(sql`SELECT value FROM admin_config WHERE key = 'usdt_wallet_address'`);
+  return (rows.rows[0] as { value: string } | undefined)?.value ?? "TRX_PLACEHOLDER_ADDRESS_CONFIGURE_ME";
+}
 
 router.get("/upgrades", requireAuth, async (req, res): Promise<void> => {
   const allUpgrades = await db.select().from(upgradesTable).orderBy(upgradesTable.sortOrder);
@@ -109,6 +112,7 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
     }
 
     const paymentTag = generatePaymentTag();
+    const usdtAddress = await getUsdtDepositAddress();
 
     await db.insert(transactionsTable).values({
       userId: req.userId!,
@@ -116,14 +120,14 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
       amount: -upgrade.usdtCost,
       status: "pending",
       description: `USDT payment for upgrade: ${upgrade.name}`,
-      usdtAddress: USDT_DEPOSIT_ADDRESS,
+      usdtAddress,
       paymentTag,
     });
 
     res.json(PurchaseUpgradeResponse.parse({
       success: true,
       message: `Send ${upgrade.usdtCost} USDT to activate your upgrade. Use the payment tag so we can identify your payment.`,
-      usdtAddress: USDT_DEPOSIT_ADDRESS,
+      usdtAddress,
       paymentTag,
       newBalance: null,
     }));

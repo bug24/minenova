@@ -38,6 +38,8 @@ export default function Admin() {
   const [editActive, setEditActive] = useState(true);
   const [addingPlatform, setAddingPlatform] = useState<Platform | null>(null);
   const [newMessage, setNewMessage] = useState("");
+  const [usdtAddress, setUsdtAddress] = useState("");
+  const [usdtAddressSaving, setUsdtAddressSaving] = useState(false);
 
   const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
   const base = getApiUrl();
@@ -57,9 +59,40 @@ export default function Admin() {
     }
   };
 
+  const fetchConfig = async () => {
+    try {
+      const res = await fetch(`${base}/api/admin/config`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setUsdtAddress(data.usdt_wallet_address ?? "");
+      }
+    } catch { /* silent */ }
+  };
+
   const handleLogin = async () => {
     if (!secret.trim()) return;
     await fetchMessages();
+    await fetchConfig();
+  };
+
+  const handleSaveUsdtAddress = async () => {
+    setUsdtAddressSaving(true);
+    try {
+      const res = await fetch(`${base}/api/admin/config`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ key: "usdt_wallet_address", value: usdtAddress }),
+      });
+      if (res.ok) {
+        toast({ title: "USDT address saved!" });
+      } else {
+        toast({ variant: "destructive", title: "Failed to save address" });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Connection error" });
+    } finally {
+      setUsdtAddressSaving(false);
+    }
   };
 
   const handleSaveEdit = async (id: number) => {
@@ -150,6 +183,28 @@ export default function Admin() {
         <Button variant="outline" size="sm" onClick={fetchMessages} disabled={loading}>
           Refresh
         </Button>
+      </div>
+
+      <div className="mb-6 bg-card border border-card-border rounded-2xl p-5 space-y-3">
+        <div>
+          <h2 className="font-semibold text-sm">USDT Wallet Address (TRC20)</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">This address is shown to users when they pay for upgrades via USDT.</p>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            placeholder="T... (TRC20 wallet address)"
+            value={usdtAddress}
+            onChange={e => setUsdtAddress(e.target.value)}
+            className="font-mono text-sm"
+          />
+          <Button size="sm" onClick={handleSaveUsdtAddress} disabled={usdtAddressSaving} className="shrink-0">
+            <Save className="w-3.5 h-3.5 mr-1.5" />
+            {usdtAddressSaving ? "Saving…" : "Save"}
+          </Button>
+        </div>
+        {!usdtAddress && (
+          <p className="text-xs text-amber-500">⚠ No address set — users will see a placeholder until you configure this.</p>
+        )}
       </div>
 
       <div className="mb-4 bg-primary/10 border border-primary/20 rounded-xl p-3 text-xs text-primary">

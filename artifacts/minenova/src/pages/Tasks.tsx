@@ -28,7 +28,7 @@ function buildShareIntentUrl(taskType: string, shareUrl: string | null | undefin
 }
 
 export default function Tasks() {
-  const { data: tasks, isLoading } = useGetTasks();
+  const { data: tasks, isLoading, isError, refetch } = useGetTasks();
   const completeTask = useCompleteTask();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -100,9 +100,20 @@ export default function Tasks() {
             <div key={i} className="h-20 bg-muted rounded-xl animate-pulse" />
           ))}
         </div>
+      ) : isError ? (
+        <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-6 text-center space-y-3">
+          <p className="text-sm font-medium text-destructive">Could not load tasks</p>
+          <p className="text-xs text-muted-foreground">Please try again.</p>
+          <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
+        </div>
+      ) : !tasks?.length ? (
+        <div className="bg-card border border-card-border rounded-xl p-8 text-center">
+          <p className="text-sm font-medium mb-1">No tasks available right now</p>
+          <p className="text-xs text-muted-foreground">Check back soon — new tasks are added daily!</p>
+        </div>
       ) : (
         <div className="space-y-3">
-          {tasks?.map(task => {
+          {tasks.map(task => {
             const isShareTask = task.taskType.startsWith("share_");
             const isPendingConfirm = pendingConfirmId === task.id;
             return (

@@ -22,8 +22,10 @@ import { useEffect } from "react";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
-      refetchOnWindowFocus: false,
+      retry: 2,
+      retryDelay: 1000,
+      staleTime: 30_000,
+      refetchOnWindowFocus: true,
     },
   },
 });

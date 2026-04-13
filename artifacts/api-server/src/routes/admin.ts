@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, shareMessagesTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, shareMessagesTable, upgradesTable } from "@workspace/db";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -74,6 +74,67 @@ async function seedDefaultMessages() {
 }
 
 seedDefaultMessages().catch(console.error);
+
+const DEFAULT_UPGRADES = [
+  { tier: 1, name: "Speed Boost I", description: "Increase your mining speed by 20% permanently", hashRateBoost: 20, dailyCapBoost: 140, coinCost: 500, usdtCost: 5, isAutoMining: false, sortOrder: 1, badge: null, icon: "⚡" },
+  { tier: 2, name: "Speed Boost II", description: "Increase mining speed to 1.5x permanently", hashRateBoost: 50, dailyCapBoost: 180, coinCost: 1500, usdtCost: 15, isAutoMining: false, sortOrder: 2, badge: "Popular", icon: "🚀" },
+  { tier: 3, name: "Speed Boost III", description: "Double your mining speed permanently (2x base)", hashRateBoost: 100, dailyCapBoost: 250, coinCost: 3000, usdtCost: 30, isAutoMining: false, sortOrder: 3, badge: null, icon: "⛏️" },
+  { tier: 4, name: "Mining Level 4", description: "Elite mining tier — 2.5x base mining speed", hashRateBoost: 150, dailyCapBoost: 350, coinCost: 6000, usdtCost: 60, isAutoMining: false, sortOrder: 4, badge: "Best Value", icon: "💎" },
+  { tier: 5, name: "Auto Miner Pro", description: "Maximum speed (3x) with automatic mining sessions", hashRateBoost: 200, dailyCapBoost: 500, coinCost: 10000, usdtCost: 100, isAutoMining: true, sortOrder: 5, badge: "Elite", icon: "🤖" },
+];
+
+async function seedUpgrades() {
+  for (const upgrade of DEFAULT_UPGRADES) {
+    const rows = await db
+      .select()
+      .from(upgradesTable)
+      .where(eq(upgradesTable.tier, upgrade.tier))
+      .limit(1);
+    const existing = rows[0];
+    if (!existing) {
+      await db.insert(upgradesTable).values(upgrade);
+    } else if (!existing.icon || existing.usdtCost === null || existing.usdtCost === undefined) {
+      await db
+        .update(upgradesTable)
+        .set({
+          name: upgrade.name,
+          description: upgrade.description,
+          hashRateBoost: upgrade.hashRateBoost,
+          dailyCapBoost: upgrade.dailyCapBoost,
+          coinCost: upgrade.coinCost,
+          usdtCost: upgrade.usdtCost,
+          isAutoMining: upgrade.isAutoMining,
+          sortOrder: upgrade.sortOrder,
+          badge: upgrade.badge,
+          icon: upgrade.icon,
+        })
+        .where(eq(upgradesTable.tier, upgrade.tier));
+    }
+  }
+}
+
+seedUpgrades().catch(console.error);
+
+router.get("/admin/config", requireAdmin, async (_req, res): Promise<void> => {
+  const rows = await db.execute(sql`SELECT key, value FROM admin_config ORDER BY key`);
+  const config: Record<string, string> = {};
+  for (const row of rows.rows as { key: string; value: string }[]) {
+    config[row.key] = row.value;
+  }
+  res.json(config);
+});
+
+router.post("/admin/config", requireAdmin, async (req, res): Promise<void> => {
+  const schema = z.object({ key: z.string().min(1), value: z.string() });
+  const data = schema.safeParse(req.body);
+  if (!data.success) { res.status(400).json({ error: data.error.message }); return; }
+  const { key, value } = data.data;
+  await db.execute(sql`
+    INSERT INTO admin_config (key, value, updated_at) VALUES (${key}, ${value}, NOW())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+  `);
+  res.json({ success: true, key, value });
+});
 
 router.get("/admin/share-messages", requireAdmin, async (_req, res): Promise<void> => {
   const messages = await db.select().from(shareMessagesTable).orderBy(shareMessagesTable.platform, shareMessagesTable.sortOrder);

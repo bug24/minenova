@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useGetUpgrades, usePurchaseUpgrade, getGetUpgradesQueryKey } from "@workspace/api-client-react";
+import { useState, useEffect } from "react";
+import { useGetUpgrades, usePurchaseUpgrade, getGetUpgradesQueryKey, getGetWalletQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetWallet } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -8,15 +8,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useToast } from "@/hooks/use-toast";
 import { Zap, CheckCircle2, Cpu, TrendingUp, Lock, Copy, DollarSign } from "lucide-react";
 
-const BASE_COINS_PER_HOUR = 0.5;
-const SESSIONS_PER_DAY = 2;
+const BASE_COINS_PER_HOUR = 10;
 const SESSION_HOURS = 12;
 const COINS_PER_USDT = 1000;
 
-function calcDailyUsdt(tier: number): number {
-  const miningLevel = tier + 1;
-  const coinsPerDay = BASE_COINS_PER_HOUR * miningLevel * SESSION_HOURS * SESSIONS_PER_DAY;
-  return coinsPerDay / COINS_PER_USDT;
+function calcDailyUsdt(hashRateBoost: number, dailyCapBoost: number): number {
+  const boostedRate = BASE_COINS_PER_HOUR * (1 + hashRateBoost / 100);
+  const rawDailyCoins = boostedRate * SESSION_HOURS;
+  return Math.min(rawDailyCoins, dailyCapBoost) / COINS_PER_USDT;
 }
 
 interface PurchaseResult {
@@ -27,7 +26,7 @@ interface PurchaseResult {
 }
 
 export default function Upgrades() {
-  const { data: upgrades, isLoading } = useGetUpgrades();
+  const { data: upgrades, isLoading, isError, refetch } = useGetUpgrades();
   const { data: wallet } = useGetWallet();
   const purchaseUpgrade = usePurchaseUpgrade();
   const queryClient = useQueryClient();
@@ -38,6 +37,20 @@ export default function Upgrades() {
   const [resultOpen, setResultOpen] = useState(false);
   const [hasSent, setHasSent] = useState(false);
 
+  const selectedUpgradeData = upgrades?.find(u => u.id === selectedUpgrade);
+  const coinBalance = wallet?.totalBalance ?? 0;
+  const canAffordCoins = coinBalance >= (selectedUpgradeData?.coinCost ?? Infinity);
+
+  useEffect(() => {
+    if (selectedUpgrade && selectedUpgradeData) {
+      if (!canAffordCoins && selectedUpgradeData.usdtCost) {
+        setPaymentMethod("usdt");
+      } else {
+        setPaymentMethod(selectedUpgradeData.coinCost ? "coins" : "usdt");
+      }
+    }
+  }, [selectedUpgrade]);
+
   const handlePurchase = () => {
     if (!selectedUpgrade) return;
     purchaseUpgrade.mutate({ upgradeId: selectedUpgrade, data: { paymentMethod } }, {
@@ -47,6 +60,7 @@ export default function Upgrades() {
         setHasSent(false);
         setResultOpen(true);
         queryClient.invalidateQueries({ queryKey: getGetUpgradesQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
       },
       onError: (err: unknown) => {
         const msg = (err as { data?: { error?: string } })?.data?.error ?? "Purchase failed";
@@ -54,9 +68,6 @@ export default function Upgrades() {
       },
     });
   };
-
-  const selectedUpgradeData = upgrades?.find(u => u.id === selectedUpgrade);
-  const coinBalance = wallet?.totalBalance ?? 0;
 
   return (
     <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-6">
@@ -76,6 +87,12 @@ export default function Upgrades() {
       {isLoading ? (
         <div className="space-y-3">
           {[...Array(4)].map((_, i) => <div key={i} className="h-36 bg-muted rounded-2xl animate-pulse" />)}
+        </div>
+      ) : isError ? (
+        <div className="bg-destructive/10 border border-destructive/20 rounded-2xl p-6 text-center space-y-3">
+          <p className="text-sm font-medium text-destructive">Could not load upgrades</p>
+          <p className="text-xs text-muted-foreground">Please try again.</p>
+          <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
         </div>
       ) : (
         <div className="space-y-4">
@@ -108,7 +125,7 @@ export default function Upgrades() {
                   <div className="inline-flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2.5 py-1">
                     <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
                     <span className="text-xs font-semibold text-emerald-500">
-                      Earn ~${calcDailyUsdt(upgrade.tier).toFixed(3)} USDT/day
+                      ~${calcDailyUsdt(upgrade.hashRateBoost, upgrade.dailyCapBoost).toFixed(2)} USDT/day
                     </span>
                   </div>
                 </div>
