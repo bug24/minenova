@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, adsTable } from "@workspace/db";
-import { and, eq, ilike, or, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -13,10 +13,7 @@ router.get("/ads/random", async (req, res): Promise<void> => {
     .from(adsTable)
     .where(and(
       eq(adsTable.isActive, true),
-      or(
-        eq(adsTable.placement, target),
-        ilike(adsTable.placement, `%${target}%`),
-      ),
+      sql`${target} = any(string_to_array(${adsTable.placement}, ','))`,
     ))
     .orderBy(sql`random()`)
     .limit(1);

@@ -184,6 +184,7 @@ export default function Boost() {
           totalAds={adSession.tier.adCount}
           currentAd={adSession.currentAd}
           gradient={adSession.tier.gradient}
+          autoActivate
           onComplete={handleAdComplete}
         />
       )}
