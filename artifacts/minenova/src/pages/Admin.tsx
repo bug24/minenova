@@ -2143,7 +2143,7 @@ const BLANK_AD = {
   urlOrCode: "",
   providerScript: "",
   durationSeconds: 15,
-  placement: "boost",
+  placement: "boost_2x",
   isActive: true,
 };
 
@@ -2227,7 +2227,7 @@ function AdsTab({ secret }: { secret: string }) {
       {/* Info banner */}
       <div className="bg-primary/10 border border-primary/20 rounded-xl p-3 text-xs text-primary flex items-start gap-2">
         <MonitorPlay className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-        <span>Active ads in the <strong>Boost Activation</strong> placement are shown randomly to users before a boost is applied. If no active ads exist, the boost proceeds immediately.</span>
+        <span>Ads are shown to users before a boost is applied. Assign each ad to a specific boost tier (2x, 3x, or 5x). If no active ads exist for a tier, the boost activates immediately.</span>
       </div>
 
       {/* Create / Edit form */}
@@ -2290,23 +2290,16 @@ function AdsTab({ secret }: { secret: string }) {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Placement</label>
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.placement.split(",").map(s => s.trim()).includes("boost")}
-                    onChange={e => {
-                      const placements = form.placement.split(",").map(s => s.trim()).filter(Boolean);
-                      if (e.target.checked) { if (!placements.includes("boost")) placements.push("boost"); }
-                      else { const i = placements.indexOf("boost"); if (i !== -1) placements.splice(i, 1); }
-                      setForm(f => ({ ...f, placement: placements.join(",") || "boost" }));
-                    }}
-                    className="w-3.5 h-3.5"
-                  />
-                  Boost Activation
-                </label>
-              </div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Placement (Boost Tier)</label>
+              <select
+                value={form.placement}
+                onChange={e => setForm(f => ({ ...f, placement: e.target.value }))}
+                className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="boost_2x">2x Boost (⚡ 2x Speed)</option>
+                <option value="boost_3x">3x Boost (🔥 3x Speed)</option>
+                <option value="boost_5x">5x Boost (🚀 5x Speed)</option>
+              </select>
             </div>
             <div className="flex items-center gap-2">
               <label className="flex items-center gap-1.5 text-sm cursor-pointer">
@@ -2347,7 +2340,9 @@ function AdsTab({ secret }: { secret: string }) {
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
                       <span className="text-xs text-muted-foreground capitalize">{AD_TYPES.find(t => t.value === ad.type)?.label ?? ad.type}</span>
                       <span className="text-xs text-muted-foreground flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" /> {ad.durationSeconds}s</span>
-                      <span className="text-xs text-muted-foreground">Placement: {ad.placement || "—"}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {ad.placement === "boost_2x" ? "⚡ 2x Boost" : ad.placement === "boost_3x" ? "🔥 3x Boost" : ad.placement === "boost_5x" ? "🚀 5x Boost" : ad.placement || "—"}
+                      </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1 truncate max-w-[260px]">{ad.urlOrCode}</p>
                   </div>

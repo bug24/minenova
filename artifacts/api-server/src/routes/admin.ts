@@ -11,6 +11,7 @@ import {
   upgradesTable,
   userUpgradesTable,
   adsTable,
+  tasksTable,
 } from "@workspace/db";
 import { eq, and, isNull, or, ilike, sql, desc, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -135,11 +136,11 @@ async function seedDefaultMessages() {
 }
 
 const DEFAULT_UPGRADES = [
-  { tier: 1, name: "Speed Boost I", description: "Increase your mining speed by 20% permanently", hashRateBoost: 20, dailyCapBoost: 140, coinCost: 500, usdtCost: null, isAutoMining: false, sortOrder: 1, badge: null, icon: "⚡" },
-  { tier: 2, name: "Speed Boost II", description: "Increase mining speed to 1.5x permanently", hashRateBoost: 50, dailyCapBoost: 180, coinCost: 1500, usdtCost: null, isAutoMining: false, sortOrder: 2, badge: "Popular", icon: "🚀" },
-  { tier: 3, name: "Speed Boost III", description: "Double your mining speed permanently (2x base)", hashRateBoost: 100, dailyCapBoost: 250, coinCost: 3000, usdtCost: null, isAutoMining: false, sortOrder: 3, badge: null, icon: "⛏️" },
-  { tier: 4, name: "Mining Level 4", description: "Elite mining tier — 2.5x base mining speed", hashRateBoost: 150, dailyCapBoost: 350, coinCost: 6000, usdtCost: null, isAutoMining: false, sortOrder: 4, badge: "Best Value", icon: "💎" },
-  { tier: 5, name: "Auto Miner Pro", description: "Maximum speed (3x) with automatic mining sessions", hashRateBoost: 200, dailyCapBoost: 500, coinCost: 10000, usdtCost: null, isAutoMining: true, sortOrder: 5, badge: "Elite", icon: "🤖" },
+  { tier: 1, name: "Speed Boost I", description: "Increase your mining speed by 20% permanently", hashRateBoost: 20, dailyCapBoost: 140, coinCost: 500, usdtCost: 5, isAutoMining: false, sortOrder: 1, badge: null, icon: "⚡" },
+  { tier: 2, name: "Speed Boost II", description: "Increase mining speed to 1.5x permanently", hashRateBoost: 50, dailyCapBoost: 180, coinCost: 1500, usdtCost: 15, isAutoMining: false, sortOrder: 2, badge: "Popular", icon: "🚀" },
+  { tier: 3, name: "Speed Boost III", description: "Double your mining speed permanently (2x base)", hashRateBoost: 100, dailyCapBoost: 250, coinCost: 3000, usdtCost: 30, isAutoMining: false, sortOrder: 3, badge: null, icon: "⛏️" },
+  { tier: 4, name: "Mining Level 4", description: "Elite mining tier — 2.5x base mining speed", hashRateBoost: 150, dailyCapBoost: 350, coinCost: 6000, usdtCost: 60, isAutoMining: false, sortOrder: 4, badge: "Best Value", icon: "💎" },
+  { tier: 5, name: "Auto Miner Pro", description: "Maximum speed (3x) with automatic mining sessions", hashRateBoost: 200, dailyCapBoost: 500, coinCost: 10000, usdtCost: 100, isAutoMining: true, sortOrder: 5, badge: "Elite", icon: "🤖" },
 ];
 
 async function seedUpgrades() {
@@ -171,9 +172,33 @@ async function seedUpgrades() {
   }
 }
 
+const DEFAULT_TASKS = [
+  { taskType: "daily_login", title: "Daily Login", description: "Log in to MineNova to claim your daily login bonus.", reward: 2, sortOrder: 1 },
+  { taskType: "watch_video", title: "Watch Video", description: "Watch a short ad video to earn bonus coins.", reward: 3, sortOrder: 2 },
+  { taskType: "share_twitter", title: "Share on Twitter", description: "Share MineNova with your Twitter followers and earn coins.", reward: 5, sortOrder: 3 },
+  { taskType: "share_facebook", title: "Share on Facebook", description: "Share MineNova on Facebook and earn bonus coins.", reward: 5, sortOrder: 4 },
+  { taskType: "share_whatsapp", title: "Share on WhatsApp", description: "Share MineNova via WhatsApp and earn bonus coins.", reward: 5, sortOrder: 5 },
+  { taskType: "invite_friend", title: "Invite a Friend", description: "Invite a friend to join MineNova using your referral link.", reward: 10, sortOrder: 6 },
+  { taskType: "complete_profile", title: "Complete Profile", description: "Fill in your profile details to earn a one-time bonus.", reward: 2, sortOrder: 7 },
+];
+
+async function seedTasks() {
+  for (const task of DEFAULT_TASKS) {
+    const existing = await db
+      .select({ id: tasksTable.id })
+      .from(tasksTable)
+      .where(eq(tasksTable.taskType, task.taskType))
+      .limit(1);
+    if (existing.length === 0) {
+      await db.insert(tasksTable).values({ ...task, isActive: true });
+    }
+  }
+}
+
 seedAdminConfig().catch(console.error);
 seedDefaultMessages().catch(console.error);
 seedUpgrades().catch(console.error);
+seedTasks().catch(console.error);
 
 // ─── Share Messages ────────────────────────────────────────────────────────────
 
