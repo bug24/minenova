@@ -531,9 +531,10 @@ router.post("/admin/withdrawals/:id/approve", requireAdmin, async (req, res): Pr
     if (!tx) { res.status(404).json({ error: "Withdrawal not found" }); return; }
     if (tx.status !== "pending") { res.status(400).json({ error: "Only pending withdrawals can be approved" }); return; }
 
-    const updated = await trx.update(transactionsTable)
+    const [updated] = await trx.update(transactionsTable)
       .set({ status: "approved", adminNote: data.data.adminNote ?? null })
-      .where(and(eq(transactionsTable.id, id), eq(transactionsTable.status, "pending")));
+      .where(and(eq(transactionsTable.id, id), eq(transactionsTable.status, "pending")))
+      .returning({ id: transactionsTable.id });
     if (!updated) { res.status(409).json({ error: "Withdrawal was already processed" }); return; }
     res.json({ success: true });
   });
@@ -551,9 +552,10 @@ router.post("/admin/withdrawals/:id/reject", requireAdmin, async (req, res): Pro
     if (!tx) { res.status(404).json({ error: "Withdrawal not found" }); return; }
     if (tx.status !== "pending") { res.status(400).json({ error: "Only pending withdrawals can be rejected" }); return; }
 
-    const updated = await trx.update(transactionsTable)
+    const [updated] = await trx.update(transactionsTable)
       .set({ status: "rejected", adminNote: data.data.adminNote ?? null })
-      .where(and(eq(transactionsTable.id, id), eq(transactionsTable.status, "pending")));
+      .where(and(eq(transactionsTable.id, id), eq(transactionsTable.status, "pending")))
+      .returning({ id: transactionsTable.id });
     if (!updated) { res.status(409).json({ error: "Withdrawal was already processed" }); return; }
 
     const refundCoins = tx.amount * COINS_PER_USDT;
