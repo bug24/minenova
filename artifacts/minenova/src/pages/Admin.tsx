@@ -10,7 +10,7 @@ import {
   ShieldOff, Shield, CircleDollarSign, LayoutDashboard, type LucideIcon,
   Sun, Moon, UserCircle, Copy, RotateCcw, Activity, ChevronRight,
   Play, Zap, AlertTriangle, ToggleLeft, ToggleRight, Menu, ChevronLeft,
-  Film, Link, Clock, MonitorPlay,
+  Film, Link, Clock, MonitorPlay, Code,
 } from "lucide-react";
 
 function apiFetch(path: string, options?: RequestInit) {
@@ -97,7 +97,7 @@ interface UserProfile extends AdminUser {
   transactions: UserTransaction[];
 }
 
-type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads";
+type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads" | "scripts";
 
 interface AdminAd {
   id: number;
@@ -2366,6 +2366,106 @@ function AdsTab({ secret }: { secret: string }) {
   );
 }
 
+// ─── Scripts Tab ─────────────────────────────────────────────────────────────
+
+function ScriptsTab({ secret }: { secret: string }) {
+  const { toast } = useToast();
+  const [scripts, setScripts] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
+
+  useEffect(() => {
+    apiFetch("/admin/config", { headers: { "x-admin-secret": secret } })
+      .then(r => r.json())
+      .then((cfg: Record<string, string>) => {
+        setScripts(cfg["body_scripts"] ?? "");
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [secret]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await apiFetch("/admin/config", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ key: "body_scripts", value: scripts }),
+      });
+      if (res.ok) {
+        toast({ title: "Scripts saved!", description: "Body scripts will be injected on next page load." });
+      } else {
+        toast({ variant: "destructive", title: "Failed to save scripts" });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Connection error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5 max-w-3xl">
+      <div>
+        <h2 className="text-lg font-bold">Body Scripts</h2>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Paste ad platform scripts (e.g. Adsterra, Monetag, Google AdSense) here. They will be injected into the page body for all users on every page load.
+        </p>
+      </div>
+
+      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex gap-3">
+        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-medium text-amber-500">Important</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Only paste scripts from trusted ad networks. Malicious scripts can compromise your users. Scripts are executed immediately on page load for every visitor.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="h-48 bg-muted rounded-xl animate-pulse" />
+      ) : (
+        <div className="space-y-3">
+          <label className="text-sm font-medium text-foreground">Script HTML</label>
+          <textarea
+            value={scripts}
+            onChange={e => setScripts(e.target.value)}
+            placeholder={`<!-- Paste your ad platform script tags here -->\n<script async src="https://example-ad-network.com/script.js"></script>`}
+            rows={16}
+            className="w-full rounded-xl border border-card-border bg-card text-sm text-foreground font-mono p-4 resize-y focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground"
+            spellCheck={false}
+          />
+          <p className="text-xs text-muted-foreground">
+            Supports any HTML including &lt;script&gt; tags, &lt;noscript&gt; blocks, and inline code. Leave blank to disable script injection.
+          </p>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleSave}
+          disabled={saving || loading}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-50"
+          style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
+        >
+          <Save className="w-4 h-4" />
+          {saving ? "Saving…" : "Save Scripts"}
+        </button>
+        {!loading && (
+          <button
+            onClick={() => setScripts("")}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors px-3 py-2"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function Admin() {
@@ -2459,6 +2559,7 @@ export default function Admin() {
     { id: "settings", label: "Settings", icon: Settings },
     { id: "share", label: "Share Links", icon: ArrowDownCircle },
     { id: "ads", label: "Ads", icon: MonitorPlay },
+    { id: "scripts", label: "Scripts", icon: Code },
   ];
 
   const currentTab = TABS.find(t => t.id === tab);
@@ -2561,6 +2662,7 @@ export default function Admin() {
           {tab === "settings" && <SettingsTab secret={secret} />}
           {tab === "share" && <ShareMessagesTab secret={secret} />}
           {tab === "ads" && <AdsTab secret={secret} />}
+          {tab === "scripts" && <ScriptsTab secret={secret} />}
         </div>
       </div>
     </div>

@@ -29,6 +29,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const showUpgradeBtn = location !== "/upgrades";
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground max-w-md mx-auto relative">
@@ -41,15 +42,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">Earn Smarter. Grow Faster.</p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-8 h-8 rounded-full p-0"
-          onClick={toggleTheme}
-          data-testid="button-toggle-theme"
-        >
-          {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-        </Button>
+        <div className="flex items-center gap-2">
+          {showUpgradeBtn && (
+            <Link href="/upgrades">
+              <button
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white transition-all active:scale-95"
+                style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
+                data-testid="button-upgrade-header"
+              >
+                <ShoppingBag className="w-3.5 h-3.5" />
+                Upgrade
+              </button>
+            </Link>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-8 h-8 rounded-full p-0"
+            onClick={toggleTheme}
+            data-testid="button-toggle-theme"
+          >
+            {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </Button>
+        </div>
       </header>
 
       {/* Main Scrollable Content */}

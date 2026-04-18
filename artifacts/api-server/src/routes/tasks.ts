@@ -57,6 +57,13 @@ router.get("/tasks", requireAuth, async (req, res): Promise<void> => {
         shareText = `Join me on MineNova! Earn free crypto daily by mining. Use my referral code: ${referralCode}\n${shareLink}`;
       }
     }
+    let taskShareUrl: string | null = null;
+    if (task.taskType.startsWith("share_") || task.taskType === "invite_friend") {
+      taskShareUrl = shareLink;
+    }
+    if (task.taskType === "invite_friend" && !shareText) {
+      shareText = `Join me on MineNova! Earn free crypto daily just by mining — no hardware needed.\n\nUse my referral link: ${shareLink}`;
+    }
     return {
       id: task.id,
       title: task.title,
@@ -64,7 +71,7 @@ router.get("/tasks", requireAuth, async (req, res): Promise<void> => {
       reward: task.reward,
       taskType: task.taskType,
       completedToday: completedTaskIds.has(task.id),
-      shareUrl: task.taskType.startsWith("share_") ? shareLink : null,
+      shareUrl: taskShareUrl,
       shareText,
     };
   });

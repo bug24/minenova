@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle2, Play, Share2, Twitter, Facebook, MessageCircle, Gift, LogIn, Coins } from "lucide-react";
+import { CheckCircle2, Play, Share2, Twitter, Facebook, MessageCircle, Gift, LogIn, Coins, Link2 } from "lucide-react";
 
 function getTaskIcon(taskType: string) {
   if (taskType === "share_twitter") return <Twitter className="w-5 h-5 text-sky-400" />;
@@ -33,6 +33,7 @@ export default function Tasks() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [pendingConfirmId, setPendingConfirmId] = useState<number | null>(null);
+  const [invitingId, setInvitingId] = useState<number | null>(null);
 
   const handleShare = (taskId: number, taskType: string, shareUrl?: string | null, shareText?: string | null) => {
     const url = buildShareIntentUrl(taskType, shareUrl, shareText);
@@ -40,6 +41,44 @@ export default function Tasks() {
       window.open(url, "_blank");
       setPendingConfirmId(taskId);
     }
+  };
+
+  const handleInviteShare = async (taskId: number, shareUrl: string, shareText: string | null | undefined) => {
+    setInvitingId(taskId);
+    const shareData = {
+      title: "Join me on MineNova!",
+      text: shareText ?? `Earn free crypto daily — no hardware needed! Join using my referral link:`,
+      url: shareUrl,
+    };
+
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share(shareData);
+        setPendingConfirmId(taskId);
+      } catch (err) {
+        if ((err as Error).name === "AbortError") {
+          setInvitingId(null);
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          toast({ title: "Link copied!", description: "Your referral link was copied. Share it and confirm to claim your coins!" });
+          setPendingConfirmId(taskId);
+        } catch {
+          toast({ title: "Your referral link", description: shareUrl });
+          setPendingConfirmId(taskId);
+        }
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        toast({ title: "Link copied!", description: "Share your referral link with friends and confirm below to earn coins!" });
+      } catch {
+        toast({ title: "Your referral link", description: shareUrl });
+      }
+      setPendingConfirmId(taskId);
+    }
+    setInvitingId(null);
   };
 
   const handleConfirmShare = (taskId: number) => {
@@ -115,7 +154,9 @@ export default function Tasks() {
         <div className="space-y-3">
           {tasks.map(task => {
             const isShareTask = task.taskType.startsWith("share_");
+            const isInviteTask = task.taskType === "invite_friend";
             const isPendingConfirm = pendingConfirmId === task.id;
+            const isInviting = invitingId === task.id;
             return (
               <div
                 key={task.id}
@@ -135,13 +176,20 @@ export default function Tasks() {
                           <Share2 className="w-2.5 h-2.5" /> Share
                         </Badge>
                       )}
+                      {isInviteTask && !task.completedToday && (
+                        <Badge variant="outline" className="text-xs gap-1">
+                          <Link2 className="w-2.5 h-2.5" /> Invite
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">{task.description}</p>
 
                     {isPendingConfirm && (
                       <div className="mt-3 bg-primary/10 border border-primary/20 rounded-xl p-3">
                         <p className="text-xs text-primary font-medium mb-2">
-                          Did you complete the share? Confirm to claim your coins!
+                          {isInviteTask
+                            ? "Did you share your referral link? Confirm to claim your coins!"
+                            : "Did you complete the share? Confirm to claim your coins!"}
                         </p>
                         <div className="flex gap-2">
                           <Button
@@ -174,14 +222,19 @@ export default function Tasks() {
                         size="sm"
                         variant="outline"
                         className="mt-2 h-7 text-xs"
-                        onClick={() => isShareTask
-                          ? handleShare(task.id, task.taskType, task.shareUrl, task.shareText)
-                          : handleNonShareComplete(task.id)
-                        }
-                        disabled={completeTask.isPending}
+                        onClick={() => {
+                          if (isInviteTask && task.shareUrl) {
+                            handleInviteShare(task.id, task.shareUrl, task.shareText);
+                          } else if (isShareTask) {
+                            handleShare(task.id, task.taskType, task.shareUrl, task.shareText);
+                          } else {
+                            handleNonShareComplete(task.id);
+                          }
+                        }}
+                        disabled={completeTask.isPending || isInviting}
                         data-testid={`button-complete-task-${task.id}`}
                       >
-                        {isShareTask ? "Share" : "Complete"}
+                        {isInviting ? "Sharing…" : isInviteTask ? "Invite" : isShareTask ? "Share" : "Complete"}
                       </Button>
                     )}
                   </div>

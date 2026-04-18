@@ -167,11 +167,21 @@ export default function Boost() {
     try {
       const ads: AdData[] = [];
       for (let i = 0; i < tier.adCount; i++) {
+        let ad: AdData | null = null;
+
         const res = await fetch(`/api/ads/random?placement=${tier.placement}`);
         const data = await res.json();
         if (!data.noAd && data.id) {
-          ads.push(data as AdData);
+          ad = data as AdData;
+        } else if (tier.placement !== "boost_2x") {
+          const fallback = await fetch(`/api/ads/random?placement=boost_2x`);
+          const fallbackData = await fallback.json();
+          if (!fallbackData.noAd && fallbackData.id) {
+            ad = fallbackData as AdData;
+          }
         }
+
+        if (ad) ads.push(ad);
       }
 
       if (ads.length > 0) {

@@ -1172,6 +1172,17 @@ router.delete("/admin/ads/:id", requireAdmin, async (req, res): Promise<void> =>
   res.json({ success: true });
 });
 
+// ─── Public Body Scripts ─────────────────────────────────────────────────────
+
+router.get("/body-scripts", async (_req, res): Promise<void> => {
+  const [row] = await db
+    .select({ value: adminConfigTable.value })
+    .from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "body_scripts"))
+    .limit(1);
+  res.json({ scripts: row?.value ?? "" });
+});
+
 // ─── Generic Config ───────────────────────────────────────────────────────────
 
 router.get("/admin/config", requireAdmin, async (_req, res): Promise<void> => {
