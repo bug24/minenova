@@ -55,19 +55,14 @@ export default function Tasks() {
       try {
         await navigator.share(shareData);
         setPendingConfirmId(taskId);
-      } catch (err) {
-        if ((err as Error).name === "AbortError") {
-          setInvitingId(null);
-          return;
-        }
+      } catch {
         try {
           await navigator.clipboard.writeText(shareUrl);
-          toast({ title: "Link copied!", description: "Your referral link was copied. Share it and confirm to claim your coins!" });
-          setPendingConfirmId(taskId);
+          toast({ title: "Link copied!", description: "Your referral link was copied. Share it with friends and confirm to claim your coins!" });
         } catch {
           toast({ title: "Your referral link", description: shareUrl });
-          setPendingConfirmId(taskId);
         }
+        setPendingConfirmId(taskId);
       }
     } else {
       try {
