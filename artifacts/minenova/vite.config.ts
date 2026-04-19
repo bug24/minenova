@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
@@ -26,12 +26,87 @@ if (!basePath) {
   );
 }
 
+/**
+ * Plugin that enables ad-network verification without JavaScript:
+ * 1. Serves /ads.txt dynamically from the API server's admin_config
+ * 2. Injects head_meta_tags (e.g. <meta name="google-adsense-account"…>) into
+ *    <head> at the server level so verification bots see them in raw HTML
+ */
+function adVerificationPlugin(): Plugin {
+  const API_BASE =
+    process.env.API_INTERNAL_URL ??
+    `http://localhost:${process.env.API_PORT ?? "8080"}`;
+
+  interface CacheEntry { value: string; expiresAt: number }
+  const cache: Record<string, CacheEntry> = {};
+  const TTL = 60_000;
+
+  async function fetchCached(key: string, url: string): Promise<string> {
+    const now = Date.now();
+    if (cache[key] && now < cache[key].expiresAt) return cache[key].value;
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+      const value = res.ok
+        ? res.headers.get("content-type")?.includes("json")
+          ? ((await res.json()).tags ?? "")
+          : await res.text()
+        : cache[key]?.value ?? "";
+      cache[key] = { value, expiresAt: now + TTL };
+      return value;
+    } catch {
+      return cache[key]?.value ?? "";
+    }
+  }
+
+  function attachAdsTxtMiddleware(server: { middlewares: { use: Function } }) {
+    server.middlewares.use(async (req: any, res: any, next: Function) => {
+      const url: string = (req.url ?? "").split("?")[0];
+      if (url !== "/ads.txt" && url !== `${basePath}ads.txt`) {
+        next();
+        return;
+      }
+      const content = await fetchCached("ads_txt", `${API_BASE}/api/ads-txt`);
+      if (!content.trim()) {
+        res.statusCode = 404;
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.end("Not found");
+        return;
+      }
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.end(content);
+    });
+  }
+
+  return {
+    name: "minenova-ad-verification",
+
+    configureServer(server) {
+      attachAdsTxtMiddleware(server as any);
+    },
+
+    configurePreviewServer(server) {
+      attachAdsTxtMiddleware(server as any);
+    },
+
+    async transformIndexHtml(html) {
+      const tags = await fetchCached(
+        "head_meta",
+        `${API_BASE}/api/head-meta`,
+      );
+      if (!tags.trim()) return html;
+      return html.replace("</head>", `  ${tags.trim()}\n  </head>`);
+    },
+  };
+}
+
 export default defineConfig({
   base: basePath,
   plugins: [
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
+    adVerificationPlugin(),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [

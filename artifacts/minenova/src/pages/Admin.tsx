@@ -2550,8 +2550,12 @@ function AdsTab({ secret }: { secret: string }) {
 function ScriptsTab({ secret }: { secret: string }) {
   const { toast } = useToast();
   const [scripts, setScripts] = useState("");
+  const [headTags, setHeadTags] = useState("");
+  const [adsTxt, setAdsTxt] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingBody, setSavingBody] = useState(false);
+  const [savingHead, setSavingHead] = useState(false);
+  const [savingAds, setSavingAds] = useState(false);
   const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
   useEffect(() => {
@@ -2559,87 +2563,189 @@ function ScriptsTab({ secret }: { secret: string }) {
       .then(r => r.json())
       .then((cfg: Record<string, string>) => {
         setScripts(cfg["body_scripts"] ?? "");
+        setHeadTags(cfg["head_meta_tags"] ?? "");
+        setAdsTxt(cfg["ads_txt"] ?? "");
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [secret]);
 
-  const handleSave = async () => {
-    setSaving(true);
+  const saveKey = async (key: string, value: string, setFn: (v: boolean) => void, successMsg: string) => {
+    setFn(true);
     try {
       const res = await apiFetch("/admin/config", {
         method: "POST",
         headers,
-        body: JSON.stringify({ key: "body_scripts", value: scripts }),
+        body: JSON.stringify({ key, value }),
       });
-      if (res.ok) {
-        toast({ title: "Scripts saved!", description: "Body scripts will be injected on next page load." });
-      } else {
-        toast({ variant: "destructive", title: "Failed to save scripts" });
-      }
+      if (res.ok) toast({ title: successMsg });
+      else toast({ variant: "destructive", title: "Failed to save" });
     } catch {
       toast({ variant: "destructive", title: "Connection error" });
     } finally {
-      setSaving(false);
+      setFn(false);
     }
   };
 
+  const textareaClass = "w-full rounded-xl border border-card-border bg-card text-sm text-foreground font-mono p-4 resize-y focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground";
+
   return (
-    <div className="space-y-5 max-w-3xl">
-      <div>
-        <h2 className="text-lg font-bold">Body Scripts</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Paste ad platform scripts (e.g. Adsterra, Monetag, Google AdSense) here. They will be injected into the page body for all users on every page load.
-        </p>
-      </div>
+    <div className="space-y-8 max-w-3xl">
 
-      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex gap-3">
-        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+      {/* ── Head Verification Tags ── */}
+      <div className="space-y-4">
         <div>
-          <p className="text-sm font-medium text-amber-500">Important</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Only paste scripts from trusted ad networks. Malicious scripts can compromise your users. Scripts are executed immediately on page load for every visitor.
+          <h2 className="text-lg font-bold">Head Verification Tags</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Paste ad network verification meta tags here (e.g. Google AdSense publisher verification, Media.net, Ezoic). These are injected directly into the HTML <code className="text-xs bg-muted px-1 rounded">&lt;head&gt;</code> at the server level — visible to bots and crawlers without JavaScript.
           </p>
+        </div>
+
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 flex gap-3">
+          <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-emerald-500">Bot-visible injection</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Unlike body scripts, these tags are embedded in the raw HTML response before it reaches any browser or bot. Ad network crawlers will find them immediately.
+            </p>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="h-28 bg-muted rounded-xl animate-pulse" />
+        ) : (
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-foreground">Meta / Link Tags</label>
+            <textarea
+              value={headTags}
+              onChange={e => setHeadTags(e.target.value)}
+              placeholder={`<meta name="google-adsense-account" content="ca-pub-XXXXXXXXXXXXXXXX" />\n<meta name="ezoic-site-verification" content="XXXXXXXX" />`}
+              rows={6}
+              className={textareaClass}
+              spellCheck={false}
+            />
+            <p className="text-xs text-muted-foreground">
+              Paste exactly what the ad network gives you. Supports &lt;meta&gt;, &lt;link&gt;, and other head tags. Leave blank to disable.
+            </p>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => saveKey("head_meta_tags", headTags, setSavingHead, "Head tags saved — visible to crawlers immediately.")}
+            disabled={savingHead || loading}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-50"
+            style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
+          >
+            <Save className="w-4 h-4" />
+            {savingHead ? "Saving…" : "Save Head Tags"}
+          </button>
+          {!loading && headTags && (
+            <button onClick={() => setHeadTags("")} className="text-sm text-muted-foreground hover:text-foreground transition-colors px-3 py-2">Clear</button>
+          )}
         </div>
       </div>
 
-      {loading ? (
-        <div className="h-48 bg-muted rounded-xl animate-pulse" />
-      ) : (
-        <div className="space-y-3">
-          <label className="text-sm font-medium text-foreground">Script HTML</label>
-          <textarea
-            value={scripts}
-            onChange={e => setScripts(e.target.value)}
-            placeholder={`<!-- Paste your ad platform script tags here -->\n<script async src="https://example-ad-network.com/script.js"></script>`}
-            rows={16}
-            className="w-full rounded-xl border border-card-border bg-card text-sm text-foreground font-mono p-4 resize-y focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground"
-            spellCheck={false}
-          />
-          <p className="text-xs text-muted-foreground">
-            Supports any HTML including &lt;script&gt; tags, &lt;noscript&gt; blocks, and inline code. Leave blank to disable script injection.
+      <div className="border-t border-border" />
+
+      {/* ── ads.txt ── */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-bold">ads.txt</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Many ad networks (Google AdSense, Magnite, etc.) verify your domain by checking <code className="text-xs bg-muted px-1 rounded">yourdomain.com/ads.txt</code>. Paste the content they provide and it will be served automatically — no file upload needed.
           </p>
         </div>
-      )}
 
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleSave}
-          disabled={saving || loading}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-50"
-          style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
-        >
-          <Save className="w-4 h-4" />
-          {saving ? "Saving…" : "Save Scripts"}
-        </button>
-        {!loading && (
-          <button
-            onClick={() => setScripts("")}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors px-3 py-2"
-          >
-            Clear
-          </button>
+        {loading ? (
+          <div className="h-28 bg-muted rounded-xl animate-pulse" />
+        ) : (
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-foreground">ads.txt content</label>
+            <textarea
+              value={adsTxt}
+              onChange={e => setAdsTxt(e.target.value)}
+              placeholder={`google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0\n# Add one line per authorized seller`}
+              rows={8}
+              className={textareaClass}
+              spellCheck={false}
+            />
+            <p className="text-xs text-muted-foreground">
+              Served at <code className="text-xs bg-muted px-1 rounded">yourdomain.com/ads.txt</code> as plain text. Leave blank to return 404 (disabled).
+            </p>
+          </div>
         )}
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => saveKey("ads_txt", adsTxt, setSavingAds, "ads.txt saved — available at /ads.txt immediately.")}
+            disabled={savingAds || loading}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-50"
+            style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
+          >
+            <Save className="w-4 h-4" />
+            {savingAds ? "Saving…" : "Save ads.txt"}
+          </button>
+          {!loading && adsTxt && (
+            <button onClick={() => setAdsTxt("")} className="text-sm text-muted-foreground hover:text-foreground transition-colors px-3 py-2">Clear</button>
+          )}
+        </div>
+      </div>
+
+      <div className="border-t border-border" />
+
+      {/* ── Body Scripts ── */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-bold">Body Scripts</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Paste ad platform scripts (e.g. Adsterra, Monetag, pop-under scripts) here. They are injected into the page body via JavaScript on every page load.
+          </p>
+        </div>
+
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex gap-3">
+          <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-amber-500">Note: requires JavaScript</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Body scripts are injected client-side and are not visible to bots that don't run JavaScript. For domain verification, use the Head Verification Tags section above instead.
+            </p>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="h-48 bg-muted rounded-xl animate-pulse" />
+        ) : (
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-foreground">Script HTML</label>
+            <textarea
+              value={scripts}
+              onChange={e => setScripts(e.target.value)}
+              placeholder={`<!-- Paste your ad platform script tags here -->\n<script async src="https://example-ad-network.com/script.js"></script>`}
+              rows={14}
+              className={textareaClass}
+              spellCheck={false}
+            />
+            <p className="text-xs text-muted-foreground">
+              Supports any HTML including &lt;script&gt; tags, &lt;noscript&gt; blocks, and inline code. Leave blank to disable.
+            </p>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => saveKey("body_scripts", scripts, setSavingBody, "Body scripts saved — active on next page load.")}
+            disabled={savingBody || loading}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-50"
+            style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
+          >
+            <Save className="w-4 h-4" />
+            {savingBody ? "Saving…" : "Save Body Scripts"}
+          </button>
+          {!loading && scripts && (
+            <button onClick={() => setScripts("")} className="text-sm text-muted-foreground hover:text-foreground transition-colors px-3 py-2">Clear</button>
+          )}
+        </div>
       </div>
     </div>
   );

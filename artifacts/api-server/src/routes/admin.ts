@@ -1293,6 +1293,32 @@ router.get("/body-scripts", async (_req, res): Promise<void> => {
   res.json({ scripts: row?.value ?? "" });
 });
 
+// ─── Public ads.txt ──────────────────────────────────────────────────────────
+
+router.get("/ads-txt", async (_req, res): Promise<void> => {
+  const [row] = await db
+    .select({ value: adminConfigTable.value })
+    .from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "ads_txt"))
+    .limit(1);
+  const content = row?.value?.trim();
+  if (!content) { res.status(404).end(); return; }
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.send(content);
+});
+
+// ─── Public Head Meta Tags ────────────────────────────────────────────────────
+
+router.get("/head-meta", async (_req, res): Promise<void> => {
+  const [row] = await db
+    .select({ value: adminConfigTable.value })
+    .from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "head_meta_tags"))
+    .limit(1);
+  res.json({ tags: row?.value ?? "" });
+});
+
 // ─── Generic Config ───────────────────────────────────────────────────────────
 
 router.get("/admin/config", requireAdmin, async (_req, res): Promise<void> => {
