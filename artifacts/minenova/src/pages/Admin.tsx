@@ -2699,7 +2699,7 @@ function ScriptsTab({ secret }: { secret: string }) {
         <div>
           <h2 className="text-lg font-bold">Body Scripts</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Paste ad platform scripts (e.g. Adsterra, Monetag, pop-under scripts) here. They are injected into the page body via JavaScript on every page load.
+            Paste ad platform scripts (e.g. Adsterra, Monetag, pop-under scripts) here. They are injected server-side directly into the HTML response on every page load.
           </p>
         </div>
 

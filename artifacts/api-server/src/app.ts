@@ -144,7 +144,11 @@ if (distBuilt) {
     }),
   );
 
-  app.get("/{*path}", async (_req, res): Promise<void> => {
+  app.get("/{*path}", async (req, res): Promise<void> => {
+    if (req.path.startsWith("/api/")) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
     await serveInjectedHtml(res);
   });
 } else {
