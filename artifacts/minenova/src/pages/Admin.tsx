@@ -2703,12 +2703,12 @@ function ScriptsTab({ secret }: { secret: string }) {
           </p>
         </div>
 
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex gap-3">
-          <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+        <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 flex gap-3">
+          <Check className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-medium text-amber-500">Note: requires JavaScript</p>
+            <p className="text-sm font-medium text-green-500">Server-side injection</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Body scripts are injected client-side and are not visible to bots that don't run JavaScript. For domain verification, use the Head Verification Tags section above instead.
+              Body scripts are injected directly into the HTML response before it reaches the browser — before the closing body tag. They load before any client-side JavaScript runs, making them visible to crawlers and improving load order for analytics and ad scripts.
             </p>
           </div>
         </div>

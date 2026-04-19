@@ -1,8 +1,10 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, type Plugin, type ViteDevServer, type PreviewServer } from "vite";
+import type { Connect } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import type { IncomingMessage, ServerResponse } from "node:http";
 
 const rawPort = process.env.PORT;
 
@@ -27,10 +29,12 @@ if (!basePath) {
 }
 
 /**
- * Plugin that enables ad-network verification without JavaScript:
- * 1. Serves /ads.txt dynamically from the API server's admin_config
+ * Plugin that enables ad-network and ownership verification without JavaScript:
+ * 1. Serves /ads.txt dynamically from the API server's admin_config table
  * 2. Injects head_meta_tags (e.g. <meta name="google-adsense-account"…>) into
- *    <head> at the server level so verification bots see them in raw HTML
+ *    <head> at the server level so crawlers see them in raw HTML
+ * 3. Injects body_scripts before </body> at the server level for server-side
+ *    inclusion (e.g. analytics tags that benefit from early loading)
  */
 function adVerificationPlugin(): Plugin {
   const API_BASE =
@@ -46,11 +50,18 @@ function adVerificationPlugin(): Plugin {
     if (cache[key] && now < cache[key].expiresAt) return cache[key].value;
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
-      const value = res.ok
-        ? res.headers.get("content-type")?.includes("json")
-          ? ((await res.json()).tags ?? "")
-          : await res.text()
-        : cache[key]?.value ?? "";
+      if (!res.ok) {
+        cache[key] = { value: cache[key]?.value ?? "", expiresAt: now + TTL };
+        return cache[key].value;
+      }
+      const ct = res.headers.get("content-type") ?? "";
+      let value: string;
+      if (ct.includes("application/json")) {
+        const json = await res.json() as Record<string, string>;
+        value = json.tags ?? json.scripts ?? "";
+      } else {
+        value = await res.text();
+      }
       cache[key] = { value, expiresAt: now + TTL };
       return value;
     } catch {
@@ -58,44 +69,59 @@ function adVerificationPlugin(): Plugin {
     }
   }
 
-  function attachAdsTxtMiddleware(server: { middlewares: { use: Function } }) {
-    server.middlewares.use(async (req: any, res: any, next: Function) => {
-      const url: string = (req.url ?? "").split("?")[0];
-      if (url !== "/ads.txt" && url !== `${basePath}ads.txt`) {
-        next();
-        return;
-      }
-      const content = await fetchCached("ads_txt", `${API_BASE}/api/ads-txt`);
-      if (!content.trim()) {
-        res.statusCode = 404;
-        res.setHeader("Content-Type", "text/plain; charset=utf-8");
-        res.end("Not found");
-        return;
-      }
+  type NextFn = Connect.NextFunction;
+
+  async function handleAdsTxt(
+    req: IncomingMessage,
+    res: ServerResponse,
+    next: NextFn,
+  ): Promise<void> {
+    const url = (req.url ?? "").split("?")[0];
+    if (url !== "/ads.txt" && url !== `${basePath}ads.txt`) {
+      next();
+      return;
+    }
+    const content = await fetchCached("ads_txt", `${API_BASE}/api/ads-txt`);
+    if (!content.trim()) {
+      res.statusCode = 404;
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      res.setHeader("Cache-Control", "public, max-age=3600");
-      res.end(content);
-    });
+      res.end("Not found");
+      return;
+    }
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.end(content);
+  }
+
+  function attachAdsTxtMiddleware(
+    middlewares: ViteDevServer["middlewares"] | PreviewServer["middlewares"],
+  ): void {
+    middlewares.use(handleAdsTxt as Connect.NextHandleFunction);
   }
 
   return {
     name: "minenova-ad-verification",
 
-    configureServer(server) {
-      attachAdsTxtMiddleware(server as any);
+    configureServer(server: ViteDevServer) {
+      attachAdsTxtMiddleware(server.middlewares);
     },
 
-    configurePreviewServer(server) {
-      attachAdsTxtMiddleware(server as any);
+    configurePreviewServer(server: PreviewServer) {
+      attachAdsTxtMiddleware(server.middlewares);
     },
 
-    async transformIndexHtml(html) {
-      const tags = await fetchCached(
-        "head_meta",
-        `${API_BASE}/api/head-meta`,
-      );
-      if (!tags.trim()) return html;
-      return html.replace("</head>", `  ${tags.trim()}\n  </head>`);
+    async transformIndexHtml(html: string): Promise<string> {
+      const [headTags, bodyScripts] = await Promise.all([
+        fetchCached("head_meta", `${API_BASE}/api/head-meta`),
+        fetchCached("body_scripts", `${API_BASE}/api/body-scripts`),
+      ]);
+      if (headTags.trim()) {
+        html = html.replace("</head>", `  ${headTags.trim()}\n  </head>`);
+      }
+      if (bodyScripts.trim()) {
+        html = html.replace("</body>", `  ${bodyScripts.trim()}\n  </body>`);
+      }
+      return html;
     },
   };
 }
