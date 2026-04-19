@@ -41,6 +41,7 @@ export const LoginResponse = zod.object({
     miningLevel: zod.number(),
     totalEarned: zod.number(),
     createdAt: zod.string(),
+    emailVerified: zod.boolean(),
   }),
   token: zod.string(),
 });
@@ -56,6 +57,7 @@ export const GetMeResponse = zod.object({
   miningLevel: zod.number(),
   totalEarned: zod.number(),
   createdAt: zod.string(),
+  emailVerified: zod.boolean(),
 });
 
 /**

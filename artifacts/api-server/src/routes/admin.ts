@@ -16,6 +16,8 @@ import {
 import { eq, and, isNull, or, ilike, sql, desc, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { hashPassword } from "../lib/auth";
+import * as OTPAuth from "otpauth";
+import QRCode from "qrcode";
 
 const router: IRouter = Router();
 
@@ -77,6 +79,114 @@ const requireAdmin = async (req: any, res: any, next: any) => {
   }
   next();
 };
+
+// ─── 2FA helpers ──────────────────────────────────────────────────────────────
+
+async function get2FASecret(): Promise<string | null> {
+  const [row] = await db
+    .select({ value: adminConfigTable.value })
+    .from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "admin_totp_secret"))
+    .limit(1);
+  return row?.value ?? null;
+}
+
+function verifyTOTP(secret: string, token: string): boolean {
+  try {
+    const totp = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(secret), algorithm: "SHA1", digits: 6, period: 30 });
+    const delta = totp.validate({ token, window: 1 });
+    return delta !== null;
+  } catch {
+    return false;
+  }
+}
+
+// GET /admin/2fa/status
+router.get("/admin/2fa/status", async (_req, res): Promise<void> => {
+  const secret = await get2FASecret();
+  res.json({ enabled: !!secret });
+});
+
+// POST /admin/2fa/setup — verifies admin password, generates TOTP secret + QR code (not stored)
+router.post("/admin/2fa/setup", async (req, res): Promise<void> => {
+  const { secret: adminSecret } = req.body;
+  const currentPassword = await getAdminPassword();
+  if (adminSecret !== currentPassword) {
+    res.status(401).json({ error: "Invalid admin password" });
+    return;
+  }
+  const totpSecret = new OTPAuth.Secret({ size: 20 });
+  const secretBase32 = totpSecret.base32;
+  const totp = new OTPAuth.TOTP({
+    issuer: "MineNova Admin",
+    label: "MineNova",
+    algorithm: "SHA1",
+    digits: 6,
+    period: 30,
+    secret: totpSecret,
+  });
+  const otpAuthUrl = totp.toString();
+  const qrCodeDataUrl = await QRCode.toDataURL(otpAuthUrl);
+  res.json({ secret: secretBase32, qrCodeDataUrl });
+});
+
+// POST /admin/2fa/enable — verifies code against new secret, then stores it
+router.post("/admin/2fa/enable", async (req, res): Promise<void> => {
+  const { secret: adminSecret, totpSecret, totpCode } = req.body;
+  const currentPassword = await getAdminPassword();
+  if (adminSecret !== currentPassword) {
+    res.status(401).json({ error: "Invalid admin password" });
+    return;
+  }
+  if (!totpSecret || !totpCode) {
+    res.status(400).json({ error: "Missing totpSecret or totpCode" });
+    return;
+  }
+  if (!verifyTOTP(totpSecret, String(totpCode))) {
+    res.status(400).json({ error: "Invalid authenticator code. Please try again." });
+    return;
+  }
+  await upsertSetting("admin_totp_secret", totpSecret);
+  res.json({ success: true });
+});
+
+// POST /admin/2fa/verify — used during login to verify TOTP after password check
+router.post("/admin/2fa/verify", async (req, res): Promise<void> => {
+  const { secret: adminSecret, totpCode } = req.body;
+  const currentPassword = await getAdminPassword();
+  if (adminSecret !== currentPassword) {
+    res.status(401).json({ error: "Invalid admin password" });
+    return;
+  }
+  const totpSecret = await get2FASecret();
+  if (!totpSecret) {
+    res.json({ valid: true });
+    return;
+  }
+  const valid = verifyTOTP(totpSecret, String(totpCode));
+  if (!valid) {
+    res.status(401).json({ error: "Invalid authenticator code" });
+    return;
+  }
+  res.json({ valid: true });
+});
+
+// POST /admin/2fa/disable — requires password + TOTP to disable
+router.post("/admin/2fa/disable", async (req, res): Promise<void> => {
+  const { secret: adminSecret, totpCode } = req.body;
+  const currentPassword = await getAdminPassword();
+  if (adminSecret !== currentPassword) {
+    res.status(401).json({ error: "Invalid admin password" });
+    return;
+  }
+  const totpSecret = await get2FASecret();
+  if (totpSecret && !verifyTOTP(totpSecret, String(totpCode))) {
+    res.status(401).json({ error: "Invalid authenticator code" });
+    return;
+  }
+  await db.delete(adminConfigTable).where(eq(adminConfigTable.key, "admin_totp_secret"));
+  res.json({ success: true });
+});
 
 const DEFAULT_MESSAGES = [
   {

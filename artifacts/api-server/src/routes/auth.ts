@@ -4,8 +4,20 @@ import { eq } from "drizzle-orm";
 import { hashPassword, verifyPassword, generateReferralCode, generateToken } from "../lib/auth";
 import { requireAuth } from "../middlewares/requireAuth";
 import { RegisterBody, LoginBody, GetMeResponse } from "@workspace/api-zod";
+import { sendVerificationEmail } from "../lib/email";
+import crypto from "crypto";
 
 const router: IRouter = Router();
+
+function generateVerificationToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function buildVerificationUrl(req: any, token: string): string {
+  const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost";
+  return `${proto}://${host}/api/auth/verify-email?token=${token}`;
+}
 
 router.post("/auth/register", async (req, res): Promise<void> => {
   const parsed = RegisterBody.safeParse(req.body);
@@ -39,6 +51,8 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
   const passwordHash = hashPassword(password);
   const newReferralCode = generateReferralCode();
+  const verificationToken = generateVerificationToken();
+  const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
   let referredBy: number | null = null;
 
@@ -63,6 +77,9 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       referralCode: newReferralCode,
       referredBy: referredBy ?? undefined,
       coinBalance: 0,
+      emailVerified: false,
+      verificationToken,
+      verificationTokenExpiry,
     })
     .returning();
 
@@ -76,6 +93,14 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     });
   }
 
+  const verificationUrl = buildVerificationUrl(req, verificationToken);
+
+  try {
+    await sendVerificationEmail(email, username, verificationUrl);
+  } catch (err) {
+    console.error("[email] Failed to send verification email:", err);
+  }
+
   const token = generateToken(user.id);
 
   res.status(201).json({
@@ -87,8 +112,10 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       miningLevel: user.miningLevel,
       totalEarned: user.totalEarned,
       createdAt: user.createdAt.toISOString(),
+      emailVerified: user.emailVerified,
     },
     token,
+    verificationUrl: process.env.NODE_ENV !== "production" ? verificationUrl : undefined,
   });
 });
 
@@ -122,6 +149,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       miningLevel: user.miningLevel,
       totalEarned: user.totalEarned,
       createdAt: user.createdAt.toISOString(),
+      emailVerified: user.emailVerified,
     },
     token,
   });
@@ -151,7 +179,113 @@ router.get("/auth/me", requireAuth, async (req, res): Promise<void> => {
     miningLevel: user.miningLevel,
     totalEarned: user.totalEarned,
     createdAt: user.createdAt.toISOString(),
+    emailVerified: user.emailVerified,
   }));
 });
+
+router.get("/auth/verify-email", async (req, res): Promise<void> => {
+  const { token } = req.query as { token?: string };
+  if (!token) {
+    res.status(400).send(verifyPageHtml("Invalid Link", "No verification token was provided.", false));
+    return;
+  }
+
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.verificationToken, token))
+    .limit(1);
+
+  if (!user) {
+    res.status(400).send(verifyPageHtml("Invalid Link", "This verification link is invalid or has already been used.", false));
+    return;
+  }
+
+  if (user.emailVerified) {
+    res.send(verifyPageHtml("Already Verified", "Your email is already verified. You can close this tab.", true));
+    return;
+  }
+
+  if (user.verificationTokenExpiry && user.verificationTokenExpiry < new Date()) {
+    res.status(400).send(verifyPageHtml("Link Expired", "This verification link has expired. Please request a new one from the app.", false));
+    return;
+  }
+
+  await db.update(usersTable)
+    .set({ emailVerified: true, verificationToken: null, verificationTokenExpiry: null })
+    .where(eq(usersTable.id, user.id));
+
+  res.send(verifyPageHtml("Email Verified!", `Welcome to MineNova, ${user.username}! Your email has been verified. You can now close this tab and return to the app.`, true));
+});
+
+router.post("/auth/resend-verification", requireAuth, async (req, res): Promise<void> => {
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.id, req.userId!))
+    .limit(1);
+
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  if (user.emailVerified) {
+    res.status(400).json({ error: "Email is already verified" });
+    return;
+  }
+
+  const verificationToken = generateVerificationToken();
+  const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  await db.update(usersTable)
+    .set({ verificationToken, verificationTokenExpiry })
+    .where(eq(usersTable.id, user.id));
+
+  const verificationUrl = buildVerificationUrl(req, verificationToken);
+
+  try {
+    await sendVerificationEmail(user.email, user.username, verificationUrl);
+  } catch (err) {
+    console.error("[email] Failed to send verification email:", err);
+  }
+
+  res.json({
+    success: true,
+    message: "Verification email sent",
+    verificationUrl: process.env.NODE_ENV !== "production" ? verificationUrl : undefined,
+  });
+});
+
+function verifyPageHtml(title: string, message: string, success: boolean): string {
+  const color = success ? "#a855f7" : "#ef4444";
+  const icon = success ? "✓" : "✗";
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${title} — MineNova</title>
+  <style>
+    body { font-family: sans-serif; background: #0f0c1a; color: #f3f0ff; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .card { text-align: center; max-width: 400px; padding: 40px 32px; background: #1a1625; border-radius: 16px; border: 1px solid #2d2b3d; }
+    .icon { font-size: 48px; color: ${color}; margin-bottom: 16px; }
+    h1 { margin: 0 0 12px; font-size: 22px; color: ${color}; }
+    p { color: #9ca3af; font-size: 15px; line-height: 1.6; margin: 0 0 24px; }
+    a { display: inline-block; padding: 10px 24px; background: linear-gradient(135deg,#7c3aed,#ec4899); color: #fff; text-decoration: none; border-radius: 20px; font-weight: bold; font-size: 14px; }
+    .brand { font-size: 18px; font-weight: 900; color: #a855f7; margin-bottom: 24px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">MineNova</div>
+    <div class="icon">${icon}</div>
+    <h1>${title}</h1>
+    <p>${message}</p>
+    <a href="/">Return to App</a>
+  </div>
+</body>
+</html>`;
+}
 
 export default router;

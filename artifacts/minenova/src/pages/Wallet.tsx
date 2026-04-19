@@ -17,8 +17,9 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Wallet, ArrowUpRight, Clock, CheckCircle2, XCircle, Copy, AlertCircle, TrendingUp, Zap, Twitter, Facebook, MessageCircle, Share2 } from "lucide-react";
+import { Wallet, ArrowUpRight, Clock, CheckCircle2, XCircle, Copy, AlertCircle, TrendingUp, Zap, Twitter, Facebook, MessageCircle, Share2, MailWarning } from "lucide-react";
 import { useLocation } from "wouter";
+import { useAuth } from "@/contexts/AuthContext";
 
 const COINS_PER_USDT = 1000;
 const MINIMUM_COINS = 5000;
@@ -69,9 +70,11 @@ export default function WalletPage() {
   const [withdrawalResult, setWithdrawalResult] = useState<WithdrawalResult | null>(null);
   const [hasSentWithdrawal, setHasSentWithdrawal] = useState(false);
 
+  const { user } = useAuth();
   const coinBalance = wallet?.withdrawableBalance ?? 0;
   const usdtValue = coinBalance / COINS_PER_USDT;
   const canWithdraw = coinBalance >= MINIMUM_COINS;
+  const emailVerified = user?.emailVerified ?? true;
 
   const maxUsdt = Math.floor(usdtValue * 100) / 100;
 
@@ -170,7 +173,7 @@ export default function WalletPage() {
           </div>
           <Button
             onClick={openWithdraw}
-            disabled={walletLoading}
+            disabled={walletLoading || !emailVerified}
             className="gap-2"
             data-testid="button-withdraw"
           >
@@ -179,6 +182,17 @@ export default function WalletPage() {
           </Button>
         </div>
 
+        {!emailVerified && !walletLoading && (
+          <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+            <MailWarning className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-medium text-amber-500">Email verification required</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Please verify your email address before withdrawing. Check the banner at the top of the page to resend the verification link.
+              </p>
+            </div>
+          </div>
+        )}
         {!canWithdraw && !walletLoading && (
           <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
             <AlertCircle className="w-4 h-4 text-yellow-500 flex-shrink-0 mt-0.5" />

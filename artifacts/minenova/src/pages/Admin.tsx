@@ -1749,6 +1749,19 @@ function SettingsTab({ secret }: { secret: string }) {
   // USDT wallet address state
   const [usdtAddress, setUsdtAddress] = useState("");
   const [usdtAddressSaving, setUsdtAddressSaving] = useState(false);
+  // 2FA state
+  const [twoFAEnabled, setTwoFAEnabled] = useState(false);
+  const [twoFALoading, setTwoFALoading] = useState(true);
+  const [showSetup2FA, setShowSetup2FA] = useState(false);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState("");
+  const [totpSetupSecret, setTotpSetupSecret] = useState("");
+  const [totpConfirmCode, setTotpConfirmCode] = useState("");
+  const [enabling2FA, setEnabling2FA] = useState(false);
+  const [disableCode, setDisableCode] = useState("");
+  const [disabling2FA, setDisabling2FA] = useState(false);
+  // SMTP state
+  const [smtp, setSmtp] = useState({ host: "", port: "587", user: "", pass: "", from: "" });
+  const [savingSmtp, setSavingSmtp] = useState(false);
 
   useEffect(() => {
     apiFetch("/admin/settings", { headers: h })
@@ -1757,8 +1770,21 @@ function SettingsTab({ secret }: { secret: string }) {
       .catch(() => { toast({ variant: "destructive", title: "Failed to load settings" }); setLoading(false); });
     apiFetch("/admin/config", { headers: h })
       .then(r => r.ok ? r.json() : {})
-      .then((data: Record<string, string>) => { if (data.usdt_wallet_address) setUsdtAddress(data.usdt_wallet_address); })
+      .then((data: Record<string, string>) => {
+        if (data.usdt_wallet_address) setUsdtAddress(data.usdt_wallet_address);
+        setSmtp({
+          host: data.smtp_host ?? "",
+          port: data.smtp_port ?? "587",
+          user: data.smtp_user ?? "",
+          pass: data.smtp_pass ?? "",
+          from: data.smtp_from ?? "",
+        });
+      })
       .catch(() => {});
+    apiFetch("/admin/2fa/status")
+      .then(r => r.ok ? r.json() : { enabled: false })
+      .then((data: { enabled: boolean }) => { setTwoFAEnabled(data.enabled); setTwoFALoading(false); })
+      .catch(() => setTwoFALoading(false));
   }, [h, toast]);
 
   const handleSaveUsdtAddress = async () => {
@@ -1799,6 +1825,65 @@ function SettingsTab({ secret }: { secret: string }) {
       toast({ variant: "destructive", title: e instanceof Error ? e.message : "Failed" });
     } finally {
       setSavingPw(false); }
+  };
+
+  const handleSetup2FA = async () => {
+    const res = await apiFetch("/admin/2fa/setup", { method: "POST", headers: h, body: JSON.stringify({ secret }) });
+    if (!res.ok) { toast({ variant: "destructive", title: "Failed to generate 2FA" }); return; }
+    const data = await res.json();
+    setQrCodeDataUrl(data.qrCodeDataUrl);
+    setTotpSetupSecret(data.secret);
+    setShowSetup2FA(true);
+    setTotpConfirmCode("");
+  };
+
+  const handleEnable2FA = async () => {
+    if (!totpConfirmCode.trim()) { toast({ variant: "destructive", title: "Enter the 6-digit code" }); return; }
+    setEnabling2FA(true);
+    try {
+      const res = await apiFetch("/admin/2fa/enable", { method: "POST", headers: h, body: JSON.stringify({ secret, totpSecret: totpSetupSecret, totpCode: totpConfirmCode }) });
+      const data = await res.json();
+      if (!res.ok) { toast({ variant: "destructive", title: data.error ?? "Failed to enable 2FA" }); return; }
+      setTwoFAEnabled(true);
+      setShowSetup2FA(false);
+      setQrCodeDataUrl("");
+      setTotpSetupSecret("");
+      setTotpConfirmCode("");
+      toast({ title: "2FA enabled!", description: "You'll need your authenticator app to log in next time." });
+    } catch { toast({ variant: "destructive", title: "Connection error" }); }
+    finally { setEnabling2FA(false); }
+  };
+
+  const handleDisable2FA = async () => {
+    if (!disableCode.trim()) { toast({ variant: "destructive", title: "Enter your current 2FA code" }); return; }
+    setDisabling2FA(true);
+    try {
+      const res = await apiFetch("/admin/2fa/disable", { method: "POST", headers: h, body: JSON.stringify({ secret, totpCode: disableCode }) });
+      const data = await res.json();
+      if (!res.ok) { toast({ variant: "destructive", title: data.error ?? "Failed to disable 2FA" }); return; }
+      setTwoFAEnabled(false);
+      setDisableCode("");
+      toast({ title: "2FA disabled" });
+    } catch { toast({ variant: "destructive", title: "Connection error" }); }
+    finally { setDisabling2FA(false); }
+  };
+
+  const handleSaveSmtp = async () => {
+    setSavingSmtp(true);
+    try {
+      const fields = [
+        { key: "smtp_host", value: smtp.host },
+        { key: "smtp_port", value: smtp.port },
+        { key: "smtp_user", value: smtp.user },
+        { key: "smtp_pass", value: smtp.pass },
+        { key: "smtp_from", value: smtp.from },
+      ];
+      for (const f of fields) {
+        await apiFetch("/admin/config", { method: "POST", headers: h, body: JSON.stringify(f) });
+      }
+      toast({ title: "SMTP settings saved!", description: "Verification emails will now be sent via your SMTP server." });
+    } catch { toast({ variant: "destructive", title: "Connection error" }); }
+    finally { setSavingSmtp(false); }
   };
 
   if (loading) return <p className="text-muted-foreground text-sm py-8 text-center">Loading settings…</p>;
@@ -1998,6 +2083,100 @@ function SettingsTab({ secret }: { secret: string }) {
             </Button>
           </div>
         </div>
+      </div>
+
+      {/* ── Two-Factor Authentication ── */}
+      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-sm text-purple-400">Two-Factor Authentication (2FA)</h3>
+          {!twoFALoading && (
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${twoFAEnabled ? "bg-emerald-500/15 text-emerald-400" : "bg-muted text-muted-foreground"}`}>
+              {twoFAEnabled ? "Enabled" : "Disabled"}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Add an extra layer of security. When enabled, you'll need a 6-digit code from your authenticator app (e.g. Google Authenticator) every time you log in.
+        </p>
+        {twoFALoading ? (
+          <div className="h-8 bg-muted rounded animate-pulse" />
+        ) : !twoFAEnabled ? (
+          showSetup2FA ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <p className="text-xs font-medium">Scan this QR code with your authenticator app:</p>
+                {qrCodeDataUrl && <img src={qrCodeDataUrl} alt="2FA QR Code" className="w-48 h-48 rounded-xl border border-card-border bg-white p-2" />}
+                <p className="text-xs text-muted-foreground">Or enter the key manually: <code className="font-mono text-primary text-xs bg-primary/10 px-1 rounded">{totpSetupSecret}</code></p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground font-medium">Enter the 6-digit code from your app to confirm:</label>
+                <div className="flex gap-2">
+                  <Input type="text" inputMode="numeric" maxLength={6} placeholder="000000"
+                    value={totpConfirmCode} onChange={e => setTotpConfirmCode(e.target.value.replace(/\D/g,"").slice(0,6))}
+                    onKeyDown={e => { if (e.key === "Enter") handleEnable2FA(); }}
+                    className="font-mono tracking-widest text-center" />
+                  <Button size="sm" onClick={handleEnable2FA} disabled={enabling2FA || totpConfirmCode.length < 6}>
+                    {enabling2FA ? "Verifying…" : "Activate"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setShowSetup2FA(false); setQrCodeDataUrl(""); setTotpSetupSecret(""); }}>Cancel</Button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <Button size="sm" variant="outline" onClick={handleSetup2FA} className="gap-1.5">
+              <KeyRound className="w-3.5 h-3.5" /> Set Up 2FA
+            </Button>
+          )
+        ) : (
+          <div className="space-y-3">
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">
+              <p className="text-xs text-emerald-400 font-medium">2FA is active. Your admin panel is protected.</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">Enter your current 2FA code to disable:</label>
+              <div className="flex gap-2">
+                <Input type="text" inputMode="numeric" maxLength={6} placeholder="000000"
+                  value={disableCode} onChange={e => setDisableCode(e.target.value.replace(/\D/g,"").slice(0,6))}
+                  className="font-mono tracking-widest text-center" />
+                <Button size="sm" variant="destructive" onClick={handleDisable2FA} disabled={disabling2FA || disableCode.length < 6}>
+                  {disabling2FA ? "…" : "Disable 2FA"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Email / SMTP ── */}
+      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+        <h3 className="font-semibold text-sm text-purple-400">Email / SMTP</h3>
+        <p className="text-xs text-muted-foreground">Configure SMTP to send real email verification messages. Leave blank to skip sending (verification links log to console in dev mode).</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">SMTP Host</label>
+            <Input placeholder="smtp.gmail.com" value={smtp.host} onChange={e => setSmtp(p => ({ ...p, host: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Port</label>
+            <Input placeholder="587" value={smtp.port} onChange={e => setSmtp(p => ({ ...p, port: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Username</label>
+            <Input placeholder="you@gmail.com" value={smtp.user} onChange={e => setSmtp(p => ({ ...p, user: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Password / App key</label>
+            <Input type="password" placeholder="••••••••" value={smtp.pass} onChange={e => setSmtp(p => ({ ...p, pass: e.target.value }))} />
+          </div>
+          <div className="col-span-2 space-y-1">
+            <label className="text-xs text-muted-foreground">From address (optional)</label>
+            <Input placeholder="noreply@minenova.app" value={smtp.from} onChange={e => setSmtp(p => ({ ...p, from: e.target.value }))} />
+          </div>
+        </div>
+        <Button size="sm" disabled={savingSmtp} onClick={handleSaveSmtp} className="gap-1.5">
+          <Save className="w-3.5 h-3.5" />
+          {savingSmtp ? "Saving…" : "Save SMTP"}
+        </Button>
       </div>
     </div>
   );
@@ -2477,6 +2656,8 @@ export default function Admin() {
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<Tab>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [needs2FA, setNeeds2FA] = useState(false);
+  const [totpLoginCode, setTotpLoginCode] = useState("");
 
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -2495,7 +2676,14 @@ export default function Admin() {
         toast({ variant: "destructive", title: "Wrong password" });
         return;
       }
-      setAuthed(true);
+      const statusRes = await apiFetch("/admin/2fa/status");
+      const { enabled } = await statusRes.json();
+      if (enabled) {
+        setNeeds2FA(true);
+        setTotpLoginCode("");
+      } else {
+        setAuthed(true);
+      }
     } catch {
       toast({ variant: "destructive", title: "Connection error" });
     } finally {
@@ -2503,7 +2691,30 @@ export default function Admin() {
     }
   };
 
-  const handleLogout = () => { setAuthed(false); setSecret(""); setShowChangePassword(false); };
+  const handleTotpLogin = async () => {
+    if (totpLoginCode.length < 6) return;
+    setLoading(true);
+    try {
+      const res = await apiFetch("/admin/2fa/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret, totpCode: totpLoginCode }),
+      });
+      if (res.ok) {
+        setAuthed(true);
+      } else {
+        const data = await res.json();
+        toast({ variant: "destructive", title: data.error ?? "Invalid code" });
+        setTotpLoginCode("");
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Connection error" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => { setAuthed(false); setSecret(""); setNeeds2FA(false); setTotpLoginCode(""); setShowChangePassword(false); };
 
   const handleChangePassword = async () => {
     if (newPassword.length < 8) { toast({ variant: "destructive", title: "Password too short", description: "Min. 8 characters." }); return; }
@@ -2530,19 +2741,49 @@ export default function Admin() {
           {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </Button>
         <div className="w-full max-w-sm space-y-4">
-          <div className="text-center">
-            <h1 className="text-2xl font-black font-serif text-foreground">Admin Panel</h1>
-            <p className="text-muted-foreground text-sm mt-1">Enter your admin password to continue</p>
-          </div>
-          <div className="bg-card border border-card-border rounded-2xl p-6 space-y-4">
-            <div className="relative">
-              <Input type={showSecret ? "text" : "password"} placeholder="Admin password" value={secret} onChange={e => setSecret(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} className="pr-10" />
-              <button type="button" onClick={() => setShowSecret(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            <Button className="w-full" onClick={handleLogin} disabled={loading}>{loading ? "Checking…" : "Login"}</Button>
-          </div>
+          {!needs2FA ? (
+            <>
+              <div className="text-center">
+                <h1 className="text-2xl font-black font-serif text-foreground">Admin Panel</h1>
+                <p className="text-muted-foreground text-sm mt-1">Enter your admin password to continue</p>
+              </div>
+              <div className="bg-card border border-card-border rounded-2xl p-6 space-y-4">
+                <div className="relative">
+                  <Input type={showSecret ? "text" : "password"} placeholder="Admin password" value={secret} onChange={e => setSecret(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} className="pr-10" />
+                  <button type="button" onClick={() => setShowSecret(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <Button className="w-full" onClick={handleLogin} disabled={loading}>{loading ? "Checking…" : "Login"}</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-center">
+                <h1 className="text-2xl font-black font-serif text-foreground">Two-Factor Auth</h1>
+                <p className="text-muted-foreground text-sm mt-1">Enter the 6-digit code from your authenticator app</p>
+              </div>
+              <div className="bg-card border border-card-border rounded-2xl p-6 space-y-4">
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={totpLoginCode}
+                  onChange={e => setTotpLoginCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onKeyDown={e => e.key === "Enter" && handleTotpLogin()}
+                  className="font-mono tracking-widest text-center text-xl"
+                  autoFocus
+                />
+                <Button className="w-full" onClick={handleTotpLogin} disabled={loading || totpLoginCode.length < 6}>
+                  {loading ? "Verifying…" : "Verify"}
+                </Button>
+                <button onClick={() => { setNeeds2FA(false); setTotpLoginCode(""); }} className="w-full text-xs text-muted-foreground hover:text-foreground text-center mt-1">
+                  ← Back to password
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );

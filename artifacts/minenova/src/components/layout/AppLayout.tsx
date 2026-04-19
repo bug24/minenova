@@ -1,8 +1,10 @@
 import { Link, useLocation } from "wouter";
+import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLogout } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import {
   Pickaxe,
   CheckSquare,
@@ -13,6 +15,8 @@ import {
   User,
   Sun,
   Moon,
+  MailWarning,
+  X,
 } from "lucide-react";
 import WithdrawalTicker from "@/components/WithdrawalTicker";
 
@@ -29,7 +33,36 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { toast } = useToast();
   const showUpgradeBtn = location !== "/upgrades";
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [resending, setResending] = useState(false);
+
+  const showVerifyBanner = user && !user.emailVerified && !bannerDismissed;
+
+  const handleResend = async () => {
+    setResending(true);
+    try {
+      const token = localStorage.getItem("minenova_token");
+      const res = await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast({ title: "Verification email sent!", description: "Check your inbox and click the link to verify your email." });
+        if (data.verificationUrl) {
+          console.info("[dev] Verification URL:", data.verificationUrl);
+        }
+      } else {
+        toast({ variant: "destructive", title: data.error || "Could not send email" });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Connection error" });
+    } finally {
+      setResending(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground max-w-md mx-auto relative">
@@ -66,6 +99,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Button>
         </div>
       </header>
+
+      {/* Email Verification Banner */}
+      {showVerifyBanner && (
+        <div className="mx-4 mb-1 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 flex items-start gap-3" data-testid="email-verify-banner">
+          <MailWarning className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-amber-500 leading-snug">Verify your email to unlock withdrawals</p>
+            <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+              Check your inbox for a verification link.{" "}
+              <button
+                onClick={handleResend}
+                disabled={resending}
+                className="underline text-primary disabled:opacity-50"
+              >
+                {resending ? "Sending…" : "Resend"}
+              </button>
+            </p>
+          </div>
+          <button onClick={() => setBannerDismissed(true)} className="text-muted-foreground hover:text-foreground shrink-0">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Main Scrollable Content */}
       <main className="flex-1 overflow-y-auto pb-24">

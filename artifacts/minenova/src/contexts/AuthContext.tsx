@@ -10,6 +10,7 @@ interface AuthUser {
   miningLevel: number;
   totalEarned: number;
   createdAt: string;
+  emailVerified: boolean;
 }
 
 interface AuthContextType {
