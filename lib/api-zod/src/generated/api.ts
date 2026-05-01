@@ -77,6 +77,19 @@ export const GetMiningStatusResponse = zod.object({
     ),
   canClaim: zod.boolean(),
   cooldownEndsAt: zod.string().nullish(),
+  speedMultiplier: zod
+    .number()
+    .describe("Effective upgrade speed multiplier (1.0 = no upgrade active)"),
+  upgradeName: zod
+    .string()
+    .nullable()
+    .describe("Name of the highest-tier active upgrade, or null if none owned"),
+  upgradeTier: zod
+    .number()
+    .nullable()
+    .describe(
+      "Tier number of the highest active upgrade, or null if none owned",
+    ),
 });
 
 /**
@@ -98,6 +111,19 @@ export const StartMiningResponse = zod.object({
     ),
   canClaim: zod.boolean(),
   cooldownEndsAt: zod.string().nullish(),
+  speedMultiplier: zod
+    .number()
+    .describe("Effective upgrade speed multiplier (1.0 = no upgrade active)"),
+  upgradeName: zod
+    .string()
+    .nullable()
+    .describe("Name of the highest-tier active upgrade, or null if none owned"),
+  upgradeTier: zod
+    .number()
+    .nullable()
+    .describe(
+      "Tier number of the highest active upgrade, or null if none owned",
+    ),
 });
 
 /**
@@ -132,6 +158,19 @@ export const BoostMiningResponse = zod.object({
     ),
   canClaim: zod.boolean(),
   cooldownEndsAt: zod.string().nullish(),
+  speedMultiplier: zod
+    .number()
+    .describe("Effective upgrade speed multiplier (1.0 = no upgrade active)"),
+  upgradeName: zod
+    .string()
+    .nullable()
+    .describe("Name of the highest-tier active upgrade, or null if none owned"),
+  upgradeTier: zod
+    .number()
+    .nullable()
+    .describe(
+      "Tier number of the highest active upgrade, or null if none owned",
+    ),
 });
 
 /**

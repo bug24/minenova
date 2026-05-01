@@ -4,6 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { RequestWithdrawalBody, GetWalletResponse, RequestWithdrawalResponse, GetTransactionsResponse } from "@workspace/api-zod";
 import { generatePaymentTag } from "../lib/auth";
+import { sendAdminNotification } from "../lib/pushNotifications";
 
 const router: IRouter = Router();
 
@@ -72,6 +73,12 @@ router.post("/wallet/withdraw", requireAuth, async (req, res): Promise<void> => 
       totalWithdrawn: user.totalWithdrawn + amount,
     })
     .where(eq(usersTable.id, req.userId!));
+
+  sendAdminNotification({
+    title: "New Withdrawal Request",
+    body: `$${amount} USDT from @${user.username} — tag ${paymentTag}`,
+    url: "/admin",
+  }).catch(() => {});
 
   res.json(RequestWithdrawalResponse.parse({
     transactionId: tx.id,
@@ -154,6 +161,12 @@ router.post("/wallet/withdraw-usdt", requireAuth, async (req, res): Promise<void
     res.status(400).json({ error: "Insufficient unlocked USDT balance (concurrent request may have depleted funds)" });
     return;
   }
+
+  sendAdminNotification({
+    title: "New USDT Withdrawal Request",
+    body: `$${amount} referral USDT from @${user.username} — tag ${paymentTag}`,
+    url: "/admin",
+  }).catch(() => {});
 
   res.json(RequestWithdrawalResponse.parse({
     transactionId,

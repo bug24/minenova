@@ -654,6 +654,15 @@ components:
           type: boolean
         cooldownEndsAt:
           type: ["string", "null"]
+        speedMultiplier:
+          type: number
+          description: Effective upgrade speed multiplier (1.0 = no upgrade active)
+        upgradeName:
+          type: ["string", "null"]
+          description: Name of the highest-tier active upgrade, or null if none owned
+        upgradeTier:
+          type: ["integer", "null"]
+          description: Tier number of the highest active upgrade, or null if none owned
       required:
         - isActive
         - sessionStartedAt
@@ -664,6 +673,9 @@ components:
         - boostsUsedToday
         - boostTiersUsed
         - canClaim
+        - speedMultiplier
+        - upgradeName
+        - upgradeTier
 
     ClaimResult:
       type: object

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useGetUpgrades, usePurchaseUpgrade, getGetUpgradesQueryKey, getGetWalletQueryKey } from "@workspace/api-client-react";
+import { useGetUpgrades, usePurchaseUpgrade, getGetUpgradesQueryKey, getGetWalletQueryKey, getGetMiningStatusQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetWallet } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -70,6 +70,7 @@ export default function Upgrades() {
         setResultOpen(true);
         queryClient.invalidateQueries({ queryKey: getGetUpgradesQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetMiningStatusQueryKey() });
       },
       onError: (err: unknown) => {
         const msg = (err as { data?: { error?: string } })?.data?.error ?? "Purchase failed";

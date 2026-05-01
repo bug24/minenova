@@ -413,11 +413,16 @@ function UsersTab({ secret }: { secret: string }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const q = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : "";
-    const res = await apiFetch(`/admin/users${q}`, { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
-    const data = await res.json();
-    setUsers(Array.isArray(data) ? data : []);
-    setLoading(false);
+    try {
+      const q = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : "";
+      const res = await apiFetch(`/admin/users${q}`, { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
+      const data = await res.json();
+      setUsers(Array.isArray(data) ? data : []);
+    } catch {
+      toast({ variant: "destructive", title: "Failed to load users" });
+    } finally {
+      setLoading(false);
+    }
   }, [search, secret]);
 
   useEffect(() => { load(); }, [load]);
@@ -867,13 +872,18 @@ function TransactionsTab({ secret }: { secret: string }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (typeFilter !== "all") params.set("type", typeFilter);
-    if (search.trim()) params.set("search", search.trim());
-    const res = await apiFetch(`/admin/transactions?${params}`, { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
-    const data = await res.json();
-    setItems(Array.isArray(data) ? data : []);
-    setLoading(false);
+    try {
+      const params = new URLSearchParams();
+      if (typeFilter !== "all") params.set("type", typeFilter);
+      if (search.trim()) params.set("search", search.trim());
+      const res = await apiFetch(`/admin/transactions?${params}`, { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
+      const data = await res.json();
+      setItems(Array.isArray(data) ? data : []);
+    } catch {
+      toast({ variant: "destructive", title: "Failed to load transactions" });
+    } finally {
+      setLoading(false);
+    }
   }, [typeFilter, search, secret]);
 
   useEffect(() => { load(); }, [load]);
@@ -2370,10 +2380,15 @@ function ShareMessagesTab({ secret }: { secret: string }) {
 
   const fetchMessages = useCallback(async () => {
     setLoading(true);
-    const res = await apiFetch("/admin/share-messages", { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
-    const data = await res.json();
-    setMessages(Array.isArray(data) ? data : []);
-    setLoading(false);
+    try {
+      const res = await apiFetch("/admin/share-messages", { headers: { "x-admin-secret": secret, "Content-Type": "application/json" } });
+      const data = await res.json();
+      setMessages(Array.isArray(data) ? data : []);
+    } catch {
+      toast({ variant: "destructive", title: "Failed to load messages" });
+    } finally {
+      setLoading(false);
+    }
   }, [secret]);
 
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
@@ -2936,6 +2951,7 @@ export default function Admin() {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [upgradeSubTab, setUpgradeSubTab] = useState<UpgradeSubTab>("manage");
   const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
+  const [pendingWithdrawalsCount, setPendingWithdrawalsCount] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [needs2FA, setNeeds2FA] = useState(false);
   const [totpLoginCode, setTotpLoginCode] = useState("");
@@ -2997,21 +3013,29 @@ export default function Admin() {
 
   const handleLogout = () => {
     setAuthed(false); setSecret(""); setNeeds2FA(false); setTotpLoginCode(""); setShowChangePassword(false);
-    setPendingPaymentsCount(0); setUpgradeSubTab("manage");
+    setPendingPaymentsCount(0); setPendingWithdrawalsCount(0); setUpgradeSubTab("manage");
   };
 
   useEffect(() => {
     if (!authed) return;
     const fetchPending = () => {
-      apiFetch("/admin/upgrade-payments", { headers: { "x-admin-secret": secret } })
-        .then(r => r.json())
-        .then(data => {
-          if (Array.isArray(data)) {
-            const count = (data as UpgradePayment[]).filter(p => p.status === "pending" || p.status === "awaiting_verification").length;
-            setPendingPaymentsCount(count);
-          }
-        })
-        .catch(() => {});
+      Promise.all([
+        apiFetch("/admin/upgrade-payments", { headers: { "x-admin-secret": secret } })
+          .then(r => r.json())
+          .then(data => {
+            if (Array.isArray(data)) {
+              const count = (data as UpgradePayment[]).filter(p => p.status === "pending" || p.status === "awaiting_verification").length;
+              setPendingPaymentsCount(count);
+            }
+          })
+          .catch(() => {}),
+        apiFetch("/admin/withdrawal-stats", { headers: { "x-admin-secret": secret } })
+          .then(r => r.json())
+          .then((data: WithdrawalStats) => {
+            setPendingWithdrawalsCount(data.pendingCount ?? 0);
+          })
+          .catch(() => {}),
+      ]);
     };
     fetchPending();
     const id = setInterval(fetchPending, 60_000);
@@ -3028,8 +3052,12 @@ export default function Admin() {
   }
 
   const handleBellClick = async () => {
-    setTab("upgrades");
-    setUpgradeSubTab("approve-reject");
+    if (pendingWithdrawalsCount >= pendingPaymentsCount && pendingWithdrawalsCount > 0) {
+      setTab("withdrawals");
+    } else {
+      setTab("upgrades");
+      setUpgradeSubTab("approve-reject");
+    }
     if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
     if (Notification.permission === "denied") return;
     try {
@@ -3203,18 +3231,27 @@ export default function Admin() {
             {currentTab && <currentTab.icon className="w-4 h-4 text-primary" />}
             <h2 className="font-bold">{currentTab?.label}</h2>
           </div>
-          <button
-            onClick={handleBellClick}
-            title={pendingPaymentsCount > 0 ? `${pendingPaymentsCount} pending upgrade request${pendingPaymentsCount > 1 ? "s" : ""}` : "Upgrade notifications"}
-            className="relative w-9 h-9 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-          >
-            <Bell className={`w-4 h-4 ${pendingPaymentsCount > 0 ? "text-amber-400" : ""}`} />
-            {pendingPaymentsCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5 leading-none">
-                {pendingPaymentsCount > 99 ? "99+" : pendingPaymentsCount}
-              </span>
-            )}
-          </button>
+          {(() => {
+            const totalPending = pendingPaymentsCount + pendingWithdrawalsCount;
+            const parts: string[] = [];
+            if (pendingWithdrawalsCount > 0) parts.push(`${pendingWithdrawalsCount} pending withdrawal${pendingWithdrawalsCount > 1 ? "s" : ""}`);
+            if (pendingPaymentsCount > 0) parts.push(`${pendingPaymentsCount} upgrade payment${pendingPaymentsCount > 1 ? "s" : ""}`);
+            const tooltip = parts.length > 0 ? parts.join(" · ") : "Notifications";
+            return (
+              <button
+                onClick={handleBellClick}
+                title={tooltip}
+                className="relative w-9 h-9 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <Bell className={`w-4 h-4 ${totalPending > 0 ? "text-amber-400" : ""}`} />
+                {totalPending > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5 leading-none">
+                    {totalPending > 99 ? "99+" : totalPending}
+                  </span>
+                )}
+              </button>
+            );
+          })()}
         </div>
 
         {/* Change password panel */}

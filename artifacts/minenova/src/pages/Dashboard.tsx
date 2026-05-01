@@ -5,6 +5,7 @@ import {
   useClaimMining,
   useGetDashboardSummary,
   getGetMiningStatusQueryKey,
+  getGetWalletQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
@@ -36,6 +37,11 @@ export default function Dashboard() {
     queryClient.invalidateQueries({ queryKey: getGetMiningStatusQueryKey() });
   }, [queryClient]);
 
+  const invalidateAfterClaim = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: getGetMiningStatusQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
+  }, [queryClient]);
+
   useEffect(() => {
     if (!status?.isActive || !status?.sessionEndsAt) return;
     const tick = () => {
@@ -57,7 +63,8 @@ export default function Dashboard() {
     const startedAt = new Date(status.sessionStartedAt).getTime();
     const endsAt = new Date(status.sessionEndsAt).getTime();
     const totalMs = endsAt - startedAt;
-    const totalCoins = (totalMs / 3600000) * 0.5 * (user?.miningLevel ?? 1) * (status.boostMultiplier ?? 1);
+    const speedMul = status.speedMultiplier ?? 1;
+    const totalCoins = (totalMs / 3600000) * 0.5 * (user?.miningLevel ?? 1) * speedMul * (status.boostMultiplier ?? 1);
 
     const tick = () => {
       const elapsed = Math.min(Date.now() - startedAt, totalMs);
@@ -66,7 +73,7 @@ export default function Dashboard() {
     tick();
     const interval = setInterval(tick, 2000);
     return () => clearInterval(interval);
-  }, [status?.isActive, status?.sessionStartedAt, status?.sessionEndsAt, user?.miningLevel, status?.boostMultiplier]);
+  }, [status?.isActive, status?.sessionStartedAt, status?.sessionEndsAt, user?.miningLevel, status?.speedMultiplier, status?.boostMultiplier]);
 
   const handleStartMining = () => {
     startMining.mutate(undefined, {
@@ -85,7 +92,7 @@ export default function Dashboard() {
     claimMining.mutate(undefined, {
       onSuccess: (res) => {
         toast({ title: "Rewards claimed!", description: `You earned ${res.coinsEarned.toFixed(2)} coins!` });
-        invalidate();
+        invalidateAfterClaim();
       },
       onError: (err: unknown) => {
         const msg = (err as { data?: { error?: string } })?.data?.error ?? "Nothing to claim";
@@ -229,9 +236,11 @@ export default function Dashboard() {
         <div className="text-center">
           {status?.isActive && !status?.canClaim && (
             <>
-              <p className="text-sm text-muted-foreground">Tap orb to stop mining</p>
+              <p className="text-sm text-muted-foreground">Mining in progress</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Speed: {status.boostMultiplier ?? 1}x · Level {user?.miningLevel ?? 1}
+                {status.upgradeName
+                  ? `${status.upgradeName} · ${((status.speedMultiplier ?? 1) * (status.boostMultiplier ?? 1)).toFixed(2)}x speed`
+                  : `Level ${user?.miningLevel ?? 1} · ${(status.boostMultiplier ?? 1)}x speed`}
               </p>
             </>
           )}
@@ -240,6 +249,7 @@ export default function Dashboard() {
               <p className="text-sm font-semibold text-primary">Mining complete! Tap to claim</p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {displayCoins.toFixed(4)} coins ready
+                {status.upgradeName && ` · ${status.upgradeName}`}
               </p>
             </>
           )}
@@ -247,7 +257,9 @@ export default function Dashboard() {
             <>
               <p className="text-sm text-muted-foreground">Tap the orb to start mining</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                12-hour session · Level {user?.miningLevel ?? 1}
+                {status?.upgradeName
+                  ? `${status.upgradeName} · Tier ${status.upgradeTier} · ${((status.speedMultiplier ?? 1)).toFixed(2)}x speed`
+                  : `12-hour session · Level ${user?.miningLevel ?? 1}`}
               </p>
             </>
           )}

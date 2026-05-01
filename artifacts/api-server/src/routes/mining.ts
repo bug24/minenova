@@ -50,6 +50,8 @@ async function getEffectiveBaseRate(userId: number): Promise<number> {
 interface EffectiveUpgrade {
   speedMultiplier: number;
   dailyCap: number | null;
+  upgradeName: string | null;
+  upgradeTier: number | null;
 }
 
 async function getUserEffectiveUpgrade(userId: number): Promise<EffectiveUpgrade> {
@@ -59,23 +61,30 @@ async function getUserEffectiveUpgrade(userId: number): Promise<EffectiveUpgrade
       .from(userUpgradesTable)
       .where(eq(userUpgradesTable.userId, userId));
 
-    if (owned.length === 0) return { speedMultiplier: 1, dailyCap: null };
+    if (owned.length === 0) return { speedMultiplier: 1, dailyCap: null, upgradeName: null, upgradeTier: null };
 
     const ids = owned.map(u => u.upgradeId);
     const [best] = await db
-      .select({ hashRateBoost: upgradesTable.hashRateBoost, dailyCapBoost: upgradesTable.dailyCapBoost })
+      .select({
+        hashRateBoost: upgradesTable.hashRateBoost,
+        dailyCapBoost: upgradesTable.dailyCapBoost,
+        name: upgradesTable.name,
+        tier: upgradesTable.tier,
+      })
       .from(upgradesTable)
       .where(inArray(upgradesTable.id, ids))
       .orderBy(desc(upgradesTable.tier))
       .limit(1);
 
-    if (!best) return { speedMultiplier: 1, dailyCap: null };
+    if (!best) return { speedMultiplier: 1, dailyCap: null, upgradeName: null, upgradeTier: null };
     return {
       speedMultiplier: 1 + (best.hashRateBoost / 100),
       dailyCap: best.dailyCapBoost ?? null,
+      upgradeName: best.name,
+      upgradeTier: best.tier,
     };
   } catch {
-    return { speedMultiplier: 1, dailyCap: null };
+    return { speedMultiplier: 1, dailyCap: null, upgradeName: null, upgradeTier: null };
   }
 }
 
@@ -92,6 +101,8 @@ function computeMiningStatus(
   baseRate = BASE_COINS_PER_HOUR,
   speedMultiplier = 1,
   dailyCap: number | null = null,
+  upgradeName: string | null = null,
+  upgradeTier: number | null = null,
 ) {
   const now = new Date();
 
@@ -108,6 +119,9 @@ function computeMiningStatus(
       boostTiersUsed: "",
       canClaim: false,
       cooldownEndsAt: null,
+      speedMultiplier,
+      upgradeName,
+      upgradeTier,
     };
   }
 
@@ -135,6 +149,9 @@ function computeMiningStatus(
     boostTiersUsed: session.boostTiersUsed ?? "",
     canClaim: isComplete,
     cooldownEndsAt: null,
+    speedMultiplier,
+    upgradeName,
+    upgradeTier,
   };
 }
 
@@ -174,7 +191,7 @@ router.get("/mining/status", requireAuth, async (req, res): Promise<void> => {
       getEffectiveBaseRate(req.userId!),
       getUserEffectiveUpgrade(req.userId!),
     ]);
-    res.json(GetMiningStatusResponse.parse(computeMiningStatus(session ?? null, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap)));
+    res.json(GetMiningStatusResponse.parse(computeMiningStatus(session ?? null, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier)));
   } catch (err) {
     req.log.error({ err }, "mining/status error");
     res.status(500).json({ error: "Failed to fetch mining status" });
@@ -231,7 +248,7 @@ router.post("/mining/start", requireAuth, async (req, res): Promise<void> => {
       ]);
       let totalCoins = 0;
       for (const s of expiredSessions) {
-        const status = computeMiningStatus(s, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap);
+        const status = computeMiningStatus(s, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier);
         totalCoins += status.accumulatedCoins;
         await db
           .update(miningSessionsTable)
@@ -313,7 +330,7 @@ router.post("/mining/start", requireAuth, async (req, res): Promise<void> => {
       getEffectiveBaseRate(req.userId!),
       getUserEffectiveUpgrade(req.userId!),
     ]);
-    res.json(StartMiningResponse.parse(computeMiningStatus(session, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap)));
+    res.json(StartMiningResponse.parse(computeMiningStatus(session, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier)));
   } catch (err) {
     req.log.error({ err }, "mining/start error");
     res.status(500).json({ error: "Could not start mining. Please try again." });
@@ -350,7 +367,7 @@ router.post("/mining/claim", requireAuth, async (req, res): Promise<void> => {
       getEffectiveBaseRate(req.userId!),
       getUserEffectiveUpgrade(req.userId!),
     ]);
-    const statusData = computeMiningStatus(session, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap);
+    const statusData = computeMiningStatus(session, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier);
     const coinsEarned = statusData.accumulatedCoins;
 
     await db
@@ -485,7 +502,7 @@ router.post("/mining/boost", requireAuth, async (req, res): Promise<void> => {
       getEffectiveBaseRate(req.userId!),
       getUserEffectiveUpgrade(req.userId!),
     ]);
-    res.json(BoostMiningResponse.parse(computeMiningStatus(updated, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap)));
+    res.json(BoostMiningResponse.parse(computeMiningStatus(updated, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier)));
   } catch (err) {
     req.log.error({ err }, "mining/boost error");
     res.status(500).json({ error: "Could not apply boost. Please try again." });

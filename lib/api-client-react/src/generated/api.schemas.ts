@@ -58,6 +58,18 @@ export interface MiningStatus {
   canClaim: boolean;
   /** @nullable */
   cooldownEndsAt?: string | null;
+  /** Effective upgrade speed multiplier (1.0 = no upgrade active) */
+  speedMultiplier: number;
+  /**
+   * Name of the highest-tier active upgrade, or null if none owned
+   * @nullable
+   */
+  upgradeName: string | null;
+  /**
+   * Tier number of the highest active upgrade, or null if none owned
+   * @nullable
+   */
+  upgradeTier: number | null;
 }
 
 export interface ClaimResult {
