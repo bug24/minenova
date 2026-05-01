@@ -1415,7 +1415,11 @@ router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, asyn
 
   const usdtValue = upgrade.usdtCost ?? 0;
   if (usdtValue > 0) {
-    await triggerUpgradeReferralReward({ referredUserId: txn.userId, upgradeId, upgradeUsdtValue: usdtValue });
+    // Reward trigger is non-fatal: approval is already committed at this point.
+    // Errors (e.g., duplicate unique key on retry) are logged without
+    // failing the admin approval response.
+    await triggerUpgradeReferralReward({ referredUserId: txn.userId, upgradeId, upgradeUsdtValue: usdtValue })
+      .catch(err => req.log.error({ err, upgradeId, userId: txn.userId }, "Referral reward trigger failed for USDT upgrade approval"));
   }
 
   res.json({ success: true, message: `Upgrade approved for ${user.username}.` });

@@ -98,7 +98,11 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
     });
 
     const usdtValue = upgrade.usdtCost ?? upgrade.coinCost! / COINS_PER_USDT;
-    await triggerUpgradeReferralReward({ referredUserId: req.userId!, upgradeId, upgradeUsdtValue: usdtValue });
+    // Reward trigger is non-fatal: purchase is already committed at this point.
+    // Errors (e.g., DB transient failure, duplicate unique key on retry) are
+    // logged and do not cause the successful purchase to appear as a failure.
+    await triggerUpgradeReferralReward({ referredUserId: req.userId!, upgradeId, upgradeUsdtValue: usdtValue })
+      .catch(err => req.log.error({ err, upgradeId, userId: req.userId }, "Referral reward trigger failed for coin upgrade"));
 
     res.json(PurchaseUpgradeResponse.parse({
       success: true,

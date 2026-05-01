@@ -21,4 +21,7 @@ CREATE TABLE "referral_earnings" (
 ALTER TABLE "referral_earnings" ADD CONSTRAINT "referral_earnings_referrer_id_users_id_fk" FOREIGN KEY ("referrer_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "referral_earnings" ADD CONSTRAINT "referral_earnings_referred_id_users_id_fk" FOREIGN KEY ("referred_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "referral_earnings" ADD CONSTRAINT "referral_earnings_upgrade_id_upgrades_id_fk" FOREIGN KEY ("upgrade_id") REFERENCES "public"."upgrades"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "referral_earnings_upgrade_referrer_tier_uidx" ON "referral_earnings" USING btree ("upgrade_id","referrer_id","tier");
+-- Unique per (referred_id, upgrade_id, tier): each referred user can only
+-- trigger one reward per upgrade per tier, regardless of how many referrers
+-- are in the chain. Prevents double-credit on retries.
+CREATE UNIQUE INDEX "referral_earnings_referred_upgrade_tier_uidx" ON "referral_earnings" USING btree ("referred_id","upgrade_id","tier");

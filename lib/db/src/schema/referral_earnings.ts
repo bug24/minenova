@@ -16,7 +16,10 @@ export const referralEarningsTable = pgTable("referral_earnings", {
   unlockDate: timestamp("unlock_date", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  uniqueIndex("referral_earnings_upgrade_referrer_tier_uidx").on(t.upgradeId, t.referrerId, t.tier),
+  // One reward row per (referred user × upgrade × tier) — prevents duplicate
+  // rewards if triggerUpgradeReferralReward is called more than once for the
+  // same purchase event (e.g., retry after a transient failure).
+  uniqueIndex("referral_earnings_referred_upgrade_tier_uidx").on(t.referredId, t.upgradeId, t.tier),
 ]);
 
 export const insertReferralEarningSchema = createInsertSchema(referralEarningsTable).omit({ id: true, createdAt: true });
