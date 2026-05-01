@@ -1390,8 +1390,14 @@ router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, asyn
   if (!txn) { res.status(404).json({ error: "Transaction not found" }); return; }
   if (txn.status === "completed") { res.status(400).json({ error: "Already approved" }); return; }
 
-  const upgradeId = txn.upgradeId;
-  if (!upgradeId) { res.status(400).json({ error: "No linked upgrade" }); return; }
+  let upgradeId = txn.upgradeId;
+  if (!upgradeId) {
+    const name = txn.description.replace("USDT payment for upgrade: ", "");
+    const [found] = await db.select({ id: upgradesTable.id }).from(upgradesTable)
+      .where(eq(upgradesTable.name, name)).limit(1);
+    if (found) upgradeId = found.id;
+  }
+  if (!upgradeId) { res.status(400).json({ error: "Upgrade not found — cannot approve this payment" }); return; }
 
   const [upgrade] = await db.select().from(upgradesTable).where(eq(upgradesTable.id, upgradeId)).limit(1);
   if (!upgrade) { res.status(404).json({ error: "Upgrade not found" }); return; }
