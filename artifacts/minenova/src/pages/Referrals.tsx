@@ -1,13 +1,68 @@
-import { useState } from "react";
-import { useGetReferrals, useGetLeaderboard } from "@workspace/api-client-react";
+import { useState, useEffect } from "react";
+import { useGetReferrals, useGetReferralEarnings, useGetReferralStats, useGetLeaderboard } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Twitter, Facebook, MessageCircle, Users, Trophy, TrendingUp, Check, Gift, Zap } from "lucide-react";
+import { Copy, Twitter, Facebook, MessageCircle, Users, Trophy, TrendingUp, Check, Gift, Zap, Lock, Unlock, Layers } from "lucide-react";
+
+function useCountdown(targetDate: string): string {
+  const [remaining, setRemaining] = useState("");
+
+  useEffect(() => {
+    function calc() {
+      const diff = new Date(targetDate).getTime() - Date.now();
+      if (diff <= 0) { setRemaining("Unlocking soon…"); return; }
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      if (d > 0) setRemaining(`${d}d ${h}h remaining`);
+      else if (h > 0) setRemaining(`${h}h ${m}m remaining`);
+      else setRemaining(`${m}m remaining`);
+    }
+    calc();
+    const t = setInterval(calc, 60_000);
+    return () => clearInterval(t);
+  }, [targetDate]);
+
+  return remaining;
+}
+
+function EarningRow({ earning }: { earning: { id: number; referredUsername: string; tier: number; rewardCoins: number; rewardLockedUsdt: number; status: string; unlockDate: string; createdAt: string } }) {
+  const countdown = useCountdown(earning.unlockDate);
+  const isLocked = earning.status === "locked";
+
+  return (
+    <div className="bg-card border border-card-border rounded-xl p-4 flex items-start gap-3">
+      <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${isLocked ? "bg-amber-500/15" : "bg-emerald-500/15"}`}>
+        {isLocked ? <Lock className="w-4 h-4 text-amber-500" /> : <Unlock className="w-4 h-4 text-emerald-500" />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-semibold">{earning.referredUsername}</p>
+          <Badge className="text-[10px] px-1.5 border-0 bg-primary/15 text-primary">Tier {earning.tier}</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          +{earning.rewardCoins.toFixed(0)} coins · {earning.rewardLockedUsdt.toFixed(3)} USDT {isLocked ? "locked" : "unlocked"}
+        </p>
+        {isLocked && (
+          <p className="text-xs text-amber-500 mt-0.5">{countdown}</p>
+        )}
+        {!isLocked && (
+          <p className="text-xs text-emerald-500 mt-0.5">Available to withdraw</p>
+        )}
+      </div>
+      <div className="text-right flex-shrink-0">
+        <p className="text-xs text-muted-foreground">{new Date(earning.createdAt).toLocaleDateString()}</p>
+      </div>
+    </div>
+  );
+}
 
 export default function Referrals() {
   const { data: referrals, isLoading } = useGetReferrals();
+  const { data: earnings } = useGetReferralEarnings();
+  const { data: stats } = useGetReferralStats();
   const { data: leaderboard } = useGetLeaderboard();
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
@@ -53,42 +108,43 @@ export default function Referrals() {
     <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold font-serif">Referrals</h1>
-        <p className="text-muted-foreground text-sm mt-0.5">Invite friends and earn from their mining activity</p>
+        <p className="text-muted-foreground text-sm mt-0.5">Invite friends, earn from their mining and upgrades</p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Stats grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Total Referrals", value: String(referrals?.totalReferrals ?? 0), color: "text-primary" },
-          { label: "Earned from Refs", value: `${(referrals?.totalEarnedFromReferrals ?? 0).toFixed(2)} coins`, color: "text-accent" },
+          { label: "Referrals", value: String(stats?.level1Count ?? referrals?.totalReferrals ?? 0), color: "text-primary" },
+          { label: "Coins Earned", value: `${(earnings?.totalCoinsEarned ?? referrals?.totalEarnedFromReferrals ?? 0).toFixed(0)}`, color: "text-accent" },
+          { label: "Locked USDT", value: `$${(earnings?.totalLockedUsdt ?? 0).toFixed(3)}`, color: "text-amber-500" },
+          { label: "Unlocked USDT", value: `$${(earnings?.totalUnlockedUsdt ?? 0).toFixed(3)}`, color: "text-emerald-500" },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-card border border-card-border rounded-xl p-4 text-center">
-            <div className={`text-2xl font-bold ${color}`}>{value}</div>
+            <div className={`text-xl font-bold ${color}`}>{value}</div>
             <div className="text-xs text-muted-foreground mt-1">{label}</div>
           </div>
         ))}
       </div>
 
-      {/* Earnings breakdown */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-card border border-card-border rounded-xl p-4 flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary/20 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Gift className="w-5 h-5 text-primary" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold">0.25 USDT</p>
-            <p className="text-xs text-muted-foreground">One-time signup bonus</p>
-          </div>
+      {/* Reward structure */}
+      <div className="bg-card border border-card-border rounded-xl p-5">
+        <h3 className="font-semibold mb-4 flex items-center gap-2"><Layers className="w-4 h-4 text-primary" /> Upgrade Reward Structure</h3>
+        <div className="space-y-2">
+          {[
+            { tier: "Level 1", rate: "10%", desc: "Direct referral buys an upgrade", color: "text-primary" },
+            { tier: "Level 2", rate: "3%", desc: "Your referral's referral buys an upgrade", color: "text-accent" },
+            { tier: "Level 3", rate: "1%", desc: "Three levels deep", color: "text-muted-foreground" },
+          ].map(({ tier, rate, desc, color }) => (
+            <div key={tier} className="flex items-center gap-3 py-2 border-b border-card-border last:border-0">
+              <div className={`text-sm font-bold w-16 flex-shrink-0 ${color}`}>{tier}</div>
+              <div className={`text-sm font-bold w-10 flex-shrink-0 ${color}`}>{rate}</div>
+              <div className="text-xs text-muted-foreground">{desc}</div>
+            </div>
+          ))}
         </div>
-        <div className="bg-card border border-card-border rounded-xl p-4 flex items-center gap-3">
-          <div className="w-10 h-10 bg-accent/20 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Zap className="w-5 h-5 text-accent" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold">7% Commission</p>
-            <p className="text-xs text-muted-foreground">Per mining claim</p>
-          </div>
-        </div>
+        <p className="text-xs text-muted-foreground mt-3">
+          Each reward splits as <span className="font-semibold text-accent">70% coins</span> (instant) + <span className="font-semibold text-amber-500">30% locked USDT</span> (unlocks after 7 days). Daily cap: $50 per referrer.
+        </p>
       </div>
 
       {/* Referral Link */}
@@ -120,7 +176,6 @@ export default function Referrals() {
           </code>
         </div>
 
-        {/* Share Buttons */}
         <div className="flex gap-2 mt-4">
           {shareLinks.map(({ name, icon: Icon, color, bg, url }) => (
             <a key={name} href={url} target="_blank" rel="noopener noreferrer" className="flex-1">
@@ -137,37 +192,34 @@ export default function Referrals() {
         </div>
       </div>
 
-      {/* How it works */}
-      <div className="bg-card border border-card-border rounded-xl p-5">
-        <h3 className="font-semibold mb-4">How Referrals Work</h3>
-        <div className="space-y-4">
-          <div className="flex gap-3">
-            <div className="w-7 h-7 bg-primary/20 rounded-full flex items-center justify-center text-xs font-bold text-primary flex-shrink-0 mt-0.5">1</div>
-            <div>
-              <p className="text-sm font-medium">Share your link</p>
-              <p className="text-xs text-muted-foreground">Send your unique referral link to friends</p>
-            </div>
+      {/* Earnings breakdown (quick cards) */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-card border border-card-border rounded-xl p-4 flex items-center gap-3">
+          <div className="w-10 h-10 bg-primary/20 rounded-lg flex items-center justify-center flex-shrink-0">
+            <Gift className="w-5 h-5 text-primary" />
           </div>
-          <div className="flex gap-3">
-            <div className="w-7 h-7 bg-primary/20 rounded-full flex items-center justify-center text-xs font-bold text-primary flex-shrink-0 mt-0.5">2</div>
-            <div>
-              <p className="text-sm font-medium">Friend signs up and starts mining</p>
-              <p className="text-xs text-muted-foreground">You instantly receive a <span className="text-primary font-semibold">0.25 USDT (250 coins)</span> one-time bonus — paid the moment they activate their first mining session</p>
-            </div>
+          <div>
+            <p className="text-sm font-semibold">0.25 USDT</p>
+            <p className="text-xs text-muted-foreground">Sign-up bonus/referral</p>
           </div>
-          <div className="flex gap-3">
-            <div className="w-7 h-7 bg-accent/20 rounded-full flex items-center justify-center text-xs font-bold text-accent flex-shrink-0 mt-0.5">3</div>
-            <div>
-              <p className="text-sm font-medium">Earn 7% on every claim they make</p>
-              <p className="text-xs text-muted-foreground">You earn <span className="text-accent font-semibold">7% commission</span> automatically added to your wallet every time a referral claims their mining reward. No multi-level, Level 1 only.</p>
-            </div>
+        </div>
+        <div className="bg-card border border-card-border rounded-xl p-4 flex items-center gap-3">
+          <div className="w-10 h-10 bg-accent/20 rounded-lg flex items-center justify-center flex-shrink-0">
+            <Zap className="w-5 h-5 text-accent" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">7% Commission</p>
+            <p className="text-xs text-muted-foreground">Per mining claim</p>
           </div>
         </div>
       </div>
 
-      {/* Tabs for referrals list and leaderboard */}
-      <Tabs defaultValue="leaderboard">
+      {/* Tabs */}
+      <Tabs defaultValue="upgrade-earnings">
         <TabsList className="w-full">
+          <TabsTrigger value="upgrade-earnings" className="flex-1 gap-2">
+            <Lock className="w-4 h-4" /> Upgrade Rewards
+          </TabsTrigger>
           <TabsTrigger value="leaderboard" className="flex-1 gap-2">
             <Trophy className="w-4 h-4" /> Leaderboard
           </TabsTrigger>
@@ -175,6 +227,31 @@ export default function Referrals() {
             <Users className="w-4 h-4" /> My Referrals
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="upgrade-earnings" className="mt-4">
+          {earnings && earnings.earnings.length > 0 ? (
+            <div className="space-y-2">
+              {/* Summary bar */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-center">
+                  <p className="text-sm font-bold text-amber-500">${earnings.totalLockedUsdt.toFixed(3)}</p>
+                  <p className="text-xs text-muted-foreground">Locked (unlocks in 7 days)</p>
+                </div>
+                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 text-center">
+                  <p className="text-sm font-bold text-emerald-500">${earnings.totalUnlockedUsdt.toFixed(3)}</p>
+                  <p className="text-xs text-muted-foreground">Unlocked USDT</p>
+                </div>
+              </div>
+              {earnings.earnings.map(e => <EarningRow key={e.id} earning={e} />)}
+            </div>
+          ) : (
+            <div className="text-center py-10">
+              <Lock className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+              <p className="font-medium">No upgrade rewards yet</p>
+              <p className="text-sm text-muted-foreground mt-1">Earn rewards when your referrals purchase upgrades</p>
+            </div>
+          )}
+        </TabsContent>
 
         <TabsContent value="leaderboard" className="mt-4">
           <div className="space-y-2">
@@ -189,7 +266,7 @@ export default function Referrals() {
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-semibold">{entry.username}</p>
-                  <p className="text-xs text-muted-foreground">Level {entry.miningLevel} • {entry.referralCount} referrals</p>
+                  <p className="text-xs text-muted-foreground">Level {entry.miningLevel} · {entry.referralCount} referrals</p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-bold text-primary">{entry.totalEarned.toFixed(2)}</p>
@@ -204,6 +281,22 @@ export default function Referrals() {
         </TabsContent>
 
         <TabsContent value="my-referrals" className="mt-4">
+          {/* Multi-level counts */}
+          {stats && (stats.level1Count > 0 || stats.level2Count > 0 || stats.level3Count > 0) && (
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {[
+                { label: "Level 1", count: stats.level1Count, color: "text-primary" },
+                { label: "Level 2", count: stats.level2Count, color: "text-accent" },
+                { label: "Level 3", count: stats.level3Count, color: "text-muted-foreground" },
+              ].map(({ label, count, color }) => (
+                <div key={label} className="bg-card border border-card-border rounded-lg p-2 text-center">
+                  <p className={`text-lg font-bold ${color}`}>{count}</p>
+                  <p className="text-[10px] text-muted-foreground">{label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
           {isLoading ? (
             <div className="space-y-2">
               {[...Array(3)].map((_, i) => <div key={i} className="h-16 bg-muted rounded-xl animate-pulse" />)}

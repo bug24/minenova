@@ -14,6 +14,8 @@ export const usersTable = pgTable("users", {
   coinBalance: real("coin_balance").notNull().default(0),
   pendingBalance: real("pending_balance").notNull().default(0),
   totalWithdrawn: real("total_withdrawn").notNull().default(0),
+  usdtBalance: real("usdt_balance").notNull().default(0),
+  lockedUsdtBalance: real("locked_usdt_balance").notNull().default(0),
   emailVerified: boolean("email_verified").notNull().default(false),
   verificationToken: text("verification_token"),
   verificationTokenExpiry: timestamp("verification_token_expiry", { withTimezone: true }),

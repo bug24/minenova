@@ -7,7 +7,8 @@ import path from "node:path";
 import fs from "node:fs";
 import http from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { db, adminConfigTable } from "@workspace/db";
+import { db, adminConfigTable, referralEarningsTable, usersTable } from "@workspace/db";
+import { and, eq, lte, sql } from "drizzle-orm";
 
 // ─── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -161,5 +162,41 @@ if (distBuilt) {
     proxyToVite(req, res);
   });
 }
+
+// ─── Hourly cron: unlock eligible referral USDT earnings ─────────────────────
+
+async function unlockEligibleReferralEarnings(): Promise<void> {
+  try {
+    const now = new Date();
+    const eligible = await db
+      .select()
+      .from(referralEarningsTable)
+      .where(and(eq(referralEarningsTable.status, "locked"), lte(referralEarningsTable.unlockDate, now)));
+
+    if (eligible.length === 0) return;
+
+    for (const earning of eligible) {
+      await db
+        .update(usersTable)
+        .set({
+          usdtBalance: sql`usdt_balance + ${earning.rewardLockedUsdt}`,
+          lockedUsdtBalance: sql`greatest(0, locked_usdt_balance - ${earning.rewardLockedUsdt})`,
+        })
+        .where(eq(usersTable.id, earning.referrerId));
+
+      await db
+        .update(referralEarningsTable)
+        .set({ status: "unlocked" })
+        .where(eq(referralEarningsTable.id, earning.id));
+    }
+
+    logger.info({ count: eligible.length }, "Unlocked referral USDT earnings");
+  } catch (err) {
+    logger.error({ err }, "Failed to unlock referral earnings in cron");
+  }
+}
+
+setInterval(unlockEligibleReferralEarnings, 60 * 60 * 1000);
+unlockEligibleReferralEarnings().catch(() => {});
 
 export default app;

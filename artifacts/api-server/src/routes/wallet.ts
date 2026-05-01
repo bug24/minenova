@@ -21,6 +21,8 @@ router.get("/wallet", requireAuth, async (req, res): Promise<void> => {
     withdrawableBalance: user.coinBalance,
     totalWithdrawn: user.totalWithdrawn,
     minimumWithdrawal: MINIMUM_WITHDRAWAL,
+    usdtBalance: user.usdtBalance ?? 0,
+    lockedUsdtBalance: user.lockedUsdtBalance ?? 0,
   }));
 });
 

@@ -184,6 +184,41 @@ export const GetReferralsResponse = zod.object({
 });
 
 /**
+ * @summary Get referral upgrade earnings (coins + locked/unlocked USDT)
+ */
+export const GetReferralEarningsResponse = zod.object({
+  totalCoinsEarned: zod.number(),
+  totalLockedUsdt: zod.number(),
+  totalUnlockedUsdt: zod.number(),
+  earnings: zod.array(
+    zod.object({
+      id: zod.number(),
+      referredUsername: zod.string(),
+      upgradeId: zod.number(),
+      tier: zod.number(),
+      rewardCoins: zod.number(),
+      rewardLockedUsdt: zod.number(),
+      status: zod.string(),
+      unlockDate: zod.string(),
+      createdAt: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * @summary Get referral counts and reward totals by tier
+ */
+export const GetReferralStatsResponse = zod.object({
+  referralCount: zod.number(),
+  level1Count: zod.number(),
+  level2Count: zod.number(),
+  level3Count: zod.number(),
+  totalRewardsEarned: zod.number(),
+  totalCoinsFromUpgrades: zod.number(),
+  totalUsdtFromUpgrades: zod.number(),
+});
+
+/**
  * @summary Get wallet balance and info
  */
 export const GetWalletResponse = zod.object({
@@ -192,6 +227,8 @@ export const GetWalletResponse = zod.object({
   withdrawableBalance: zod.number(),
   totalWithdrawn: zod.number(),
   minimumWithdrawal: zod.number(),
+  usdtBalance: zod.number(),
+  lockedUsdtBalance: zod.number(),
 });
 
 /**

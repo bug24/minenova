@@ -19,6 +19,7 @@ import { hashPassword } from "../lib/auth";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import { sendUpgradeApprovedEmail, sendUpgradeRejectedEmail } from "../lib/email";
+import { triggerUpgradeReferralReward } from "../lib/referralReward";
 
 const router: IRouter = Router();
 
@@ -1411,6 +1412,13 @@ router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, asyn
   await db.update(usersTable).set({ miningLevel: sql`mining_level + 1` }).where(eq(usersTable.id, txn.userId));
 
   sendUpgradeApprovedEmail(user.email, user.username, upgrade.name, note).catch(() => {});
+
+  const usdtValue = upgrade.usdtCost ?? 0;
+  if (usdtValue > 0) {
+    triggerUpgradeReferralReward({ referredUserId: txn.userId, upgradeId, upgradeUsdtValue: usdtValue }).catch(err =>
+      req.log.error({ err }, "Failed to process referral reward for USDT upgrade approval"),
+    );
+  }
 
   res.json({ success: true, message: `Upgrade approved for ${user.username}.` });
 });

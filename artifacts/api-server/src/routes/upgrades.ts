@@ -5,9 +5,11 @@ import { requireAuth } from "../middlewares/requireAuth";
 import { PurchaseUpgradeParams, PurchaseUpgradeBody, GetUpgradesResponse, PurchaseUpgradeResponse } from "@workspace/api-zod";
 import { generatePaymentTag } from "../lib/auth";
 import { sendUpgradePaymentSubmittedEmail } from "../lib/email";
+import { triggerUpgradeReferralReward } from "../lib/referralReward";
 import { z } from "zod/v4";
 
 const router: IRouter = Router();
+const COINS_PER_USDT = 1000;
 
 async function getUsdtDepositAddress(): Promise<string> {
   const rows = await db
@@ -92,6 +94,11 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
       description: `Purchased upgrade: ${upgrade.name}`,
       upgradeId,
     });
+
+    const usdtValue = upgrade.usdtCost ?? upgrade.coinCost! / COINS_PER_USDT;
+    triggerUpgradeReferralReward({ referredUserId: req.userId!, upgradeId, upgradeUsdtValue: usdtValue }).catch(err =>
+      req.log.error({ err }, "Failed to process referral reward for coin upgrade"),
+    );
 
     res.json(PurchaseUpgradeResponse.parse({
       success: true,

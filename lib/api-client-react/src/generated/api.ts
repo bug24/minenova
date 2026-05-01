@@ -31,7 +31,9 @@ import type {
   MiningStatus,
   PurchaseUpgradeBody,
   PurchaseUpgradeResult,
+  ReferralEarningsInfo,
   ReferralInfo,
+  ReferralStats,
   RegisterBody,
   SuccessResponse,
   Task,
@@ -981,6 +983,156 @@ export function useGetReferrals<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetReferralsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get referral upgrade earnings (coins + locked/unlocked USDT)
+ */
+export const getGetReferralEarningsUrl = () => {
+  return `/api/referrals/earnings`;
+};
+
+export const getReferralEarnings = async (
+  options?: RequestInit,
+): Promise<ReferralEarningsInfo> => {
+  return customFetch<ReferralEarningsInfo>(getGetReferralEarningsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetReferralEarningsQueryKey = () => {
+  return [`/api/referrals/earnings`] as const;
+};
+
+export const getGetReferralEarningsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getReferralEarnings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getReferralEarnings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetReferralEarningsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getReferralEarnings>>
+  > = ({ signal }) => getReferralEarnings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getReferralEarnings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetReferralEarningsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getReferralEarnings>>
+>;
+export type GetReferralEarningsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get referral upgrade earnings (coins + locked/unlocked USDT)
+ */
+
+export function useGetReferralEarnings<
+  TData = Awaited<ReturnType<typeof getReferralEarnings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getReferralEarnings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetReferralEarningsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get referral counts and reward totals by tier
+ */
+export const getGetReferralStatsUrl = () => {
+  return `/api/referrals/stats`;
+};
+
+export const getReferralStats = async (
+  options?: RequestInit,
+): Promise<ReferralStats> => {
+  return customFetch<ReferralStats>(getGetReferralStatsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetReferralStatsQueryKey = () => {
+  return [`/api/referrals/stats`] as const;
+};
+
+export const getGetReferralStatsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getReferralStats>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getReferralStats>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetReferralStatsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getReferralStats>>
+  > = ({ signal }) => getReferralStats({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getReferralStats>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetReferralStatsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getReferralStats>>
+>;
+export type GetReferralStatsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get referral counts and reward totals by tier
+ */
+
+export function useGetReferralStats<
+  TData = Awaited<ReturnType<typeof getReferralStats>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getReferralStats>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetReferralStatsQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

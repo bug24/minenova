@@ -247,6 +247,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReferralInfo"
 
+  /referrals/earnings:
+    get:
+      operationId: getReferralEarnings
+      tags: [referrals]
+      summary: Get referral upgrade earnings (coins + locked/unlocked USDT)
+      responses:
+        "200":
+          description: Referral earnings breakdown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReferralEarningsInfo"
+
+  /referrals/stats:
+    get:
+      operationId: getReferralStats
+      tags: [referrals]
+      summary: Get referral counts and reward totals by tier
+      responses:
+        "200":
+          description: Referral statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReferralStats"
+
   /wallet:
     get:
       operationId: getWallet
@@ -722,6 +748,83 @@ components:
         - earnedFromUser
         - joinedAt
 
+    ReferralEarningsInfo:
+      type: object
+      properties:
+        totalCoinsEarned:
+          type: number
+        totalLockedUsdt:
+          type: number
+        totalUnlockedUsdt:
+          type: number
+        earnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReferralEarningEntry"
+      required:
+        - totalCoinsEarned
+        - totalLockedUsdt
+        - totalUnlockedUsdt
+        - earnings
+
+    ReferralEarningEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        referredUsername:
+          type: string
+        upgradeId:
+          type: integer
+        tier:
+          type: integer
+        rewardCoins:
+          type: number
+        rewardLockedUsdt:
+          type: number
+        status:
+          type: string
+        unlockDate:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - referredUsername
+        - upgradeId
+        - tier
+        - rewardCoins
+        - rewardLockedUsdt
+        - status
+        - unlockDate
+        - createdAt
+
+    ReferralStats:
+      type: object
+      properties:
+        referralCount:
+          type: integer
+        level1Count:
+          type: integer
+        level2Count:
+          type: integer
+        level3Count:
+          type: integer
+        totalRewardsEarned:
+          type: number
+        totalCoinsFromUpgrades:
+          type: number
+        totalUsdtFromUpgrades:
+          type: number
+      required:
+        - referralCount
+        - level1Count
+        - level2Count
+        - level3Count
+        - totalRewardsEarned
+        - totalCoinsFromUpgrades
+        - totalUsdtFromUpgrades
+
     Wallet:
       type: object
       properties:
@@ -735,12 +838,18 @@ components:
           type: number
         minimumWithdrawal:
           type: number
+        usdtBalance:
+          type: number
+        lockedUsdtBalance:
+          type: number
       required:
         - totalBalance
         - pendingBalance
         - withdrawableBalance
         - totalWithdrawn
         - minimumWithdrawal
+        - usdtBalance
+        - lockedUsdtBalance
 
     WithdrawalBody:
       type: object

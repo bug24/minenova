@@ -12,4 +12,6 @@ export interface Wallet {
   withdrawableBalance: number;
   totalWithdrawn: number;
   minimumWithdrawal: number;
+  usdtBalance: number;
+  lockedUsdtBalance: number;
 }

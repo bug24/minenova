@@ -116,12 +116,43 @@ export interface ReferralInfo {
   referrals: ReferralEntry[];
 }
 
+export interface ReferralEarningEntry {
+  id: number;
+  referredUsername: string;
+  upgradeId: number;
+  tier: number;
+  rewardCoins: number;
+  rewardLockedUsdt: number;
+  status: string;
+  unlockDate: string;
+  createdAt: string;
+}
+
+export interface ReferralEarningsInfo {
+  totalCoinsEarned: number;
+  totalLockedUsdt: number;
+  totalUnlockedUsdt: number;
+  earnings: ReferralEarningEntry[];
+}
+
+export interface ReferralStats {
+  referralCount: number;
+  level1Count: number;
+  level2Count: number;
+  level3Count: number;
+  totalRewardsEarned: number;
+  totalCoinsFromUpgrades: number;
+  totalUsdtFromUpgrades: number;
+}
+
 export interface Wallet {
   totalBalance: number;
   pendingBalance: number;
   withdrawableBalance: number;
   totalWithdrawn: number;
   minimumWithdrawal: number;
+  usdtBalance: number;
+  lockedUsdtBalance: number;
 }
 
 export interface WithdrawalBody {
