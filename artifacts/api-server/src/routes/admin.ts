@@ -12,6 +12,7 @@ import {
   userUpgradesTable,
   adsTable,
   tasksTable,
+  pushSubscriptionsTable,
 } from "@workspace/db";
 import { eq, and, isNull, or, ilike, sql, desc, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -1457,6 +1458,31 @@ router.post("/admin/upgrade-payments/:transactionId/reject", requireAdmin, async
   ).catch(() => {});
 
   res.json({ success: true, message: `Payment rejected for ${user.username}.` });
+});
+
+const AdminPushSubscribeBody = z.object({
+  endpoint: z.string().url(),
+  keys: z.object({ p256dh: z.string(), auth: z.string() }),
+});
+
+router.get("/admin/notifications/vapid-public-key", requireAdmin, (_req, res): void => {
+  const key = process.env["VAPID_PUBLIC_KEY"];
+  if (!key) { res.status(503).json({ error: "Push notifications not configured" }); return; }
+  res.json({ publicKey: key });
+});
+
+router.post("/admin/notifications/subscribe", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = AdminPushSubscribeBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid subscription object" }); return; }
+  const { endpoint, keys } = parsed.data;
+  await db
+    .insert(pushSubscriptionsTable)
+    .values({ userId: 0, endpoint, p256dh: keys.p256dh, auth: keys.auth })
+    .onConflictDoUpdate({
+      target: pushSubscriptionsTable.endpoint,
+      set: { userId: 0, p256dh: keys.p256dh, auth: keys.auth },
+    });
+  res.json({ ok: true });
 });
 
 export default router;

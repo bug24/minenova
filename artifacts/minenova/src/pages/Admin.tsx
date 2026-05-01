@@ -10,7 +10,7 @@ import {
   ShieldOff, Shield, CircleDollarSign, LayoutDashboard, type LucideIcon,
   Sun, Moon, UserCircle, Copy, RotateCcw, Activity, ChevronRight,
   Play, Zap, AlertTriangle, ToggleLeft, ToggleRight, Menu, ChevronLeft,
-  Film, Link, Clock, MonitorPlay, Code,
+  Film, Link, Clock, MonitorPlay, Code, Bell,
 } from "lucide-react";
 
 function apiFetch(path: string, options?: RequestInit) {
@@ -103,6 +103,7 @@ interface UserProfile extends AdminUser {
 }
 
 type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads" | "scripts";
+type UpgradeSubTab = "manage" | "history" | "approve-reject";
 
 interface AdminAd {
   id: number;
@@ -1478,7 +1479,17 @@ const EMPTY_PACKAGE: Omit<UpgradePackage, "id"> = {
   coinCost: null, usdtCost: null, isAutoMining: false, sortOrder: 0, badge: null, icon: null,
 };
 
-function UpgradesTab({ secret }: { secret: string }) {
+function UpgradesTab({
+  secret,
+  activeSubTab,
+  onSubTabChange,
+  onPendingCountChange,
+}: {
+  secret: string;
+  activeSubTab: UpgradeSubTab;
+  onSubTabChange: (t: UpgradeSubTab) => void;
+  onPendingCountChange?: (count: number) => void;
+}) {
   const [packages, setPackages] = useState<UpgradePackage[]>([]);
   const [purchases, setPurchases] = useState<UpgradePurchase[]>([]);
   const [payments, setPayments] = useState<UpgradePayment[]>([]);
@@ -1495,16 +1506,19 @@ function UpgradesTab({ secret }: { secret: string }) {
     const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
     setLoading(true);
     Promise.all([
-      apiFetch("/admin/upgrades", { headers }).then(r => r.json()),
-      apiFetch("/admin/upgrade-purchases", { headers }).then(r => r.json()),
-      apiFetch("/admin/upgrade-payments", { headers }).then(r => r.json()),
+      apiFetch("/admin/upgrades", { headers }).then(r => r.json()).catch(() => []),
+      apiFetch("/admin/upgrade-purchases", { headers }).then(r => r.json()).catch(() => []),
+      apiFetch("/admin/upgrade-payments", { headers }).then(r => r.json()).catch(() => []),
     ]).then(([pkgs, purch, pays]) => {
       setPackages(Array.isArray(pkgs) ? pkgs : []);
       setPurchases(Array.isArray(purch) ? purch : []);
       setPayments(Array.isArray(pays) ? pays : []);
+      const pendingCount = (Array.isArray(pays) ? pays as UpgradePayment[] : [])
+        .filter(p => p.status === "pending" || p.status === "awaiting_verification").length;
+      onPendingCountChange?.(pendingCount);
       setLoading(false);
-    });
-  }, [secret]);
+    }).catch(() => setLoading(false));
+  }, [secret, onPendingCountChange]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1630,12 +1644,38 @@ function UpgradesTab({ secret }: { secret: string }) {
     </div>
   );
 
+  const UPGRADE_SUB_TABS: { id: UpgradeSubTab; label: string }[] = [
+    { id: "manage", label: "Manage Upgrades" },
+    { id: "history", label: "Upgrades History" },
+    { id: "approve-reject", label: "Approve / Reject" },
+  ];
+
+  const pendingPayments = payments.filter(p => p.status === "pending" || p.status === "awaiting_verification");
+
   if (loading) return <p className="text-muted-foreground text-sm text-center py-8">Loading…</p>;
 
   return (
     <div className="space-y-6">
-      {/* Manage Packages */}
-      <div>
+      {/* Sub-tab navigation */}
+      <div className="flex gap-1 bg-muted/40 p-1 rounded-xl w-fit flex-wrap">
+        {UPGRADE_SUB_TABS.map(st => (
+          <button
+            key={st.id}
+            onClick={() => onSubTabChange(st.id)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeSubTab === st.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            {st.label}
+            {st.id === "approve-reject" && pendingPayments.length > 0 && (
+              <span className="bg-red-500 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
+                {pendingPayments.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Manage Upgrades sub-tab */}
+      {activeSubTab === "manage" && <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold">Manage Packages</h3>
           <Button size="sm" className="gap-1.5" onClick={() => setNewPkg({ ...EMPTY_PACKAGE })}>
@@ -1699,9 +1739,9 @@ function UpgradesTab({ secret }: { secret: string }) {
             </div>
           ))}
         </div>
-      </div>
+      </div>}
 
-      {/* Delete Confirm */}
+      {/* Delete Confirm modal — always rendered so it stays visible when switching sub-tabs */}
       {deletingId && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-card border border-card-border rounded-2xl p-6 max-w-sm w-full space-y-4">
@@ -1715,8 +1755,8 @@ function UpgradesTab({ secret }: { secret: string }) {
         </div>
       )}
 
-      {/* USDT Payment Management */}
-      <div>
+      {/* Approve / Reject Upgrades sub-tab */}
+      {activeSubTab === "approve-reject" && <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold">USDT Upgrade Payments</h3>
           <Button size="sm" variant="ghost" onClick={load} className="gap-1.5 text-xs">Refresh</Button>
@@ -1778,9 +1818,9 @@ function UpgradesTab({ secret }: { secret: string }) {
             );
           })}
         </div>
-      </div>
+      </div>}
 
-      {/* Decision Modal */}
+      {/* Decision Modal — always rendered so it stays visible regardless of sub-tab */}
       {decisionModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-card border border-card-border rounded-2xl p-6 max-w-sm w-full space-y-4">
@@ -1818,8 +1858,8 @@ function UpgradesTab({ secret }: { secret: string }) {
         </div>
       )}
 
-      {/* Purchase History */}
-      <div>
+      {/* Upgrades History sub-tab */}
+      {activeSubTab === "history" && <div>
         <h3 className="font-semibold mb-3">Coin Purchase History</h3>
         {purchases.length === 0 && <p className="text-muted-foreground text-sm text-center py-6">No coin upgrade purchases yet</p>}
         <div className="space-y-2">
@@ -1837,7 +1877,7 @@ function UpgradesTab({ secret }: { secret: string }) {
             </div>
           ))}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -2894,6 +2934,8 @@ export default function Admin() {
   const [authed, setAuthed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<Tab>("dashboard");
+  const [upgradeSubTab, setUpgradeSubTab] = useState<UpgradeSubTab>("manage");
+  const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [needs2FA, setNeeds2FA] = useState(false);
   const [totpLoginCode, setTotpLoginCode] = useState("");
@@ -2953,7 +2995,60 @@ export default function Admin() {
     }
   };
 
-  const handleLogout = () => { setAuthed(false); setSecret(""); setNeeds2FA(false); setTotpLoginCode(""); setShowChangePassword(false); };
+  const handleLogout = () => {
+    setAuthed(false); setSecret(""); setNeeds2FA(false); setTotpLoginCode(""); setShowChangePassword(false);
+    setPendingPaymentsCount(0); setUpgradeSubTab("manage");
+  };
+
+  useEffect(() => {
+    if (!authed) return;
+    const fetchPending = () => {
+      apiFetch("/admin/upgrade-payments", { headers: { "x-admin-secret": secret } })
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            const count = (data as UpgradePayment[]).filter(p => p.status === "pending" || p.status === "awaiting_verification").length;
+            setPendingPaymentsCount(count);
+          }
+        })
+        .catch(() => {});
+    };
+    fetchPending();
+    const id = setInterval(fetchPending, 60_000);
+    return () => clearInterval(id);
+  }, [authed, secret]);
+
+  function urlBase64ToUint8Array(base64String: string) {
+    const padding = "=".repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    const output = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) output[i] = rawData.charCodeAt(i);
+    return output;
+  }
+
+  const handleBellClick = async () => {
+    setTab("upgrades");
+    setUpgradeSubTab("approve-reject");
+    if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
+    if (Notification.permission === "denied") return;
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") return;
+      const keyRes = await apiFetch("/admin/notifications/vapid-public-key", { headers: { "x-admin-secret": secret } });
+      if (!keyRes.ok) return;
+      const { publicKey } = await keyRes.json() as { publicKey: string };
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+      const p256dh = btoa(String.fromCharCode(...new Uint8Array(sub.getKey("p256dh")!)));
+      const auth = btoa(String.fromCharCode(...new Uint8Array(sub.getKey("auth")!)));
+      await apiFetch("/admin/notifications/subscribe", {
+        method: "POST",
+        headers: { "x-admin-secret": secret, "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: sub.endpoint, keys: { p256dh, auth } }),
+      });
+    } catch { /* silent — push notifications are a best-effort feature */ }
+  };
 
   const handleChangePassword = async () => {
     if (newPassword.length < 8) { toast({ variant: "destructive", title: "Password too short", description: "Min. 8 characters." }); return; }
@@ -3104,10 +3199,22 @@ export default function Admin() {
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Top bar */}
         <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-3 flex items-center gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1">
             {currentTab && <currentTab.icon className="w-4 h-4 text-primary" />}
             <h2 className="font-bold">{currentTab?.label}</h2>
           </div>
+          <button
+            onClick={handleBellClick}
+            title={pendingPaymentsCount > 0 ? `${pendingPaymentsCount} pending upgrade request${pendingPaymentsCount > 1 ? "s" : ""}` : "Upgrade notifications"}
+            className="relative w-9 h-9 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <Bell className={`w-4 h-4 ${pendingPaymentsCount > 0 ? "text-amber-400" : ""}`} />
+            {pendingPaymentsCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5 leading-none">
+                {pendingPaymentsCount > 99 ? "99+" : pendingPaymentsCount}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Change password panel */}
@@ -3138,7 +3245,14 @@ export default function Admin() {
           {tab === "transactions" && <TransactionsTab secret={secret} />}
           {tab === "mining" && <MiningTab secret={secret} />}
           {tab === "referrals" && <ReferralsTab secret={secret} />}
-          {tab === "upgrades" && <UpgradesTab secret={secret} />}
+          {tab === "upgrades" && (
+            <UpgradesTab
+              secret={secret}
+              activeSubTab={upgradeSubTab}
+              onSubTabChange={setUpgradeSubTab}
+              onPendingCountChange={setPendingPaymentsCount}
+            />
+          )}
           {tab === "settings" && <SettingsTab secret={secret} />}
           {tab === "share" && <ShareMessagesTab secret={secret} />}
           {tab === "ads" && <AdsTab secret={secret} />}

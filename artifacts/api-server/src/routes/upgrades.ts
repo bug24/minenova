@@ -6,6 +6,7 @@ import { PurchaseUpgradeParams, PurchaseUpgradeBody, GetUpgradesResponse, Purcha
 import { generatePaymentTag } from "../lib/auth";
 import { sendUpgradePaymentSubmittedEmail } from "../lib/email";
 import { triggerUpgradeReferralReward } from "../lib/referralReward";
+import { sendAdminNotification } from "../lib/pushNotifications";
 import { z } from "zod/v4";
 
 const router: IRouter = Router();
@@ -188,6 +189,12 @@ router.post("/upgrades/payments/mark-paid", requireAuth, async (req, res): Promi
     usdtAmount,
     txn.paymentTag ?? "",
   ).catch(() => {});
+
+  sendAdminNotification({
+    title: "New Upgrade Request",
+    body: `${user.username} submitted $${usdtAmount.toFixed(2)} USDT for "${upgradeName}".`,
+    url: "/admin",
+  }).catch(() => {});
 
   res.json({ success: true, message: "Payment marked as sent. Admin will verify within 2–12 hours." });
 });

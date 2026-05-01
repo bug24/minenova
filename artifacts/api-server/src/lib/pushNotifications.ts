@@ -79,6 +79,34 @@ export async function sendMiningCompleteNotifications() {
   logger.info({ count: sessions.length }, "Mining notifications processed");
 }
 
+export async function sendAdminNotification(payload: { title: string; body: string; url?: string }) {
+  if (!ensureVapid()) return;
+  const subs = await db.select().from(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.userId, 0));
+  if (subs.length === 0) return;
+  const payloadStr = JSON.stringify({
+    title: payload.title,
+    body: payload.body,
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    data: { url: payload.url ?? "/admin" },
+  });
+  for (const sub of subs) {
+    try {
+      await webpush.sendNotification(
+        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+        payloadStr,
+      );
+    } catch (err: unknown) {
+      const status = (err as { statusCode?: number }).statusCode;
+      if (status === 410 || status === 404) {
+        await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.id, sub.id));
+      } else {
+        logger.warn({ err, subId: sub.id }, "Admin push send failed");
+      }
+    }
+  }
+}
+
 export function startNotificationJob() {
   if (!ensureVapid()) {
     logger.warn("VAPID keys not configured or invalid — push notifications disabled");
