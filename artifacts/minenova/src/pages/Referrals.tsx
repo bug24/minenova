@@ -117,7 +117,7 @@ export default function Referrals() {
           { label: "Referrals", value: String(stats?.level1Count ?? referrals?.totalReferrals ?? 0), color: "text-primary" },
           { label: "Coins Earned", value: `${(earnings?.totalCoinsEarned ?? referrals?.totalEarnedFromReferrals ?? 0).toFixed(0)}`, color: "text-accent" },
           { label: "Locked USDT", value: `$${(earnings?.totalLockedUsdt ?? 0).toFixed(3)}`, color: "text-amber-500" },
-          { label: "Unlocked USDT", value: `$${(earnings?.totalUnlockedUsdt ?? 0).toFixed(3)}`, color: "text-emerald-500" },
+          { label: "Withdrawable USDT", value: `$${(earnings?.withdrawableUsdt ?? 0).toFixed(3)}`, color: "text-emerald-500" },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-card border border-card-border rounded-xl p-4 text-center">
             <div className={`text-xl font-bold ${color}`}>{value}</div>
@@ -238,8 +238,8 @@ export default function Referrals() {
                   <p className="text-xs text-muted-foreground">Locked (unlocks in 7 days)</p>
                 </div>
                 <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 text-center">
-                  <p className="text-sm font-bold text-emerald-500">${earnings.totalUnlockedUsdt.toFixed(3)}</p>
-                  <p className="text-xs text-muted-foreground">Unlocked USDT</p>
+                  <p className="text-sm font-bold text-emerald-500">${earnings.withdrawableUsdt.toFixed(3)}</p>
+                  <p className="text-xs text-muted-foreground">Withdrawable USDT</p>
                 </div>
               </div>
               {earnings.earnings.map(e => <EarningRow key={e.id} earning={e} />)}
