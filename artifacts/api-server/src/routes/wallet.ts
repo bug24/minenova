@@ -116,8 +116,9 @@ router.post("/wallet/withdraw-usdt", requireAuth, async (req, res): Promise<void
 
   const paymentTag = generatePaymentTag();
 
+  let transactionId = 0;
   await db.transaction(async (tx) => {
-    await tx.insert(transactionsTable).values({
+    const [inserted] = await tx.insert(transactionsTable).values({
       userId: req.userId!,
       type: "withdrawal",
       amount,
@@ -126,7 +127,9 @@ router.post("/wallet/withdraw-usdt", requireAuth, async (req, res): Promise<void
       walletAddress,
       usdtAddress: USDT_DEPOSIT_ADDRESS,
       paymentTag,
-    });
+    }).returning({ id: transactionsTable.id });
+
+    transactionId = inserted.id;
 
     await tx
       .update(usersTable)
@@ -135,7 +138,7 @@ router.post("/wallet/withdraw-usdt", requireAuth, async (req, res): Promise<void
   });
 
   res.json(RequestWithdrawalResponse.parse({
-    transactionId: 0,
+    transactionId,
     amount,
     status: "pending",
     message: "Referral USDT withdrawal request submitted.",

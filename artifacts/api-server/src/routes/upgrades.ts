@@ -84,21 +84,21 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
     const newBalance = user.coinBalance - upgrade.coinCost;
     const newLevel = user.miningLevel + 1;
 
-    await db.update(usersTable).set({ coinBalance: newBalance, miningLevel: newLevel }).where(eq(usersTable.id, req.userId!));
-    await db.insert(userUpgradesTable).values({ userId: req.userId!, upgradeId });
-    await db.insert(transactionsTable).values({
-      userId: req.userId!,
-      type: "upgrade",
-      amount: -upgrade.coinCost,
-      status: "completed",
-      description: `Purchased upgrade: ${upgrade.name}`,
-      upgradeId,
+    await db.transaction(async (tx) => {
+      await tx.update(usersTable).set({ coinBalance: newBalance, miningLevel: newLevel }).where(eq(usersTable.id, req.userId!));
+      await tx.insert(userUpgradesTable).values({ userId: req.userId!, upgradeId });
+      await tx.insert(transactionsTable).values({
+        userId: req.userId!,
+        type: "upgrade",
+        amount: -upgrade.coinCost!,
+        status: "completed",
+        description: `Purchased upgrade: ${upgrade.name}`,
+        upgradeId,
+      });
     });
 
     const usdtValue = upgrade.usdtCost ?? upgrade.coinCost! / COINS_PER_USDT;
-    triggerUpgradeReferralReward({ referredUserId: req.userId!, upgradeId, upgradeUsdtValue: usdtValue }).catch(err =>
-      req.log.error({ err }, "Failed to process referral reward for coin upgrade"),
-    );
+    await triggerUpgradeReferralReward({ referredUserId: req.userId!, upgradeId, upgradeUsdtValue: usdtValue });
 
     res.json(PurchaseUpgradeResponse.parse({
       success: true,

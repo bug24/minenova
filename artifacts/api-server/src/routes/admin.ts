@@ -1415,9 +1415,7 @@ router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, asyn
 
   const usdtValue = upgrade.usdtCost ?? 0;
   if (usdtValue > 0) {
-    triggerUpgradeReferralReward({ referredUserId: txn.userId, upgradeId, upgradeUsdtValue: usdtValue }).catch(err =>
-      req.log.error({ err }, "Failed to process referral reward for USDT upgrade approval"),
-    );
+    await triggerUpgradeReferralReward({ referredUserId: txn.userId, upgradeId, upgradeUsdtValue: usdtValue });
   }
 
   res.json({ success: true, message: `Upgrade approved for ${user.username}.` });
