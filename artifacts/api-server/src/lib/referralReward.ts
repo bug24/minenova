@@ -16,6 +16,17 @@ const USDT_SPLIT = 0.30;
 const DAILY_CAP_USDT = 50;
 const UNLOCK_DAYS = 7;
 
+// NOTE: Daily-cap enforcement uses a read-then-write pattern per tier.
+// Under high concurrency, simultaneous purchases can transiently exceed the cap
+// by up to (TIER_RATES[1] * upgradeValue) per concurrent request. For typical
+// upgrade volumes this is an acceptable tradeoff; add a pg_advisory_xact_lock
+// or atomic upsert if strict cap enforcement under concurrency is required.
+//
+// NOTE: The unique index on (referred_id, upgrade_id, tier) assumes each
+// referred user purchases each upgrade at most once. If repeat purchases of the
+// same upgrade are introduced, the index must include a purchase transaction id
+// (e.g., source_transaction_id) to scope idempotency per purchase event.
+
 interface RewardParams {
   referredUserId: number;
   upgradeId: number;
