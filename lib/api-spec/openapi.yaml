@@ -786,6 +786,9 @@ components:
           type: number
         totalUnlockedUsdt:
           type: number
+        withdrawableUsdt:
+          type: number
+          description: Current actual withdrawable USDT from users.usdt_balance (reflects withdrawals already made)
         earnings:
           type: array
           items:
@@ -794,6 +797,7 @@ components:
         - totalCoinsEarned
         - totalLockedUsdt
         - totalUnlockedUsdt
+        - withdrawableUsdt
         - earnings
 
     ReferralEarningEntry:

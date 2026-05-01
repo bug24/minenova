@@ -80,7 +80,10 @@ export async function triggerUpgradeReferralReward(params: RewardParams): Promis
     unlockDate.setDate(unlockDate.getDate() + UNLOCK_DAYS);
 
     await db.transaction(async (tx) => {
-      await tx.insert(referralEarningsTable).values({
+      // onConflictDoNothing uses the unique index (referred_id, upgrade_id, tier)
+      // — safe to retry: already-processed tiers are skipped without error so
+      // remaining tiers in the chain can still be credited.
+      const inserted = await tx.insert(referralEarningsTable).values({
         referrerId,
         referredId: referredUserId,
         upgradeId,
@@ -89,7 +92,12 @@ export async function triggerUpgradeReferralReward(params: RewardParams): Promis
         rewardLockedUsdt,
         status: "locked",
         unlockDate,
-      });
+      }).onConflictDoNothing().returning({ id: referralEarningsTable.id });
+
+      if (inserted.length === 0) {
+        // Row already exists for this (referred, upgrade, tier) tuple — skip.
+        return;
+      }
 
       await tx
         .update(usersTable)

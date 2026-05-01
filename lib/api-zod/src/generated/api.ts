@@ -190,6 +190,11 @@ export const GetReferralEarningsResponse = zod.object({
   totalCoinsEarned: zod.number(),
   totalLockedUsdt: zod.number(),
   totalUnlockedUsdt: zod.number(),
+  withdrawableUsdt: zod
+    .number()
+    .describe(
+      "Current actual withdrawable USDT from users.usdt_balance (reflects withdrawals already made)",
+    ),
   earnings: zod.array(
     zod.object({
       id: zod.number(),

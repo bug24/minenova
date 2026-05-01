@@ -132,6 +132,8 @@ export interface ReferralEarningsInfo {
   totalCoinsEarned: number;
   totalLockedUsdt: number;
   totalUnlockedUsdt: number;
+  /** Current actual withdrawable USDT from users.usdt_balance (reflects withdrawals already made) */
+  withdrawableUsdt: number;
   earnings: ReferralEarningEntry[];
 }
 

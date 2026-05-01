@@ -57,11 +57,18 @@ router.get("/referrals", requireAuth, async (req, res): Promise<void> => {
 router.get("/referrals/earnings", requireAuth, async (req, res): Promise<void> => {
   const userId = req.userId!;
 
-  const earnings = await db
-    .select()
-    .from(referralEarningsTable)
-    .where(eq(referralEarningsTable.referrerId, userId))
-    .orderBy(desc(referralEarningsTable.createdAt));
+  const [earnings, [currentUser]] = await Promise.all([
+    db
+      .select()
+      .from(referralEarningsTable)
+      .where(eq(referralEarningsTable.referrerId, userId))
+      .orderBy(desc(referralEarningsTable.createdAt)),
+    db
+      .select({ usdtBalance: usersTable.usdtBalance, lockedUsdtBalance: usersTable.lockedUsdtBalance })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1),
+  ]);
 
   const referredIds = [...new Set(earnings.map(e => e.referredId))];
   let usernameMap = new Map<number, string>();
@@ -77,10 +84,15 @@ router.get("/referrals/earnings", requireAuth, async (req, res): Promise<void> =
   const totalLockedUsdt = earnings.filter(e => e.status === "locked").reduce((s, e) => s + e.rewardLockedUsdt, 0);
   const totalUnlockedUsdt = earnings.filter(e => e.status === "unlocked").reduce((s, e) => s + e.rewardLockedUsdt, 0);
 
+  // withdrawableUsdt comes from the user's actual usdt_balance (not the
+  // historical sum), so it correctly reflects withdrawals already made.
+  const withdrawableUsdt = Math.round((currentUser?.usdtBalance ?? 0) * 1000) / 1000;
+
   res.json({
     totalCoinsEarned: Math.round(totalCoinsEarned * 100) / 100,
     totalLockedUsdt: Math.round(totalLockedUsdt * 1000) / 1000,
     totalUnlockedUsdt: Math.round(totalUnlockedUsdt * 1000) / 1000,
+    withdrawableUsdt,
     earnings: earnings.map(e => ({
       id: e.id,
       referredUsername: usernameMap.get(e.referredId) ?? `#${e.referredId}`,
