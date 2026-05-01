@@ -1404,7 +1404,9 @@ router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, asyn
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, txn.userId)).limit(1);
 
-  await db.update(transactionsTable).set({ status: "completed", adminNote: note ?? null }).where(eq(transactionsTable.id, id));
+  await db.update(transactionsTable)
+    .set({ status: "completed", adminNote: note ?? null, upgradeId })
+    .where(eq(transactionsTable.id, id));
   await db.insert(userUpgradesTable).values({ userId: txn.userId, upgradeId });
   await db.update(usersTable).set({ miningLevel: sql`mining_level + 1` }).where(eq(usersTable.id, txn.userId));
 
