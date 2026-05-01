@@ -1475,12 +1475,13 @@ router.post("/admin/notifications/subscribe", requireAdmin, async (req, res): Pr
   const parsed = AdminPushSubscribeBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Invalid subscription object" }); return; }
   const { endpoint, keys } = parsed.data;
+  const adminUserId = parseInt(process.env["ADMIN_USER_ID"] ?? "0", 10);
   await db
     .insert(pushSubscriptionsTable)
-    .values({ userId: 0, endpoint, p256dh: keys.p256dh, auth: keys.auth })
+    .values({ userId: adminUserId, endpoint, p256dh: keys.p256dh, auth: keys.auth })
     .onConflictDoUpdate({
       target: pushSubscriptionsTable.endpoint,
-      set: { userId: 0, p256dh: keys.p256dh, auth: keys.auth },
+      set: { userId: adminUserId, p256dh: keys.p256dh, auth: keys.auth },
     });
   res.json({ ok: true });
 });

@@ -81,7 +81,8 @@ export async function sendMiningCompleteNotifications() {
 
 export async function sendAdminNotification(payload: { title: string; body: string; url?: string }) {
   if (!ensureVapid()) return;
-  const subs = await db.select().from(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.userId, 0));
+  const adminUserId = parseInt(process.env["ADMIN_USER_ID"] ?? "0", 10);
+  const subs = await db.select().from(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.userId, adminUserId));
   if (subs.length === 0) return;
   const payloadStr = JSON.stringify({
     title: payload.title,

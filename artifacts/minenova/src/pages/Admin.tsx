@@ -1647,7 +1647,7 @@ function UpgradesTab({
   const UPGRADE_SUB_TABS: { id: UpgradeSubTab; label: string }[] = [
     { id: "manage", label: "Manage Upgrades" },
     { id: "history", label: "Upgrades History" },
-    { id: "approve-reject", label: "Approve / Reject" },
+    { id: "approve-reject", label: "Approve or Reject Upgrades" },
   ];
 
   const pendingPayments = payments.filter(p => p.status === "pending" || p.status === "awaiting_verification");
