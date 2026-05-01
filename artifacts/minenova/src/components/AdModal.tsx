@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 
 export interface AdData {
@@ -23,7 +23,6 @@ interface AdModalProps {
 export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete }: AdModalProps) {
   const [elapsed, setElapsed] = useState(0);
   const [canSkip, setCanSkip] = useState(false);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const total = Math.max(1, ad.durationSeconds);
   const srcDoc = useMemo(() => {
     if (ad.type !== "script") return "";
@@ -48,10 +47,6 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
     }, 100);
     return () => clearInterval(interval);
   }, [ad.id, currentAd, total]);
-
-  useEffect(() => {
-    if (ad.type === "script" && iframeRef.current) iframeRef.current.srcdoc = srcDoc;
-  }, [ad, srcDoc]);
 
   const progress = Math.min(100, (elapsed / total) * 100);
   const remaining = Math.max(0, Math.ceil(total - elapsed));
@@ -104,11 +99,12 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
           )}
           {ad.type === "script" && (
             <iframe
-              ref={iframeRef}
+              key={`${ad.id}-${currentAd}`}
+              srcDoc={srcDoc}
               title={ad.title}
               sandbox="allow-scripts allow-popups"
               className="w-full"
-              style={{ minHeight: 220, border: "none", background: "#000" }}
+              style={{ height: 300, border: "none" }}
             />
           )}
         </div>
