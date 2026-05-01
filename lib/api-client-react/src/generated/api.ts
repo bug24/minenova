@@ -18,6 +18,8 @@ import type {
 
 import type {
   ActivityFeedItem,
+  AdminUpgradeDecisionBody,
+  AdminUpgradePayment,
   AuthResponse,
   BoostBody,
   ClaimResult,
@@ -31,6 +33,7 @@ import type {
   PurchaseUpgradeResult,
   ReferralInfo,
   RegisterBody,
+  SuccessResponse,
   Task,
   TaskCompletionResult,
   Transaction,
@@ -1372,6 +1375,348 @@ export const usePurchaseUpgrade = <
   TContext
 > => {
   return useMutation(getPurchaseUpgradeMutationOptions(options));
+};
+
+/**
+ * @summary Mark a USDT upgrade payment as sent by the user
+ */
+export const getMarkUpgradePaidUrl = (transactionId: number) => {
+  return `/api/upgrades/payments/${transactionId}/mark-paid`;
+};
+
+export const markUpgradePaid = async (
+  transactionId: number,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getMarkUpgradePaidUrl(transactionId), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getMarkUpgradePaidMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markUpgradePaid>>,
+    TError,
+    { transactionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof markUpgradePaid>>,
+  TError,
+  { transactionId: number },
+  TContext
+> => {
+  const mutationKey = ["markUpgradePaid"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof markUpgradePaid>>,
+    { transactionId: number }
+  > = (props) => {
+    const { transactionId } = props ?? {};
+
+    return markUpgradePaid(transactionId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MarkUpgradePaidMutationResult = NonNullable<
+  Awaited<ReturnType<typeof markUpgradePaid>>
+>;
+
+export type MarkUpgradePaidMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Mark a USDT upgrade payment as sent by the user
+ */
+export const useMarkUpgradePaid = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markUpgradePaid>>,
+    TError,
+    { transactionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof markUpgradePaid>>,
+  TError,
+  { transactionId: number },
+  TContext
+> => {
+  return useMutation(getMarkUpgradePaidMutationOptions(options));
+};
+
+/**
+ * @summary Get all pending USDT upgrade payments (admin only)
+ */
+export const getGetAdminUpgradePaymentsUrl = () => {
+  return `/api/admin/upgrade-payments`;
+};
+
+export const getAdminUpgradePayments = async (
+  options?: RequestInit,
+): Promise<AdminUpgradePayment[]> => {
+  return customFetch<AdminUpgradePayment[]>(getGetAdminUpgradePaymentsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAdminUpgradePaymentsQueryKey = () => {
+  return [`/api/admin/upgrade-payments`] as const;
+};
+
+export const getGetAdminUpgradePaymentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminUpgradePayments>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminUpgradePayments>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAdminUpgradePaymentsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAdminUpgradePayments>>
+  > = ({ signal }) => getAdminUpgradePayments({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminUpgradePayments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAdminUpgradePaymentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminUpgradePayments>>
+>;
+export type GetAdminUpgradePaymentsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get all pending USDT upgrade payments (admin only)
+ */
+
+export function useGetAdminUpgradePayments<
+  TData = Awaited<ReturnType<typeof getAdminUpgradePayments>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminUpgradePayments>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAdminUpgradePaymentsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Approve a USDT upgrade payment (admin only)
+ */
+export const getApproveUpgradePaymentUrl = (transactionId: number) => {
+  return `/api/admin/upgrade-payments/${transactionId}/approve`;
+};
+
+export const approveUpgradePayment = async (
+  transactionId: number,
+  adminUpgradeDecisionBody: AdminUpgradeDecisionBody,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
+    getApproveUpgradePaymentUrl(transactionId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(adminUpgradeDecisionBody),
+    },
+  );
+};
+
+export const getApproveUpgradePaymentMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveUpgradePayment>>,
+    TError,
+    { transactionId: number; data: BodyType<AdminUpgradeDecisionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approveUpgradePayment>>,
+  TError,
+  { transactionId: number; data: BodyType<AdminUpgradeDecisionBody> },
+  TContext
+> => {
+  const mutationKey = ["approveUpgradePayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approveUpgradePayment>>,
+    { transactionId: number; data: BodyType<AdminUpgradeDecisionBody> }
+  > = (props) => {
+    const { transactionId, data } = props ?? {};
+
+    return approveUpgradePayment(transactionId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApproveUpgradePaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof approveUpgradePayment>>
+>;
+export type ApproveUpgradePaymentMutationBody =
+  BodyType<AdminUpgradeDecisionBody>;
+export type ApproveUpgradePaymentMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Approve a USDT upgrade payment (admin only)
+ */
+export const useApproveUpgradePayment = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveUpgradePayment>>,
+    TError,
+    { transactionId: number; data: BodyType<AdminUpgradeDecisionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof approveUpgradePayment>>,
+  TError,
+  { transactionId: number; data: BodyType<AdminUpgradeDecisionBody> },
+  TContext
+> => {
+  return useMutation(getApproveUpgradePaymentMutationOptions(options));
+};
+
+/**
+ * @summary Reject a USDT upgrade payment with reason (admin only)
+ */
+export const getRejectUpgradePaymentUrl = (transactionId: number) => {
+  return `/api/admin/upgrade-payments/${transactionId}/reject`;
+};
+
+export const rejectUpgradePayment = async (
+  transactionId: number,
+  adminUpgradeDecisionBody: AdminUpgradeDecisionBody,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
+    getRejectUpgradePaymentUrl(transactionId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(adminUpgradeDecisionBody),
+    },
+  );
+};
+
+export const getRejectUpgradePaymentMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectUpgradePayment>>,
+    TError,
+    { transactionId: number; data: BodyType<AdminUpgradeDecisionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectUpgradePayment>>,
+  TError,
+  { transactionId: number; data: BodyType<AdminUpgradeDecisionBody> },
+  TContext
+> => {
+  const mutationKey = ["rejectUpgradePayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectUpgradePayment>>,
+    { transactionId: number; data: BodyType<AdminUpgradeDecisionBody> }
+  > = (props) => {
+    const { transactionId, data } = props ?? {};
+
+    return rejectUpgradePayment(transactionId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RejectUpgradePaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectUpgradePayment>>
+>;
+export type RejectUpgradePaymentMutationBody =
+  BodyType<AdminUpgradeDecisionBody>;
+export type RejectUpgradePaymentMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Reject a USDT upgrade payment with reason (admin only)
+ */
+export const useRejectUpgradePayment = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectUpgradePayment>>,
+    TError,
+    { transactionId: number; data: BodyType<AdminUpgradeDecisionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rejectUpgradePayment>>,
+  TError,
+  { transactionId: number; data: BodyType<AdminUpgradeDecisionBody> },
+  TContext
+> => {
+  return useMutation(getRejectUpgradePaymentMutationOptions(options));
 };
 
 /**

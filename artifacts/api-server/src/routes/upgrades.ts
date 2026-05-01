@@ -1,9 +1,11 @@
 import { Router, type IRouter } from "express";
 import { db, upgradesTable, userUpgradesTable, usersTable, transactionsTable, adminConfigTable } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { PurchaseUpgradeParams, PurchaseUpgradeBody, GetUpgradesResponse, PurchaseUpgradeResponse } from "@workspace/api-zod";
 import { generatePaymentTag } from "../lib/auth";
+import { sendUpgradePaymentSubmittedEmail } from "../lib/email";
+import { z } from "zod/v4";
 
 const router: IRouter = Router();
 
@@ -65,17 +67,6 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
     return;
   }
 
-  const [alreadyOwned] = await db
-    .select()
-    .from(userUpgradesTable)
-    .where(and(eq(userUpgradesTable.userId, req.userId!), eq(userUpgradesTable.upgradeId, upgradeId)))
-    .limit(1);
-
-  if (alreadyOwned) {
-    res.status(400).json({ error: "You already own this upgrade" });
-    return;
-  }
-
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
 
   if (paymentMethod === "coins") {
@@ -99,6 +90,7 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
       amount: -upgrade.coinCost,
       status: "completed",
       description: `Purchased upgrade: ${upgrade.name}`,
+      upgradeId,
     });
 
     res.json(PurchaseUpgradeResponse.parse({
@@ -128,6 +120,7 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
       description: `USDT payment for upgrade: ${upgrade.name}`,
       usdtAddress,
       paymentTag,
+      upgradeId,
     });
 
     res.json(PurchaseUpgradeResponse.parse({
@@ -141,6 +134,51 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
   }
 
   res.status(400).json({ error: "Invalid payment method. Use 'coins' or 'usdt'" });
+});
+
+const MarkPaidBody = z.object({ paymentTag: z.string().min(1) });
+
+router.post("/upgrades/payments/mark-paid", requireAuth, async (req, res): Promise<void> => {
+  const parsed = MarkPaidBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "paymentTag is required" });
+    return;
+  }
+
+  const [txn] = await db
+    .select()
+    .from(transactionsTable)
+    .where(and(eq(transactionsTable.paymentTag, parsed.data.paymentTag), eq(transactionsTable.userId, req.userId!)))
+    .limit(1);
+
+  if (!txn) {
+    res.status(404).json({ error: "Transaction not found" });
+    return;
+  }
+
+  if (txn.status !== "pending") {
+    res.status(400).json({ error: "This payment has already been processed" });
+    return;
+  }
+
+  await db
+    .update(transactionsTable)
+    .set({ status: "awaiting_verification" })
+    .where(eq(transactionsTable.id, txn.id));
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
+  const upgradeName = txn.description.replace("USDT payment for upgrade: ", "");
+  const usdtAmount = Math.abs(txn.amount);
+
+  sendUpgradePaymentSubmittedEmail(
+    user.email,
+    user.username,
+    upgradeName,
+    usdtAmount,
+    txn.paymentTag ?? "",
+  ).catch(() => {});
+
+  res.json({ success: true, message: "Payment marked as sent. Admin will verify within 2–12 hours." });
 });
 
 export default router;

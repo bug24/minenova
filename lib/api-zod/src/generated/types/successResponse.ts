@@ -5,8 +5,8 @@
  * MineNova API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { BoostBodyBoostType } from "./boostBodyBoostType";
 
-export interface BoostBody {
-  boostType: BoostBodyBoostType;
+export interface SuccessResponse {
+  success: boolean;
+  message: string;
 }

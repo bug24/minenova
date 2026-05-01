@@ -101,6 +101,7 @@ function computeMiningStatus(
       boostMultiplier: 1,
       boostEndsAt: null,
       boostsUsedToday: 0,
+      boostTiersUsed: "",
       canClaim: false,
       cooldownEndsAt: null,
     };
@@ -127,6 +128,7 @@ function computeMiningStatus(
     boostMultiplier: multiplier,
     boostEndsAt: session.boostEndsAt ? session.boostEndsAt.toISOString() : null,
     boostsUsedToday: session.boostsUsedToday,
+    boostTiersUsed: session.boostTiersUsed ?? "",
     canClaim: isComplete,
     cooldownEndsAt: null,
   };
@@ -338,32 +340,37 @@ router.post("/mining/boost", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
-
-  const [session] = await db
-    .select()
-    .from(miningSessionsTable)
-    .where(and(eq(miningSessionsTable.userId, req.userId!), eq(miningSessionsTable.isActive, true), isNull(miningSessionsTable.claimedAt)))
-    .orderBy(miningSessionsTable.startedAt)
-    .limit(1);
+  const [[user], [session]] = await Promise.all([
+    db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1),
+    db
+      .select()
+      .from(miningSessionsTable)
+      .where(and(eq(miningSessionsTable.userId, req.userId!), eq(miningSessionsTable.isActive, true), isNull(miningSessionsTable.claimedAt)))
+      .orderBy(miningSessionsTable.startedAt)
+      .limit(1),
+  ]);
 
   if (!session) {
     res.status(400).json({ error: "No active mining session" });
     return;
   }
 
-  if (session.boostsUsedToday >= 3) {
-    res.status(400).json({ error: "Daily boost limit reached" });
+  const boostType = parsed.data.boostType;
+  const tiersUsed = (session.boostTiersUsed ?? "").split(",").filter(Boolean);
+
+  if (tiersUsed.includes(boostType)) {
+    res.status(400).json({ error: "You have already used this boost tier today" });
     return;
   }
 
   const now = new Date();
-  const boostType = parsed.data.boostType;
   const boostMultiplier = boostType === "triple" ? 5 : boostType === "double" ? 3 : 2;
   const boostDurationMs =
     boostType === "triple" ? 120 * 60 * 1000
     : boostType === "double" ? 60 * 60 * 1000
     : 30 * 60 * 1000;
+
+  const newTiersUsed = [...tiersUsed, boostType].join(",");
 
   await db
     .update(miningSessionsTable)
@@ -371,6 +378,7 @@ router.post("/mining/boost", requireAuth, async (req, res): Promise<void> => {
       boostMultiplier,
       boostEndsAt: new Date(now.getTime() + boostDurationMs),
       boostsUsedToday: session.boostsUsedToday + 1,
+      boostTiersUsed: newTiersUsed,
     })
     .where(eq(miningSessionsTable.id, session.id));
 

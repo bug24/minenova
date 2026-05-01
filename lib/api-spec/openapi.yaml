@@ -340,7 +340,109 @@ paths:
               schema:
                 $ref: "#/components/schemas/PurchaseUpgradeResult"
         "400":
-          description: Insufficient funds or already owned
+          description: Insufficient funds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /upgrades/payments/{transactionId}/mark-paid:
+    post:
+      operationId: markUpgradePaid
+      tags: [upgrades]
+      summary: Mark a USDT upgrade payment as sent by the user
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Payment marked as sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Transaction not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/upgrade-payments:
+    get:
+      operationId: getAdminUpgradePayments
+      tags: [admin]
+      summary: Get all pending USDT upgrade payments (admin only)
+      responses:
+        "200":
+          description: List of pending upgrade payments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminUpgradePayment"
+
+  /admin/upgrade-payments/{transactionId}/approve:
+    post:
+      operationId: approveUpgradePayment
+      tags: [admin]
+      summary: Approve a USDT upgrade payment (admin only)
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUpgradeDecisionBody"
+      responses:
+        "200":
+          description: Upgrade approved and activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Transaction not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/upgrade-payments/{transactionId}/reject:
+    post:
+      operationId: rejectUpgradePayment
+      tags: [admin]
+      summary: Reject a USDT upgrade payment with reason (admin only)
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUpgradeDecisionBody"
+      responses:
+        "200":
+          description: Upgrade rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Transaction not found
           content:
             application/json:
               schema:
@@ -490,6 +592,9 @@ components:
           type: ["string", "null"]
         boostsUsedToday:
           type: integer
+        boostTiersUsed:
+          type: string
+          description: Comma-separated list of boost tiers used today (e.g. "single,double")
         canClaim:
           type: boolean
         cooldownEndsAt:
@@ -502,6 +607,7 @@ components:
         - hashRate
         - boostMultiplier
         - boostsUsedToday
+        - boostTiersUsed
         - canClaim
 
     ClaimResult:
@@ -815,3 +921,58 @@ components:
         - myTotalEarned
         - myReferralCount
         - myMiningLevel
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required:
+        - success
+        - message
+
+    AdminUpgradePayment:
+      type: object
+      properties:
+        transactionId:
+          type: integer
+        userId:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        upgradeName:
+          type: string
+        upgradeId:
+          type: integer
+        amount:
+          type: number
+        paymentTag:
+          type: string
+        status:
+          type: string
+        markedPaidAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - transactionId
+        - userId
+        - username
+        - email
+        - upgradeName
+        - upgradeId
+        - amount
+        - paymentTag
+        - status
+        - createdAt
+
+    AdminUpgradeDecisionBody:
+      type: object
+      properties:
+        note:
+          type: string
+      required: []

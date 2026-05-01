@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Zap, CheckCircle2, Cpu, TrendingUp, Lock, Copy, DollarSign } from "lucide-react";
+import { Zap, CheckCircle2, Cpu, TrendingUp, Lock, Copy, DollarSign, Clock } from "lucide-react";
 
 const BASE_COINS_PER_HOUR = 10;
 const SESSION_HOURS = 12;
@@ -19,10 +19,12 @@ function calcDailyUsdt(hashRateBoost: number, dailyCapBoost: number): number {
 }
 
 interface PurchaseResult {
+  transactionId?: number | null;
   usdtAddress: string | null | undefined;
   paymentTag: string | null | undefined;
   message: string;
   usdtCost?: number | null;
+  upgradeName?: string;
 }
 
 export default function Upgrades() {
@@ -36,6 +38,7 @@ export default function Upgrades() {
   const [purchaseResult, setPurchaseResult] = useState<PurchaseResult | null>(null);
   const [resultOpen, setResultOpen] = useState(false);
   const [hasSent, setHasSent] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState(false);
 
   const selectedUpgradeData = upgrades?.find(u => u.id === selectedUpgrade);
   const coinBalance = wallet?.totalBalance ?? 0;
@@ -56,7 +59,13 @@ export default function Upgrades() {
     purchaseUpgrade.mutate({ upgradeId: selectedUpgrade, data: { paymentMethod } }, {
       onSuccess: (res) => {
         setSelectedUpgrade(null);
-        setPurchaseResult({ usdtAddress: res.usdtAddress, paymentTag: res.paymentTag, message: res.message, usdtCost: selectedUpgradeData?.usdtCost });
+        setPurchaseResult({
+          usdtAddress: res.usdtAddress,
+          paymentTag: res.paymentTag,
+          message: res.message,
+          usdtCost: selectedUpgradeData?.usdtCost,
+          upgradeName: selectedUpgradeData?.name,
+        });
         setHasSent(false);
         setResultOpen(true);
         queryClient.invalidateQueries({ queryKey: getGetUpgradesQueryKey() });
@@ -67,6 +76,28 @@ export default function Upgrades() {
         toast({ variant: "destructive", title: "Error", description: msg });
       },
     });
+  };
+
+  const handleMarkPaid = async () => {
+    const paymentTag = purchaseResult?.paymentTag;
+    if (!paymentTag) {
+      setHasSent(true);
+      return;
+    }
+
+    setMarkingPaid(true);
+    try {
+      await fetch("/api/upgrades/payments/mark-paid", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentTag }),
+      });
+    } catch {
+    } finally {
+      setHasSent(true);
+      setMarkingPaid(false);
+    }
   };
 
   return (
@@ -99,7 +130,7 @@ export default function Upgrades() {
           {upgrades?.map(upgrade => (
             <div
               key={upgrade.id}
-              className={`bg-card border rounded-2xl p-5 transition-all ${upgrade.owned ? "border-emerald-500/30 opacity-80" : "border-card-border"}`}
+              className={`bg-card border rounded-2xl p-5 transition-all ${upgrade.owned ? "border-emerald-500/30" : "border-card-border"}`}
               data-testid={`upgrade-card-${upgrade.id}`}
             >
               <div className="flex items-start justify-between gap-4">
@@ -108,7 +139,7 @@ export default function Upgrades() {
                     <h3 className="font-semibold">{upgrade.name}</h3>
                     <Badge variant="secondary" className="text-xs">Tier {upgrade.tier}</Badge>
                     {upgrade.isAutoMining && <Badge className="text-xs bg-purple-500/20 text-purple-500 border-0">Auto</Badge>}
-                    {upgrade.owned && <Badge className="text-xs bg-emerald-500/20 text-emerald-500 border-0">Owned</Badge>}
+                    {upgrade.owned && <Badge className="text-xs bg-emerald-500/20 text-emerald-500 border-0">Active</Badge>}
                   </div>
                   <p className="text-sm text-muted-foreground mb-3">{upgrade.description}</p>
 
@@ -131,33 +162,27 @@ export default function Upgrades() {
                 </div>
 
                 <div className="text-right flex-shrink-0">
-                  {upgrade.owned ? (
-                    <div className="flex items-center gap-1.5 text-emerald-500 text-sm font-medium">
-                      <CheckCircle2 className="w-4 h-4" />
-                      Active
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {upgrade.coinCost && (
-                        <p className="text-sm font-semibold">{upgrade.coinCost} coins</p>
-                      )}
-                      {upgrade.usdtCost && (
-                        <p className="text-sm font-semibold text-accent">${upgrade.usdtCost} USDT</p>
-                      )}
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setSelectedUpgrade(upgrade.id);
-                          setPaymentMethod(upgrade.coinCost ? "coins" : "usdt");
-                        }}
-                        className="mt-2 gap-1.5"
-                        data-testid={`button-upgrade-${upgrade.id}`}
-                      >
-                        <Lock className="w-3.5 h-3.5" />
-                        Upgrade
-                      </Button>
-                    </div>
-                  )}
+                  <div className="space-y-1">
+                    {upgrade.coinCost && (
+                      <p className="text-sm font-semibold">{upgrade.coinCost} coins</p>
+                    )}
+                    {upgrade.usdtCost && (
+                      <p className="text-sm font-semibold text-accent">${upgrade.usdtCost} USDT</p>
+                    )}
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setSelectedUpgrade(upgrade.id);
+                        setPaymentMethod(upgrade.coinCost ? "coins" : "usdt");
+                      }}
+                      className="mt-2 gap-1.5"
+                      variant={upgrade.owned ? "outline" : "default"}
+                      data-testid={`button-upgrade-${upgrade.id}`}
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      {upgrade.owned ? "Upgrade Again" : "Upgrade"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -228,24 +253,30 @@ export default function Upgrades() {
       <Dialog open={resultOpen} onOpenChange={(open) => { setResultOpen(open); if (!open) setHasSent(false); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{purchaseResult?.usdtAddress ? (hasSent ? "Payment Received" : "Complete Your Payment") : "Upgrade Activated"}</DialogTitle>
+            <DialogTitle>
+              {purchaseResult?.usdtAddress
+                ? hasSent
+                  ? "Payment Submitted"
+                  : "Complete Your Payment"
+                : "Upgrade Activated"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             {hasSent ? (
               <div className="space-y-4">
                 <div className="text-center py-2">
-                  <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
-                    <CheckCircle2 className="w-7 h-7 text-emerald-500" />
+                  <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-3">
+                    <Clock className="w-7 h-7 text-primary" />
                   </div>
-                  <p className="font-semibold text-foreground">Transfer Confirmed</p>
+                  <p className="font-semibold text-foreground">Awaiting Admin Verification</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Thank you for sending <strong>${purchaseResult?.usdtCost} USDT</strong>. Your upgrade is being processed.
+                    Thank you for sending <strong>${purchaseResult?.usdtCost} USDT</strong>.
                   </p>
                 </div>
                 <div className="bg-primary/10 border border-primary/20 rounded-xl p-4">
-                  <p className="text-sm font-semibold text-primary mb-1">⏱ Please allow 2–12 hours</p>
+                  <p className="text-sm font-semibold text-primary mb-1">⏱ Admin will verify within 2–12 hours</p>
                   <p className="text-xs text-muted-foreground">
-                    Our team will verify your payment and activate your upgrade within 2–12 hours. You'll see it reflected on this page once confirmed.
+                    Your payment will be reviewed and your <strong>{purchaseResult?.upgradeName}</strong> upgrade will be activated once confirmed. You'll receive an email notification.
                   </p>
                 </div>
                 <Button className="w-full" onClick={() => setResultOpen(false)}>Got it</Button>
@@ -280,9 +311,9 @@ export default function Upgrades() {
                         Always include your payment tag in the memo/note field. Without it we cannot process your upgrade.
                       </p>
                     </div>
-                    <Button className="w-full gap-2" onClick={() => setHasSent(true)}>
+                    <Button className="w-full gap-2" onClick={handleMarkPaid} disabled={markingPaid}>
                       <CheckCircle2 className="w-4 h-4" />
-                      I have sent ${purchaseResult.usdtCost} USDT
+                      {markingPaid ? "Notifying admin..." : `I have sent $${purchaseResult.usdtCost} USDT`}
                     </Button>
                   </div>
                 )}

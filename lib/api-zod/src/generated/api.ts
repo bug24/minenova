@@ -41,7 +41,6 @@ export const LoginResponse = zod.object({
     miningLevel: zod.number(),
     totalEarned: zod.number(),
     createdAt: zod.string(),
-    emailVerified: zod.boolean(),
   }),
   token: zod.string(),
 });
@@ -57,7 +56,6 @@ export const GetMeResponse = zod.object({
   miningLevel: zod.number(),
   totalEarned: zod.number(),
   createdAt: zod.string(),
-  emailVerified: zod.boolean(),
 });
 
 /**
@@ -72,6 +70,11 @@ export const GetMiningStatusResponse = zod.object({
   boostMultiplier: zod.number(),
   boostEndsAt: zod.string().nullish(),
   boostsUsedToday: zod.number(),
+  boostTiersUsed: zod
+    .string()
+    .describe(
+      'Comma-separated list of boost tiers used today (e.g. \"single,double\")',
+    ),
   canClaim: zod.boolean(),
   cooldownEndsAt: zod.string().nullish(),
 });
@@ -88,6 +91,11 @@ export const StartMiningResponse = zod.object({
   boostMultiplier: zod.number(),
   boostEndsAt: zod.string().nullish(),
   boostsUsedToday: zod.number(),
+  boostTiersUsed: zod
+    .string()
+    .describe(
+      'Comma-separated list of boost tiers used today (e.g. \"single,double\")',
+    ),
   canClaim: zod.boolean(),
   cooldownEndsAt: zod.string().nullish(),
 });
@@ -105,7 +113,7 @@ export const ClaimMiningResponse = zod.object({
  * @summary Apply a boost to mining (after watching ad)
  */
 export const BoostMiningBody = zod.object({
-  boostType: zod.enum(['single', 'double', 'triple']),
+  boostType: zod.enum(["single", "double", "triple"]),
 });
 
 export const BoostMiningResponse = zod.object({
@@ -117,6 +125,11 @@ export const BoostMiningResponse = zod.object({
   boostMultiplier: zod.number(),
   boostEndsAt: zod.string().nullish(),
   boostsUsedToday: zod.number(),
+  boostTiersUsed: zod
+    .string()
+    .describe(
+      'Comma-separated list of boost tiers used today (e.g. \"single,double\")',
+    ),
   canClaim: zod.boolean(),
   cooldownEndsAt: zod.string().nullish(),
 });
@@ -165,7 +178,6 @@ export const GetReferralsResponse = zod.object({
       username: zod.string(),
       tier: zod.number(),
       earnedFromUser: zod.number(),
-      bonusPaid: zod.boolean(),
       joinedAt: zod.string(),
     }),
   ),
@@ -226,8 +238,6 @@ export const GetUpgradesResponseItem = zod.object({
   usdtCost: zod.number().nullish(),
   owned: zod.boolean(),
   isAutoMining: zod.boolean(),
-  badge: zod.string().nullish(),
-  icon: zod.string().nullish(),
 });
 export const GetUpgradesResponse = zod.array(GetUpgradesResponseItem);
 
@@ -248,6 +258,70 @@ export const PurchaseUpgradeResponse = zod.object({
   usdtAddress: zod.string().nullish(),
   paymentTag: zod.string().nullish(),
   newBalance: zod.number().nullish(),
+});
+
+/**
+ * @summary Mark a USDT upgrade payment as sent by the user
+ */
+export const MarkUpgradePaidParams = zod.object({
+  transactionId: zod.coerce.number(),
+});
+
+export const MarkUpgradePaidResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string(),
+});
+
+/**
+ * @summary Get all pending USDT upgrade payments (admin only)
+ */
+export const GetAdminUpgradePaymentsResponseItem = zod.object({
+  transactionId: zod.number(),
+  userId: zod.number(),
+  username: zod.string(),
+  email: zod.string(),
+  upgradeName: zod.string(),
+  upgradeId: zod.number(),
+  amount: zod.number(),
+  paymentTag: zod.string(),
+  status: zod.string(),
+  markedPaidAt: zod.string().nullish(),
+  createdAt: zod.string(),
+});
+export const GetAdminUpgradePaymentsResponse = zod.array(
+  GetAdminUpgradePaymentsResponseItem,
+);
+
+/**
+ * @summary Approve a USDT upgrade payment (admin only)
+ */
+export const ApproveUpgradePaymentParams = zod.object({
+  transactionId: zod.coerce.number(),
+});
+
+export const ApproveUpgradePaymentBody = zod.object({
+  note: zod.string().optional(),
+});
+
+export const ApproveUpgradePaymentResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string(),
+});
+
+/**
+ * @summary Reject a USDT upgrade payment with reason (admin only)
+ */
+export const RejectUpgradePaymentParams = zod.object({
+  transactionId: zod.coerce.number(),
+});
+
+export const RejectUpgradePaymentBody = zod.object({
+  note: zod.string().optional(),
+});
+
+export const RejectUpgradePaymentResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string(),
 });
 
 /**

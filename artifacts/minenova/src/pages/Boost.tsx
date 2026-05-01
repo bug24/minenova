@@ -6,7 +6,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Zap, Timer } from "lucide-react";
+import { Zap, Timer, CheckCircle2 } from "lucide-react";
 import AdModal, { type AdData } from "@/components/AdModal";
 
 type BoostTier = {
@@ -73,6 +73,36 @@ function formatTimeRemaining(endsAt: string): string {
   return `${s}s`;
 }
 
+function createFallbackAd(tier: BoostTier, index: number): AdData {
+  const promoHtml = `
+    <div style="
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      height:100%;padding:32px 24px;text-align:center;
+      background:linear-gradient(160deg,#0f0c1a 0%,#1a1040 100%);
+    ">
+      <div style="font-size:52px;margin-bottom:16px;">⛏️</div>
+      <h2 style="color:#a855f7;font-size:22px;font-weight:900;margin:0 0 8px;letter-spacing:-0.5px;">MineNova</h2>
+      <p style="color:#c4b5fd;font-size:14px;margin:0 0 20px;font-weight:500;">Earn Smarter. Grow Faster.</p>
+      <div style="background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);border-radius:12px;padding:14px 20px;max-width:280px;">
+        <p style="color:#f3f0ff;font-size:13px;margin:0;line-height:1.6;">
+          💎 Invite friends and earn <strong style="color:#a855f7;">25% commission</strong> on every coin they mine!
+        </p>
+      </div>
+      <p style="color:#6b7280;font-size:11px;margin-top:24px;">Ad ${index + 1} — Please wait for the timer</p>
+    </div>
+  `;
+  return {
+    id: -(index + 1),
+    title: "MineNova Promo",
+    type: "script",
+    urlOrCode: promoHtml,
+    providerScript: null,
+    durationSeconds: 15,
+    placement: tier.placement,
+    isActive: true,
+  };
+}
+
 export default function Boost() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -85,12 +115,12 @@ export default function Boost() {
   const [pendingTier, setPendingTier] = useState<BoostTier | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<string>("");
 
-  const boostsUsed = status?.boostsUsedToday ?? 0;
-  const boostsRemaining = Math.max(0, 3 - boostsUsed);
   const isActive = status?.isActive ?? false;
-
   const boostEndsAt = status?.boostEndsAt ?? null;
   const hasActiveBoost = isActive && (status?.boostMultiplier ?? 1) > 1 && boostEndsAt != null && new Date(boostEndsAt) > new Date();
+  const tiersUsedToday: string[] = (status?.boostTiersUsed ?? "").split(",").filter(Boolean);
+  const boostsUsed = status?.boostsUsedToday ?? 0;
+  const boostsRemaining = Math.max(0, 3 - boostsUsed);
 
   useEffect(() => {
     if (!hasActiveBoost || !boostEndsAt) { setTimeRemaining(""); return; }
@@ -152,8 +182,8 @@ export default function Boost() {
       toast({ variant: "destructive", title: "Boost already active", description: `Wait for the current ${status?.boostMultiplier}x boost to expire.` });
       return;
     }
-    if (boostsRemaining <= 0) {
-      toast({ variant: "destructive", title: "Limit reached", description: "You've used all 3 boosts for today." });
+    if (tiersUsedToday.includes(tier.id)) {
+      toast({ variant: "destructive", title: "Already used today", description: `You've used the ${tier.multiplier} boost today. It resets at midnight.` });
       return;
     }
     if (activatingTier !== null) {
@@ -169,29 +199,30 @@ export default function Boost() {
       for (let i = 0; i < tier.adCount; i++) {
         let ad: AdData | null = null;
 
-        const res = await fetch(`/api/ads/random?placement=${tier.placement}`);
-        const data = await res.json();
-        if (!data.noAd && data.id) {
-          ad = data as AdData;
-        } else if (tier.placement !== "boost_2x") {
-          const fallback = await fetch(`/api/ads/random?placement=boost_2x`);
-          const fallbackData = await fallback.json();
-          if (!fallbackData.noAd && fallbackData.id) {
-            ad = fallbackData as AdData;
+        try {
+          const res = await fetch(`/api/ads/random?placement=${tier.placement}`);
+          const data = await res.json();
+          if (!data.noAd && data.id) {
+            ad = data as AdData;
+          } else if (tier.placement !== "boost_2x") {
+            const fallback = await fetch(`/api/ads/random?placement=boost_2x`);
+            const fallbackData = await fallback.json();
+            if (!fallbackData.noAd && fallbackData.id) {
+              ad = fallbackData as AdData;
+            }
           }
+        } catch {
         }
 
-        if (ad) ads.push(ad);
+        ads.push(ad ?? createFallbackAd(tier, i));
       }
 
-      if (ads.length > 0) {
-        setAdQueue(ads);
-        setAdIndex(0);
-      } else {
-        applyBoost(tier);
-      }
+      setAdQueue(ads);
+      setAdIndex(0);
     } catch {
-      applyBoost(tier);
+      const fallbackAds = Array.from({ length: tier.adCount }, (_, i) => createFallbackAd(tier, i));
+      setAdQueue(fallbackAds);
+      setAdIndex(0);
     }
   };
 
@@ -223,10 +254,10 @@ export default function Boost() {
       <div className="flex items-center justify-between bg-card border border-card-border rounded-2xl px-4 py-3">
         <div className="text-sm text-muted-foreground">Boosts remaining today</div>
         <div className="flex items-center gap-1.5">
-          {[0, 1, 2].map(i => (
+          {boostTiers.map((tier, i) => (
             <div
               key={i}
-              className={`w-2.5 h-2.5 rounded-full transition-all ${i < boostsRemaining ? "bg-primary" : "bg-muted"}`}
+              className={`w-2.5 h-2.5 rounded-full transition-all ${tiersUsedToday.includes(tier.id) ? "bg-muted" : "bg-primary"}`}
             />
           ))}
           <span className="text-sm font-bold text-foreground ml-1">{boostsRemaining}/3</span>
@@ -265,32 +296,33 @@ export default function Boost() {
       <div className="space-y-3">
         {boostTiers.map(tier => {
           const isActivating = activatingTier === tier.id;
-          const disabled = !isActive || boostsRemaining <= 0 || hasActiveBoost || (activatingTier !== null && !isActivating);
+          const usedToday = tiersUsedToday.includes(tier.id);
+          const disabled = !isActive || usedToday || hasActiveBoost || (activatingTier !== null && !isActivating);
 
           return (
             <div
               key={tier.id}
               className="rounded-2xl overflow-hidden border transition-all"
               style={{
-                borderColor: tier.borderColor,
-                background: tier.glowColor,
-                opacity: disabled && !isActivating ? 0.5 : 1,
+                borderColor: usedToday ? "rgba(255,255,255,0.08)" : tier.borderColor,
+                background: usedToday ? "rgba(255,255,255,0.03)" : tier.glowColor,
+                opacity: (disabled && !isActivating && !usedToday) ? 0.5 : 1,
               }}
             >
               <div className="p-4">
                 <div className="flex items-center gap-4 mb-3">
                   <div
                     className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
-                    style={{ background: tier.gradient }}
+                    style={{ background: usedToday ? "rgba(255,255,255,0.05)" : tier.gradient }}
                   >
-                    {tier.emoji}
+                    {usedToday ? "✓" : tier.emoji}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-lg font-black font-serif text-foreground">{tier.label}</span>
                       <span
                         className="text-xs font-bold px-2 py-0.5 rounded-full text-white"
-                        style={{ background: tier.gradient }}
+                        style={{ background: usedToday ? "rgba(255,255,255,0.1)" : tier.gradient }}
                       >
                         {tier.multiplier}
                       </span>
@@ -303,17 +335,30 @@ export default function Boost() {
                 </div>
 
                 <button
-                  onClick={() => !isActivating && startBoostFlow(tier)}
+                  onClick={() => !isActivating && !usedToday && startBoostFlow(tier)}
                   disabled={disabled}
-                  className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                  style={!disabled ? { background: tier.gradient } : { background: "rgba(255,255,255,0.08)" }}
+                  className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-95 disabled:cursor-not-allowed"
+                  style={
+                    usedToday
+                      ? { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.4)" }
+                      : !disabled
+                      ? { background: tier.gradient }
+                      : { background: "rgba(255,255,255,0.08)" }
+                  }
                   data-testid={`button-boost-${tier.multiplier.replace("x", "")}`}
                 >
-                  {isActivating
-                    ? "Setting up..."
-                    : hasActiveBoost
-                    ? "Boost already active"
-                    : `Watch ${tier.adCount} Ad${tier.adCount > 1 ? "s" : ""} → Activate ${tier.multiplier}`}
+                  {isActivating ? (
+                    "Setting up..."
+                  ) : usedToday ? (
+                    <span className="flex items-center justify-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4" />
+                      Used today — resets at midnight
+                    </span>
+                  ) : hasActiveBoost ? (
+                    "Boost already active"
+                  ) : (
+                    `Watch ${tier.adCount} Ad${tier.adCount > 1 ? "s" : ""} → Activate ${tier.multiplier}`
+                  )}
                 </button>
               </div>
             </div>
@@ -322,7 +367,7 @@ export default function Boost() {
       </div>
 
       <p className="text-center text-xs text-muted-foreground px-4">
-        Boosts reset daily at midnight · Max 3 boosts per day · Only one boost active at a time
+        Each boost tier can be used once per day · Resets at midnight · Only one boost active at a time
       </p>
     </div>
   );

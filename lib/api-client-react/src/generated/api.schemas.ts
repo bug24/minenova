@@ -53,6 +53,8 @@ export interface MiningStatus {
   /** @nullable */
   boostEndsAt?: string | null;
   boostsUsedToday: number;
+  /** Comma-separated list of boost tiers used today (e.g. "single,double") */
+  boostTiersUsed: string;
   canClaim: boolean;
   /** @nullable */
   cooldownEndsAt?: string | null;
@@ -64,13 +66,13 @@ export interface ClaimResult {
   message: string;
 }
 
-export type BoostBodyBoostType = typeof BoostBodyBoostType[keyof typeof BoostBodyBoostType];
+export type BoostBodyBoostType =
+  (typeof BoostBodyBoostType)[keyof typeof BoostBodyBoostType];
 
-// eslint-disable-next-line @typescript-eslint/no-redeclare
 export const BoostBodyBoostType = {
-  single: 'single',
-  double: 'double',
-  triple: 'triple',
+  single: "single",
+  double: "double",
+  triple: "triple",
 } as const;
 
 export interface BoostBody {
@@ -86,6 +88,8 @@ export interface Task {
   completedToday: boolean;
   /** @nullable */
   shareUrl?: string | null;
+  /** @nullable */
+  shareText?: string | null;
 }
 
 export interface TaskCompletionResult {
@@ -198,4 +202,28 @@ export interface DashboardSummary {
   myTotalEarned: number;
   myReferralCount: number;
   myMiningLevel: number;
+}
+
+export interface SuccessResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface AdminUpgradePayment {
+  transactionId: number;
+  userId: number;
+  username: string;
+  email: string;
+  upgradeName: string;
+  upgradeId: number;
+  amount: number;
+  paymentTag: string;
+  status: string;
+  /** @nullable */
+  markedPaidAt?: string | null;
+  createdAt: string;
+}
+
+export interface AdminUpgradeDecisionBody {
+  note?: string;
 }

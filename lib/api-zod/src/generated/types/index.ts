@@ -7,8 +7,11 @@
  */
 
 export * from "./activityFeedItem";
+export * from "./adminUpgradeDecisionBody";
+export * from "./adminUpgradePayment";
 export * from "./authResponse";
 export * from "./boostBody";
+export * from "./boostBodyBoostType";
 export * from "./claimResult";
 export * from "./dashboardSummary";
 export * from "./errorResponse";
@@ -21,6 +24,7 @@ export * from "./purchaseUpgradeResult";
 export * from "./referralEntry";
 export * from "./referralInfo";
 export * from "./registerBody";
+export * from "./successResponse";
 export * from "./task";
 export * from "./taskCompletionResult";
 export * from "./transaction";

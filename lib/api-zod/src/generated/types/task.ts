@@ -15,4 +15,6 @@ export interface Task {
   completedToday: boolean;
   /** @nullable */
   shareUrl?: string | null;
+  /** @nullable */
+  shareText?: string | null;
 }

@@ -18,6 +18,8 @@ export interface MiningStatus {
   /** @nullable */
   boostEndsAt?: string | null;
   boostsUsedToday: number;
+  /** Comma-separated list of boost tiers used today (e.g. "single,double") */
+  boostTiersUsed: string;
   canClaim: boolean;
   /** @nullable */
   cooldownEndsAt?: string | null;

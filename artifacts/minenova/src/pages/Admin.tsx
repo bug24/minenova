@@ -69,6 +69,11 @@ interface UpgradePackage {
   usdtCost: number | null; isAutoMining: boolean; sortOrder: number;
   badge: string | null; icon: string | null;
 }
+interface UpgradePayment {
+  transactionId: number; userId: number; username: string; email: string;
+  upgradeName: string; upgradeId: number; amount: number; paymentTag: string;
+  status: string; adminNote: string | null; createdAt: string;
+}
 interface Analytics {
   totalUsers: number; activeMiners: number; totalCoinsDistributed: number;
   totalUsdtWithdrawn: number; totalReferralPayout: number; pendingWithdrawals: number;
@@ -1476,10 +1481,14 @@ const EMPTY_PACKAGE: Omit<UpgradePackage, "id"> = {
 function UpgradesTab({ secret }: { secret: string }) {
   const [packages, setPackages] = useState<UpgradePackage[]>([]);
   const [purchases, setPurchases] = useState<UpgradePurchase[]>([]);
+  const [payments, setPayments] = useState<UpgradePayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingPkg, setEditingPkg] = useState<UpgradePackage | null>(null);
   const [newPkg, setNewPkg] = useState<Omit<UpgradePackage, "id"> | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [decisionModal, setDecisionModal] = useState<{ txnId: number; action: "approve" | "reject"; upgradeName: string } | null>(null);
+  const [decisionNote, setDecisionNote] = useState("");
+  const [processingId, setProcessingId] = useState<number | null>(null);
   const { toast } = useToast();
 
   const load = useCallback(() => {
@@ -1488,9 +1497,11 @@ function UpgradesTab({ secret }: { secret: string }) {
     Promise.all([
       apiFetch("/admin/upgrades", { headers }).then(r => r.json()),
       apiFetch("/admin/upgrade-purchases", { headers }).then(r => r.json()),
-    ]).then(([pkgs, purch]) => {
+      apiFetch("/admin/upgrade-payments", { headers }).then(r => r.json()),
+    ]).then(([pkgs, purch, pays]) => {
       setPackages(Array.isArray(pkgs) ? pkgs : []);
       setPurchases(Array.isArray(purch) ? purch : []);
+      setPayments(Array.isArray(pays) ? pays : []);
       setLoading(false);
     });
   }, [secret]);
@@ -1537,6 +1548,25 @@ function UpgradesTab({ secret }: { secret: string }) {
     });
     if (r.ok) { toast({ title: "Package created" }); setNewPkg(null); load(); }
     else { const d = await r.json(); toast({ variant: "destructive", title: d.error ?? "Create failed" }); }
+  };
+
+  const handleDecision = async () => {
+    if (!decisionModal) return;
+    setProcessingId(decisionModal.txnId);
+    const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
+    const endpoint = `/admin/upgrade-payments/${decisionModal.txnId}/${decisionModal.action}`;
+    const r = await apiFetch(endpoint, { method: "POST", headers, body: JSON.stringify({ note: decisionNote || undefined }) });
+    if (r.ok) {
+      const action = decisionModal.action === "approve" ? "Upgrade approved" : "Payment rejected";
+      toast({ title: action });
+    } else {
+      const d = await r.json().catch(() => ({}));
+      toast({ variant: "destructive", title: d.error ?? "Action failed" });
+    }
+    setDecisionModal(null);
+    setDecisionNote("");
+    setProcessingId(null);
+    load();
   };
 
   const confirmDelete = async () => {
@@ -1685,10 +1715,113 @@ function UpgradesTab({ secret }: { secret: string }) {
         </div>
       )}
 
+      {/* USDT Payment Management */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold">USDT Upgrade Payments</h3>
+          <Button size="sm" variant="ghost" onClick={load} className="gap-1.5 text-xs">Refresh</Button>
+        </div>
+        {payments.length === 0 && (
+          <p className="text-muted-foreground text-sm text-center py-6">No USDT upgrade payment submissions yet</p>
+        )}
+        <div className="space-y-2">
+          {payments.map(p => {
+            const isPending = p.status === "pending" || p.status === "awaiting_verification";
+            const isApproved = p.status === "completed";
+            const isRejected = p.status === "rejected";
+            return (
+              <div
+                key={p.transactionId}
+                className={`bg-card rounded-xl p-4 border ${isApproved ? "border-emerald-500/30" : isRejected ? "border-destructive/30" : isPending ? "border-amber-500/30" : "border-card-border"}`}
+              >
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm">{p.username}</span>
+                      <span className="text-xs text-muted-foreground">{p.email}</span>
+                      <Badge className={`text-xs border-0 ${isApproved ? "bg-emerald-500/20 text-emerald-400" : isRejected ? "bg-destructive/20 text-destructive" : "bg-amber-500/20 text-amber-400"}`}>
+                        {p.status === "awaiting_verification" ? "Sent by user" : p.status}
+                      </Badge>
+                    </div>
+                    <p className="text-sm font-medium">{p.upgradeName}</p>
+                    <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
+                      <span className="font-bold text-emerald-400">${p.amount.toFixed(2)} USDT</span>
+                      <span>Tag: <code className="bg-muted px-1 rounded">{p.paymentTag}</code></span>
+                      <span>{fmt(p.createdAt)}</span>
+                    </div>
+                    {p.adminNote && (
+                      <p className="text-xs text-muted-foreground mt-1">Admin note: <em>{p.adminNote}</em></p>
+                    )}
+                  </div>
+                  {isPending && (
+                    <div className="flex gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                        disabled={processingId === p.transactionId}
+                        onClick={() => { setDecisionNote(""); setDecisionModal({ txnId: p.transactionId, action: "approve", upgradeName: p.upgradeName }); }}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={processingId === p.transactionId}
+                        onClick={() => { setDecisionNote(""); setDecisionModal({ txnId: p.transactionId, action: "reject", upgradeName: p.upgradeName }); }}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Decision Modal */}
+      {decisionModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-card-border rounded-2xl p-6 max-w-sm w-full space-y-4">
+            <h3 className="font-semibold">
+              {decisionModal.action === "approve" ? "✅ Approve Payment" : "❌ Reject Payment"}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {decisionModal.action === "approve"
+                ? `This will activate the "${decisionModal.upgradeName}" upgrade and notify the user.`
+                : `This will reject the payment for "${decisionModal.upgradeName}" and notify the user.`}
+            </p>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">
+                {decisionModal.action === "approve" ? "Note for user (optional)" : "Reason for rejection (recommended)"}
+              </label>
+              <Input
+                value={decisionNote}
+                onChange={e => setDecisionNote(e.target.value)}
+                placeholder={decisionModal.action === "approve" ? "e.g. Payment verified successfully" : "e.g. Payment not received"}
+              />
+            </div>
+            <div className="flex gap-2">
+              {decisionModal.action === "approve" ? (
+                <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleDecision} disabled={!!processingId}>
+                  Approve & Activate
+                </Button>
+              ) : (
+                <Button variant="destructive" className="flex-1" onClick={handleDecision} disabled={!!processingId}>
+                  Reject Payment
+                </Button>
+              )}
+              <Button variant="ghost" className="flex-1" onClick={() => setDecisionModal(null)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Purchase History */}
       <div>
-        <h3 className="font-semibold mb-3">Purchase History</h3>
-        {purchases.length === 0 && <p className="text-muted-foreground text-sm text-center py-6">No upgrade purchases yet</p>}
+        <h3 className="font-semibold mb-3">Coin Purchase History</h3>
+        {purchases.length === 0 && <p className="text-muted-foreground text-sm text-center py-6">No coin upgrade purchases yet</p>}
         <div className="space-y-2">
           {purchases.map(u => (
             <div key={u.id} className="bg-card border border-card-border rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">

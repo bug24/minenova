@@ -18,6 +18,7 @@ import { z } from "zod";
 import { hashPassword } from "../lib/auth";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
+import { sendUpgradeApprovedEmail, sendUpgradeRejectedEmail } from "../lib/email";
 
 const router: IRouter = Router();
 
@@ -1334,6 +1335,110 @@ router.post("/admin/config", requireAdmin, async (req, res): Promise<void> => {
   if (!data.success) { res.status(400).json({ error: data.error.issues[0]?.message ?? "Invalid input" }); return; }
   await upsertSetting(data.data.key, data.data.value);
   res.json({ success: true });
+});
+
+// ─── Upgrade Payment Management ───────────────────────────────────────────────
+
+router.get("/admin/upgrade-payments", requireAdmin, async (_req, res): Promise<void> => {
+  const rows = await db
+    .select({
+      transactionId: transactionsTable.id,
+      userId: transactionsTable.userId,
+      username: usersTable.username,
+      email: usersTable.email,
+      amount: transactionsTable.amount,
+      paymentTag: transactionsTable.paymentTag,
+      status: transactionsTable.status,
+      description: transactionsTable.description,
+      upgradeId: transactionsTable.upgradeId,
+      adminNote: transactionsTable.adminNote,
+      createdAt: transactionsTable.createdAt,
+    })
+    .from(transactionsTable)
+    .innerJoin(usersTable, eq(transactionsTable.userId, usersTable.id))
+    .where(eq(transactionsTable.type, "upgrade_payment"))
+    .orderBy(desc(transactionsTable.createdAt));
+
+  res.json(rows.map(r => ({
+    transactionId: r.transactionId,
+    userId: r.userId,
+    username: r.username,
+    email: r.email,
+    upgradeName: r.description.replace("USDT payment for upgrade: ", ""),
+    upgradeId: r.upgradeId ?? 0,
+    amount: Math.abs(r.amount),
+    paymentTag: r.paymentTag ?? "",
+    status: r.status,
+    adminNote: r.adminNote ?? null,
+    createdAt: r.createdAt.toISOString(),
+  })));
+});
+
+router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.transactionId, 10);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const body = z.object({ note: z.string().optional() }).safeParse(req.body);
+  const note = body.success ? body.data.note : undefined;
+
+  const [txn] = await db
+    .select()
+    .from(transactionsTable)
+    .where(and(eq(transactionsTable.id, id), eq(transactionsTable.type, "upgrade_payment")))
+    .limit(1);
+
+  if (!txn) { res.status(404).json({ error: "Transaction not found" }); return; }
+  if (txn.status === "completed") { res.status(400).json({ error: "Already approved" }); return; }
+
+  const upgradeId = txn.upgradeId;
+  if (!upgradeId) { res.status(400).json({ error: "No linked upgrade" }); return; }
+
+  const [upgrade] = await db.select().from(upgradesTable).where(eq(upgradesTable.id, upgradeId)).limit(1);
+  if (!upgrade) { res.status(404).json({ error: "Upgrade not found" }); return; }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, txn.userId)).limit(1);
+
+  await db.update(transactionsTable).set({ status: "completed", adminNote: note ?? null }).where(eq(transactionsTable.id, id));
+  await db.insert(userUpgradesTable).values({ userId: txn.userId, upgradeId });
+  await db.update(usersTable).set({ miningLevel: sql`mining_level + 1` }).where(eq(usersTable.id, txn.userId));
+
+  sendUpgradeApprovedEmail(user.email, user.username, upgrade.name, note).catch(() => {});
+
+  res.json({ success: true, message: `Upgrade approved for ${user.username}.` });
+});
+
+router.post("/admin/upgrade-payments/:transactionId/reject", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.transactionId, 10);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const body = z.object({ note: z.string().optional() }).safeParse(req.body);
+  const note = body.success ? body.data.note : undefined;
+
+  const [txn] = await db
+    .select()
+    .from(transactionsTable)
+    .where(and(eq(transactionsTable.id, id), eq(transactionsTable.type, "upgrade_payment")))
+    .limit(1);
+
+  if (!txn) { res.status(404).json({ error: "Transaction not found" }); return; }
+  if (txn.status === "rejected") { res.status(400).json({ error: "Already rejected" }); return; }
+
+  const upgradeId = txn.upgradeId;
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, txn.userId)).limit(1);
+  const upgradeMeta = upgradeId
+    ? await db.select({ name: upgradesTable.name }).from(upgradesTable).where(eq(upgradesTable.id, upgradeId)).limit(1).then(r => r[0])
+    : null;
+
+  await db.update(transactionsTable).set({ status: "rejected", adminNote: note ?? null }).where(eq(transactionsTable.id, id));
+
+  sendUpgradeRejectedEmail(
+    user.email,
+    user.username,
+    upgradeMeta?.name ?? txn.description.replace("USDT payment for upgrade: ", ""),
+    note,
+  ).catch(() => {});
+
+  res.json({ success: true, message: `Payment rejected for ${user.username}.` });
 });
 
 export default router;
