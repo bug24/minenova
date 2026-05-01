@@ -311,6 +311,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /wallet/withdraw-usdt:
+    post:
+      operationId: withdrawUsdtBalance
+      tags: [wallet]
+      summary: Withdraw unlocked referral USDT balance
+      description: >
+        Withdraws from the user's unlocked referral USDT balance only.
+        Locked USDT (pending 7-day unlock) is explicitly excluded and cannot
+        be withdrawn until fully unlocked by the system.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawalBody"
+      responses:
+        "200":
+          description: USDT withdrawal submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WithdrawalResult"
+        "400":
+          description: Insufficient unlocked USDT balance or below minimum
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /wallet/transactions:
     get:
       operationId: getTransactions

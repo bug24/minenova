@@ -164,6 +164,11 @@ if (distBuilt) {
 }
 
 // ─── Hourly cron: unlock eligible referral USDT earnings ─────────────────────
+//
+// Idempotent by design: the status flip from "locked" → "unlocked" is the
+// guard that prevents double-crediting. Inside a single transaction we first
+// attempt to flip the status; if 0 rows are affected (already unlocked or
+// the row doesn't exist) we skip the balance update entirely.
 
 async function unlockEligibleReferralEarnings(): Promise<void> {
   try {
@@ -175,22 +180,38 @@ async function unlockEligibleReferralEarnings(): Promise<void> {
 
     if (eligible.length === 0) return;
 
+    let unlocked = 0;
     for (const earning of eligible) {
-      await db
-        .update(usersTable)
-        .set({
-          usdtBalance: sql`usdt_balance + ${earning.rewardLockedUsdt}`,
-          lockedUsdtBalance: sql`greatest(0, locked_usdt_balance - ${earning.rewardLockedUsdt})`,
-        })
-        .where(eq(usersTable.id, earning.referrerId));
+      await db.transaction(async (tx) => {
+        // Claim the row atomically — guards against concurrent unlock runs
+        const updated = await tx
+          .update(referralEarningsTable)
+          .set({ status: "unlocked" })
+          .where(
+            and(
+              eq(referralEarningsTable.id, earning.id),
+              eq(referralEarningsTable.status, "locked"),
+            ),
+          )
+          .returning({ id: referralEarningsTable.id });
 
-      await db
-        .update(referralEarningsTable)
-        .set({ status: "unlocked" })
-        .where(eq(referralEarningsTable.id, earning.id));
+        if (updated.length === 0) return; // already processed by a concurrent run
+
+        await tx
+          .update(usersTable)
+          .set({
+            usdtBalance: sql`usdt_balance + ${earning.rewardLockedUsdt}`,
+            lockedUsdtBalance: sql`greatest(0, locked_usdt_balance - ${earning.rewardLockedUsdt})`,
+          })
+          .where(eq(usersTable.id, earning.referrerId));
+
+        unlocked++;
+      });
     }
 
-    logger.info({ count: eligible.length }, "Unlocked referral USDT earnings");
+    if (unlocked > 0) {
+      logger.info({ count: unlocked }, "Unlocked referral USDT earnings");
+    }
   } catch (err) {
     logger.error({ err }, "Failed to unlock referral earnings in cron");
   }

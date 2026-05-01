@@ -1,12 +1,14 @@
 import { pgTable, serial, timestamp, integer, real, text } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { usersTable } from "./users";
+import { upgradesTable } from "./upgrades";
 
 export const referralEarningsTable = pgTable("referral_earnings", {
   id: serial("id").primaryKey(),
-  referrerId: integer("referrer_id").notNull(),
-  referredId: integer("referred_id").notNull(),
-  upgradeId: integer("upgrade_id").notNull(),
+  referrerId: integer("referrer_id").notNull().references(() => usersTable.id),
+  referredId: integer("referred_id").notNull().references(() => usersTable.id),
+  upgradeId: integer("upgrade_id").notNull().references(() => upgradesTable.id),
   tier: integer("tier").notNull().default(1),
   rewardCoins: real("reward_coins").notNull().default(0),
   rewardLockedUsdt: real("reward_locked_usdt").notNull().default(0),

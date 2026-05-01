@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, usersTable, transactionsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { RequestWithdrawalBody, GetWalletResponse, RequestWithdrawalResponse, GetTransactionsResponse } from "@workspace/api-zod";
 import { generatePaymentTag } from "../lib/auth";
@@ -78,6 +78,67 @@ router.post("/wallet/withdraw", requireAuth, async (req, res): Promise<void> => 
     amount,
     status: "pending",
     message: "Withdrawal request submitted. Send USDT to the address with your payment tag.",
+    usdtAddress: USDT_DEPOSIT_ADDRESS,
+    paymentTag,
+  }));
+});
+
+// POST /wallet/withdraw-usdt
+// Withdraws ONLY from the unlocked referral USDT balance (usdtBalance).
+// Locked USDT (lockedUsdtBalance) is never included — it cannot be withdrawn
+// until the system unlocks it after 7 days.
+router.post("/wallet/withdraw-usdt", requireAuth, async (req, res): Promise<void> => {
+  const parsed = RequestWithdrawalBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { walletAddress, amount } = parsed.data;
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
+
+  const unlockedUsdt = user.usdtBalance ?? 0;
+  const lockedUsdt = user.lockedUsdtBalance ?? 0;
+
+  if (amount < MINIMUM_WITHDRAWAL) {
+    res.status(400).json({ error: `Minimum withdrawal is ${MINIMUM_WITHDRAWAL} USDT` });
+    return;
+  }
+
+  if (unlockedUsdt < amount) {
+    const msg =
+      lockedUsdt > 0
+        ? `Insufficient unlocked USDT balance (${unlockedUsdt.toFixed(2)} available). You have ${lockedUsdt.toFixed(2)} USDT still locked — it will unlock automatically after 7 days.`
+        : `Insufficient USDT balance (${unlockedUsdt.toFixed(2)} available)`;
+    res.status(400).json({ error: msg });
+    return;
+  }
+
+  const paymentTag = generatePaymentTag();
+
+  await db.transaction(async (tx) => {
+    await tx.insert(transactionsTable).values({
+      userId: req.userId!,
+      type: "withdrawal",
+      amount,
+      status: "pending",
+      description: `Referral USDT withdrawal to ${walletAddress.slice(0, 8)}...`,
+      walletAddress,
+      usdtAddress: USDT_DEPOSIT_ADDRESS,
+      paymentTag,
+    });
+
+    await tx
+      .update(usersTable)
+      .set({ usdtBalance: sql`usdt_balance - ${amount}` })
+      .where(eq(usersTable.id, req.userId!));
+  });
+
+  res.json(RequestWithdrawalResponse.parse({
+    transactionId: 0,
+    amount,
+    status: "pending",
+    message: "Referral USDT withdrawal request submitted.",
     usdtAddress: USDT_DEPOSIT_ADDRESS,
     paymentTag,
   }));

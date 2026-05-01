@@ -1293,6 +1293,94 @@ export const useRequestWithdrawal = <
 };
 
 /**
+ * Withdraws from the user's unlocked referral USDT balance only. Locked USDT (pending 7-day unlock) is explicitly excluded and cannot be withdrawn until fully unlocked by the system.
+
+ * @summary Withdraw unlocked referral USDT balance
+ */
+export const getWithdrawUsdtBalanceUrl = () => {
+  return `/api/wallet/withdraw-usdt`;
+};
+
+export const withdrawUsdtBalance = async (
+  withdrawalBody: WithdrawalBody,
+  options?: RequestInit,
+): Promise<WithdrawalResult> => {
+  return customFetch<WithdrawalResult>(getWithdrawUsdtBalanceUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(withdrawalBody),
+  });
+};
+
+export const getWithdrawUsdtBalanceMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof withdrawUsdtBalance>>,
+    TError,
+    { data: BodyType<WithdrawalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof withdrawUsdtBalance>>,
+  TError,
+  { data: BodyType<WithdrawalBody> },
+  TContext
+> => {
+  const mutationKey = ["withdrawUsdtBalance"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof withdrawUsdtBalance>>,
+    { data: BodyType<WithdrawalBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return withdrawUsdtBalance(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type WithdrawUsdtBalanceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof withdrawUsdtBalance>>
+>;
+export type WithdrawUsdtBalanceMutationBody = BodyType<WithdrawalBody>;
+export type WithdrawUsdtBalanceMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Withdraw unlocked referral USDT balance
+ */
+export const useWithdrawUsdtBalance = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof withdrawUsdtBalance>>,
+    TError,
+    { data: BodyType<WithdrawalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof withdrawUsdtBalance>>,
+  TError,
+  { data: BodyType<WithdrawalBody> },
+  TContext
+> => {
+  return useMutation(getWithdrawUsdtBalanceMutationOptions(options));
+};
+
+/**
  * @summary Get transaction history
  */
 export const getGetTransactionsUrl = () => {

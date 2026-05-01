@@ -79,31 +79,33 @@ export async function triggerUpgradeReferralReward(params: RewardParams): Promis
     const unlockDate = new Date();
     unlockDate.setDate(unlockDate.getDate() + UNLOCK_DAYS);
 
-    await db.insert(referralEarningsTable).values({
-      referrerId,
-      referredId: referredUserId,
-      upgradeId,
-      tier,
-      rewardCoins,
-      rewardLockedUsdt,
-      status: "locked",
-      unlockDate,
-    });
+    await db.transaction(async (tx) => {
+      await tx.insert(referralEarningsTable).values({
+        referrerId,
+        referredId: referredUserId,
+        upgradeId,
+        tier,
+        rewardCoins,
+        rewardLockedUsdt,
+        status: "locked",
+        unlockDate,
+      });
 
-    await db
-      .update(usersTable)
-      .set({
-        coinBalance: sql`coin_balance + ${rewardCoins}`,
-        totalEarned: sql`total_earned + ${rewardCoins}`,
-        lockedUsdtBalance: sql`locked_usdt_balance + ${rewardLockedUsdt}`,
-      })
-      .where(eq(usersTable.id, referrerId));
+      await tx
+        .update(usersTable)
+        .set({
+          coinBalance: sql`coin_balance + ${rewardCoins}`,
+          totalEarned: sql`total_earned + ${rewardCoins}`,
+          lockedUsdtBalance: sql`locked_usdt_balance + ${rewardLockedUsdt}`,
+        })
+        .where(eq(usersTable.id, referrerId));
 
-    await db.insert(referralTransactionsTable).values({
-      referrerId,
-      referredId: referredUserId,
-      rewardType: "upgrade_commission",
-      amount: rewardCoins,
+      await tx.insert(referralTransactionsTable).values({
+        referrerId,
+        referredId: referredUserId,
+        rewardType: "upgrade_commission",
+        amount: rewardCoins,
+      });
     });
 
     logger.info(

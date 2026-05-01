@@ -48,11 +48,11 @@ export default defineConfig({
       },
     },
     output: {
-      workspace: apiZodSrc,
+      // No `workspace` here — target is relative to this config file.
+      // This avoids orval auto-generating a barrel index.ts at the src root.
+      target: path.resolve(apiZodSrc, "generated", "api.ts"),
       client: "zod",
-      target: "generated",
-      schemas: { path: "generated/types", type: "typescript" },
-      mode: "split",
+      mode: "single",
       clean: true,
       prettier: true,
       override: {

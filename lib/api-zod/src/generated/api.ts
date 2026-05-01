@@ -249,6 +249,25 @@ export const RequestWithdrawalResponse = zod.object({
 });
 
 /**
+ * Withdraws from the user's unlocked referral USDT balance only. Locked USDT (pending 7-day unlock) is explicitly excluded and cannot be withdrawn until fully unlocked by the system.
+
+ * @summary Withdraw unlocked referral USDT balance
+ */
+export const WithdrawUsdtBalanceBody = zod.object({
+  walletAddress: zod.string(),
+  amount: zod.number(),
+});
+
+export const WithdrawUsdtBalanceResponse = zod.object({
+  transactionId: zod.number(),
+  amount: zod.number(),
+  status: zod.string(),
+  message: zod.string(),
+  usdtAddress: zod.string(),
+  paymentTag: zod.string(),
+});
+
+/**
  * @summary Get transaction history
  */
 export const GetTransactionsResponseItem = zod.object({
