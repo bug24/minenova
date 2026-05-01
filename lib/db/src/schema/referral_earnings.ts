@@ -1,4 +1,4 @@
-import { pgTable, serial, timestamp, integer, real, text } from "drizzle-orm/pg-core";
+import { pgTable, serial, timestamp, integer, real, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
@@ -15,7 +15,9 @@ export const referralEarningsTable = pgTable("referral_earnings", {
   status: text("status").notNull().default("locked"),
   unlockDate: timestamp("unlock_date", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  uniqueIndex("referral_earnings_upgrade_referrer_tier_uidx").on(t.upgradeId, t.referrerId, t.tier),
+]);
 
 export const insertReferralEarningSchema = createInsertSchema(referralEarningsTable).omit({ id: true, createdAt: true });
 export type InsertReferralEarning = z.infer<typeof insertReferralEarningSchema>;

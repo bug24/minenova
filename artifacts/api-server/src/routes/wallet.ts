@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, usersTable, transactionsTable } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { RequestWithdrawalBody, GetWalletResponse, RequestWithdrawalResponse, GetTransactionsResponse } from "@workspace/api-zod";
 import { generatePaymentTag } from "../lib/auth";
@@ -117,7 +117,24 @@ router.post("/wallet/withdraw-usdt", requireAuth, async (req, res): Promise<void
   const paymentTag = generatePaymentTag();
 
   let transactionId = 0;
+  let debited = false;
+
   await db.transaction(async (tx) => {
+    // Atomically debit only if sufficient balance exists — guards against
+    // concurrent requests that could otherwise overdraw usdtBalance.
+    const claimed = await tx
+      .update(usersTable)
+      .set({ usdtBalance: sql`usdt_balance - ${amount}` })
+      .where(
+        and(
+          eq(usersTable.id, req.userId!),
+          sql`usdt_balance >= ${amount}`,
+        ),
+      )
+      .returning({ id: usersTable.id });
+
+    if (claimed.length === 0) return; // concurrent request drained the balance
+
     const [inserted] = await tx.insert(transactionsTable).values({
       userId: req.userId!,
       type: "withdrawal",
@@ -130,12 +147,13 @@ router.post("/wallet/withdraw-usdt", requireAuth, async (req, res): Promise<void
     }).returning({ id: transactionsTable.id });
 
     transactionId = inserted.id;
-
-    await tx
-      .update(usersTable)
-      .set({ usdtBalance: sql`usdt_balance - ${amount}` })
-      .where(eq(usersTable.id, req.userId!));
+    debited = true;
   });
+
+  if (!debited) {
+    res.status(400).json({ error: "Insufficient unlocked USDT balance (concurrent request may have depleted funds)" });
+    return;
+  }
 
   res.json(RequestWithdrawalResponse.parse({
     transactionId,
