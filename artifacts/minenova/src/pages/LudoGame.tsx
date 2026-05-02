@@ -553,7 +553,19 @@ export default function LudoGame() {
 
       {/* ── DICE PANEL — rendered below the board so it never overlaps pieces ── */}
       {game.status === "active" && (
-        <div className="flex justify-center">
+        <div className="flex justify-center items-center gap-3">
+          {/* Voice chat — beside the dice box */}
+          {!isBotOpponent && voiceChatEnabled && (
+            <VoiceChatButton
+              inline
+              status={voiceChat.status}
+              isMuted={voiceChat.isMuted}
+              isRemoteSpeaking={voiceChat.isRemoteSpeaking}
+              onStart={voiceChat.start}
+              onStop={voiceChat.stop}
+              onToggleMute={voiceChat.toggleMute}
+            />
+          )}
           <div
             onClick={canRoll && !rolling ? handleRoll : undefined}
             className="flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl bg-card border border-card-border"
@@ -673,19 +685,6 @@ export default function LudoGame() {
         isMe={true}
         piecesHome={myPiecesHome}
       />
-
-      {/* Voice chat */}
-      {!isBotOpponent && game.status === "active" && voiceChatEnabled && (
-        <VoiceChatButton
-          inline
-          status={voiceChat.status}
-          isMuted={voiceChat.isMuted}
-          isRemoteSpeaking={voiceChat.isRemoteSpeaking}
-          onStart={voiceChat.start}
-          onStop={voiceChat.stop}
-          onToggleMute={voiceChat.toggleMute}
-        />
-      )}
 
       {/* Forfeit confirm */}
       {showForfeitConfirm && (
