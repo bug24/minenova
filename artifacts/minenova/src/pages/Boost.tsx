@@ -221,8 +221,14 @@ export default function Boost() {
       setAdIndex(0);
     } catch {
       const fallbackAds = Array.from({ length: tier.adCount }, (_, i) => createFallbackAd(tier, i));
-      setAdQueue(fallbackAds);
-      setAdIndex(0);
+      if (fallbackAds.length > 0) {
+        setAdQueue(fallbackAds);
+        setAdIndex(0);
+      } else {
+        // Nothing to show — reset so the button isn't stuck disabled.
+        setActivatingTier(null);
+        setPendingTier(null);
+      }
     }
   };
 
