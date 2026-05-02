@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import LudoBoard, { type AnimPiece } from "@/components/ludo/LudoBoard";
+import DiceFace from "@/components/ludo/DiceFace";
 import {
   ludoApi, fetchLudoSettings, getSSEUrl, getValidMovesClient, sendLudoSignal,
   type LudoGame, type GameState, type LudoSettings,
@@ -526,7 +527,7 @@ export default function LudoGame() {
         </div>
       )}
 
-      {/* ── BOARD (dice is embedded inside) ── */}
+      {/* ── BOARD ── */}
       <div className="flex justify-center">
         <div className="w-full max-w-sm rounded-2xl overflow-hidden"
           style={{ boxShadow: "0 10px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)" }}>
@@ -549,6 +550,84 @@ export default function LudoGame() {
           />
         </div>
       </div>
+
+      {/* ── DICE PANEL — rendered below the board so it never overlaps pieces ── */}
+      {game.status === "active" && (
+        <div className="flex justify-center">
+          <div
+            onClick={canRoll && !rolling ? handleRoll : undefined}
+            className="flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl bg-card border border-card-border"
+            style={{
+              cursor: canRoll && !rolling ? "pointer" : "default",
+              boxShadow: canRoll && !rolling
+                ? "0 0 20px 8px rgba(251,191,36,0.45)"
+                : rolling
+                ? "0 0 14px 4px rgba(255,255,255,0.25)"
+                : "0 2px 10px rgba(0,0,0,0.35)",
+              transition: "box-shadow 0.3s ease",
+            }}
+          >
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              {/* Die 1 */}
+              {(() => {
+                const die1Active = diceValues !== null && !rolling && activeDieIndex === 0;
+                const die1Dimmed = diceValues !== null && !rolling && activeDieIndex === 1;
+                return (
+                  <div style={{
+                    borderRadius: 8,
+                    outline: die1Active ? "2.5px solid #fbbf24" : "none",
+                    boxShadow: die1Active ? "0 0 8px rgba(251,191,36,0.7)" : "none",
+                    transition: "all 0.2s ease",
+                    opacity: die1Dimmed ? 0.4 : 1,
+                  }}>
+                    <DiceFace
+                      value={diceValues ? diceValues[0] : (diceValue ?? null)}
+                      rolling={rolling}
+                      size={48}
+                      onRoll={handleRoll}
+                      canRoll={canRoll}
+                    />
+                  </div>
+                );
+              })()}
+
+              {/* Die 2 */}
+              {(() => {
+                const die2Active = diceValues !== null && !rolling && activeDieIndex === 1;
+                const die2Dimmed = diceValues !== null && !rolling && activeDieIndex === 0;
+                return (
+                  <div style={{
+                    borderRadius: 8,
+                    outline: die2Active ? "2.5px solid #fbbf24" : "none",
+                    boxShadow: die2Active ? "0 0 8px rgba(251,191,36,0.7)" : "none",
+                    transition: "all 0.2s ease",
+                    opacity: die2Dimmed ? 0.4 : 1,
+                  }}>
+                    <DiceFace
+                      value={diceValues ? diceValues[1] : null}
+                      rolling={rolling}
+                      size={48}
+                    />
+                  </div>
+                );
+              })()}
+            </div>
+
+            {canRoll && !rolling && (
+              <p className="text-[11px] font-black tracking-widest text-amber-400"
+                style={{ textShadow: "0 1px 4px rgba(0,0,0,0.7)", lineHeight: 1 }}>
+                TAP TO ROLL
+              </p>
+            )}
+            {diceValues !== null && !rolling && !canRoll && (
+              <p className="text-xs font-black text-white/80"
+                style={{ lineHeight: 1 }}>
+                {diceValues[0]} · {diceValues[1]}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Status / instruction strip */}
       {game.status === "active" && (
