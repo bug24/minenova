@@ -408,7 +408,8 @@ router.get("/admin/analytics", requireAdmin, async (_req, res): Promise<void> =>
   const [upgradeCommCoinsRow] = await db.select({ sum: sql<number>`coalesce(sum(reward_coins), 0)::float8` }).from(referralEarningsTable);
   const [gameFeeRow] = await db.select({ sum: sql<number>`coalesce(sum(amount), 0)::float8` }).from(transactionsTable).where(or(eq(transactionsTable.type, "ludo_fee"), eq(transactionsTable.type, "whot_fee")));
   const [rateConfigRow] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable).where(eq(adminConfigTable.key, "coin_usd_rate")).limit(1);
-  const configCoinUsdRate = rateConfigRow ? parseFloat(rateConfigRow.value) : 0.001;
+  const parsedConfigRate = rateConfigRow ? parseFloat(rateConfigRow.value) : NaN;
+  const configCoinUsdRate = Number.isFinite(parsedConfigRate) && parsedConfigRate > 0 ? parsedConfigRate : 0.001;
 
   const usdtUpgradeRevenue = Math.round((upgradeRevRow.sum ?? 0) * 100) / 100;
   const totalUsdtWithdrawn = Math.round((withdrawnRow.sum ?? 0) * 100) / 100;
@@ -1551,8 +1552,10 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
   // Load coin rate from admin config, override allowed via query param
   const [rateRow] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable)
     .where(eq(adminConfigTable.key, "coin_usd_rate")).limit(1);
-  const defaultRate = rateRow ? parseFloat(rateRow.value) : 0.001;
-  const coinUsdRate = req.query.coinUsdRate ? parseFloat(req.query.coinUsdRate as string) : defaultRate;
+  const parsedDefault = rateRow ? parseFloat(rateRow.value) : NaN;
+  const defaultRate = Number.isFinite(parsedDefault) && parsedDefault > 0 ? parsedDefault : 0.001;
+  const parsedQuery = req.query.coinUsdRate ? parseFloat(req.query.coinUsdRate as string) : NaN;
+  const coinUsdRate = Number.isFinite(parsedQuery) && parsedQuery > 0 ? parsedQuery : defaultRate;
 
   const RELEVANT_TYPES = ["upgrade_payment", "withdrawal", "ludo_fee", "whot_fee", "referral"];
 
