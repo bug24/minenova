@@ -97,8 +97,8 @@ export default function Whot() {
 
   const handleCreate = async () => {
     const fee = Number(entryFee);
-    const minFee = whotSettings?.minFee ?? 1;
-    const maxFee = whotSettings?.maxFee ?? 10000;
+    const minFee = whotSettings?.pvpMinFee ?? whotSettings?.minFee ?? 1;
+    const maxFee = whotSettings?.pvpMaxFee ?? whotSettings?.maxFee ?? 10000;
     if (!fee || fee < minFee) { toast({ variant: "destructive", title: `Min entry fee is ${minFee} coins` }); return; }
     if (fee > maxFee) { toast({ variant: "destructive", title: `Max entry fee is ${maxFee} coins` }); return; }
     if ((wallet?.withdrawableBalance ?? 0) < fee) { toast({ variant: "destructive", title: "Insufficient coin balance" }); return; }
@@ -245,12 +245,21 @@ export default function Whot() {
         </div>
       )}
 
+      {/* PvP disabled banner */}
+      {whotSettings && whotSettings.pvpEnabled === false && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+          <Swords className="w-4 h-4 shrink-0" />
+          PvP is currently disabled. You can still play against the bot while it's off.
+        </div>
+      )}
+
       {/* Play buttons */}
       <div className="grid grid-cols-2 gap-3">
         <Button
           className="gap-2 h-12"
           onClick={() => setShowCreate(true)}
-          style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
+          disabled={whotSettings?.pvpEnabled === false}
+          style={whotSettings?.pvpEnabled === false ? undefined : { background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
         >
           <Swords className="w-4 h-4" />
           vs Player
@@ -442,7 +451,13 @@ export default function Whot() {
                   </span>
                 </div>
               </div>
-              <Button size="sm" disabled={isAccepting} onClick={() => handleAccept(ch.id)} className="shrink-0">
+              <Button
+                size="sm"
+                disabled={isAccepting || whotSettings?.pvpEnabled === false}
+                title={whotSettings?.pvpEnabled === false ? "PvP is currently disabled" : undefined}
+                onClick={() => handleAccept(ch.id)}
+                className="shrink-0"
+              >
                 {isAccepting ? <RefreshCw className="w-3 h-3 animate-spin" /> : "Accept"}
               </Button>
             </div>

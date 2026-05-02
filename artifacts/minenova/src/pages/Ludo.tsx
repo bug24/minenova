@@ -436,7 +436,8 @@ export default function Ludo() {
               </div>
               <Button
                 size="sm"
-                disabled={isAccepting}
+                disabled={isAccepting || ludoSettings?.pvpEnabled === false}
+                title={ludoSettings?.pvpEnabled === false ? "PvP is currently disabled" : undefined}
                 onClick={() => handleAccept(ch.id)}
                 className="shrink-0"
               >

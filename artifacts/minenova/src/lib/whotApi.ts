@@ -53,6 +53,9 @@ export interface WhotSettings {
   soloFee: number;
   soloEnabled: boolean;
   timeoutMinutes: number;
+  pvpEnabled: boolean;
+  pvpMinFee: number;
+  pvpMaxFee: number;
 }
 
 function getToken(): string {
