@@ -90,35 +90,22 @@ export function getValidMoves(state: GameState, playerIndex: 0 | 1, diceValue: n
 }
 
 /**
- * Build the ordered queue of die values for a turn, including 6-bonuses.
- * Order: primary dice first ([d1?, d2?]), then bonus 6s appended at the end.
- * A die is only included if it has at least one valid move.
- * Each queue slot gets a dieIndexQueue entry (0|1|null) so the UI knows which face to highlight.
+ * Build the raw full queue for a turn: both primary dice in roll order, then bonus 6s.
+ * Validity is NOT checked here — dice are always included unconditionally.
+ * Validity is checked lazily: at roll time (to find starting position) and at each move step.
+ * This ensures that a die whose value has no moves before the first move can still become
+ * valid after an earlier die spawns or advances a piece.
  */
 function buildDiceQueue(
-  state: GameState,
-  playerIndex: 0 | 1,
   d1: number,
   d2: number,
-): { queue: number[]; dieIndexQueue: Array<0 | 1 | null>; activeDieIndex: 0 | 1 | null; primaryMovesTotal: number } {
-  const queue: number[] = [];
-  const dieIndexQueue: Array<0 | 1 | null> = [];
-
-  const has1 = getValidMoves(state, playerIndex, d1).length > 0;
-  const has2 = getValidMoves(state, playerIndex, d2).length > 0;
-
-  // Primary dice first, in roll order
-  if (has1) { queue.push(d1); dieIndexQueue.push(0); }
-  if (has2) { queue.push(d2); dieIndexQueue.push(1); }
-
-  // Bonus 6s appended after all primaries
-  if (has1 && d1 === 6) { queue.push(6); dieIndexQueue.push(null); }
-  if (has2 && d2 === 6) { queue.push(6); dieIndexQueue.push(null); }
-
-  const primaryMovesTotal = (has1 ? 1 : 0) + (has2 ? 1 : 0);
-  const activeDieIndex: 0 | 1 | null = dieIndexQueue.length > 0 ? (dieIndexQueue[0] ?? null) : null;
-
-  return { queue, dieIndexQueue, activeDieIndex, primaryMovesTotal };
+): { queue: number[]; dieIndexQueue: Array<0 | 1 | null> } {
+  const queue: number[] = [d1, d2];
+  const dieIndexQueue: Array<0 | 1 | null> = [0, 1];
+  // Bonus 6s appended after both primary dice
+  if (d1 === 6) { queue.push(6); dieIndexQueue.push(null); }
+  if (d2 === 6) { queue.push(6); dieIndexQueue.push(null); }
+  return { queue, dieIndexQueue };
 }
 
 export function applyMove(
@@ -237,10 +224,21 @@ export function applyDiceRoll(state: GameState, diceValues: [number, number], no
   newState.diceValues = diceValues;
   newState.lastMoveAt = now;
 
-  const { queue, dieIndexQueue, activeDieIndex, primaryMovesTotal } = buildDiceQueue(newState, newState.currentTurn, d1, d2);
+  const { queue, dieIndexQueue } = buildDiceQueue(d1, d2);
 
-  if (queue.length === 0) {
-    // No valid moves with either die — skip turn
+  // Find the first queue entry that has valid moves in the current (pre-move) board state.
+  // Only entries BEFORE a valid one are truly unreachable (no move could ever unlock them
+  // since no move has been made yet). Entries AFTER startIdx are kept and re-evaluated lazily.
+  let startIdx = -1;
+  for (let k = 0; k < queue.length; k++) {
+    if (getValidMoves(newState, newState.currentTurn, queue[k]).length > 0) {
+      startIdx = k;
+      break;
+    }
+  }
+
+  if (startIdx < 0) {
+    // No valid moves at all — skip turn
     newState.currentTurn = newState.currentTurn === 0 ? 1 : 0;
     newState.diceRolled = false;
     newState.diceValues = null;
@@ -254,11 +252,15 @@ export function applyDiceRoll(state: GameState, diceValues: [number, number], no
     return newState;
   }
 
-  newState.diceQueue = queue;
-  newState.dieIndexQueue = dieIndexQueue;
-  newState.movesLeft = queue.length;
-  newState.diceValue = queue[0];
-  newState.activeDieIndex = activeDieIndex;
+  const startQueue = queue.slice(startIdx);
+  const startDieIndexQueue = dieIndexQueue.slice(startIdx);
+  const primaryMovesTotal = startDieIndexQueue.filter(x => x !== null).length;
+
+  newState.diceQueue = startQueue;
+  newState.dieIndexQueue = startDieIndexQueue;
+  newState.movesLeft = startQueue.length;
+  newState.diceValue = startQueue[0];
+  newState.activeDieIndex = startDieIndexQueue[0] ?? null;
   newState.primaryMoveNumber = 1;
   newState.primaryMovesTotal = primaryMovesTotal;
   newState.diceRolled = true;
