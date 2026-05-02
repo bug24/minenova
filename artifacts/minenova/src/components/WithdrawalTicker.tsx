@@ -66,7 +66,7 @@ export default function WithdrawalTicker() {
       className={`fixed bottom-[5.5rem] left-1/2 -translate-x-1/2 z-50 ${animating === "in" ? "ticker-in" : animating === "out" ? "ticker-out" : ""}`}
       data-testid="withdrawal-ticker"
     >
-      <div className="bg-card border border-border rounded-full px-4 py-2 shadow-lg flex items-center gap-2 text-sm whitespace-nowrap">
+      <div className="bg-card border border-border rounded-full px-4 py-2 shadow-lg flex items-center gap-2 text-sm whitespace-nowrap max-w-[calc(100vw-2rem)] overflow-hidden">
         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
         <TrendingUp className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
         <span className="font-medium text-foreground">{current.username}</span>

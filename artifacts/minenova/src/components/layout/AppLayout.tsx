@@ -65,7 +65,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground max-w-md mx-auto relative">
+    <div className="min-h-screen flex flex-col bg-background text-foreground max-w-md mx-auto relative overflow-x-hidden">
       {/* Top Header */}
       <header className="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
         <div>
