@@ -67,14 +67,15 @@ router.get("/activity/feed", async (req, res): Promise<void> => {
 
 // Public display settings (no auth required)
 router.get("/app-settings", async (_req, res): Promise<void> => {
-  const [row] = await db
+  const rows = await db
     .select()
     .from(adminConfigTable)
-    .where(eq(adminConfigTable.key, "withdrawal_ticker_enabled"))
-    .limit(1);
-  // Default to enabled when the key hasn't been set yet
-  const enabled = row ? row.value !== "false" : true;
-  res.json({ withdrawalTickerEnabled: enabled });
+    .where(sql`key IN ('withdrawal_ticker_enabled', 'voice_chat_enabled')`);
+  const map = new Map(rows.map(r => [r.key, r.value]));
+  res.json({
+    withdrawalTickerEnabled: map.get("withdrawal_ticker_enabled") !== "false",
+    voiceChatEnabled: map.get("voice_chat_enabled") !== "false",
+  });
 });
 
 export default router;

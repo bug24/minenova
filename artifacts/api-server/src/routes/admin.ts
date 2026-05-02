@@ -1213,6 +1213,7 @@ router.get("/admin/settings", requireAdmin, async (_req, res): Promise<void> => 
     "whot_platform_fee_pct", "whot_win_pct", "whot_min_fee", "whot_max_fee",
     "whot_solo_fee", "whot_solo_enabled", "whot_timeout_minutes",
     "withdrawal_ticker_enabled",
+    "voice_chat_enabled",
   ];
   const rows = await db.select().from(adminConfigTable).where(sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`);
   const settings: Record<string, string> = {};
@@ -1250,6 +1251,7 @@ router.put("/admin/settings", requireAdmin, async (req, res): Promise<void> => {
     whot_solo_enabled: boolStr.optional(),
     whot_timeout_minutes: strictPosInt.optional(),
     withdrawal_ticker_enabled: boolStr.optional(),
+    voice_chat_enabled: boolStr.optional(),
   });
   const data = schema.safeParse(req.body);
   if (!data.success) {

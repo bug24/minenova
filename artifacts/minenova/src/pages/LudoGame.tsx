@@ -12,6 +12,7 @@ import {
   type LudoGame, type GameState, type LudoSettings,
 } from "@/lib/ludoApi";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
+import { useAppSettings } from "@/hooks/useAppSettings";
 import VoiceChatButton from "@/components/VoiceChatButton";
 import {
   unlockAudio, playDiceRoll, playPieceTap, playPieceMove,
@@ -227,10 +228,12 @@ export default function LudoGame() {
     try { await sendLudoSignal(gameId, type, payload); } catch { /* non-fatal */ }
   }, [gameId]);
 
+  const { voiceChatEnabled } = useAppSettings();
+
   const voiceChat = useVoiceChat({
     isInitiator: isVoiceInitiator,
     sendSignal,
-    enabled: !isBotOpponent && game?.status === "active",
+    enabled: !isBotOpponent && game?.status === "active" && voiceChatEnabled,
   });
 
   const handleRemoteSignalRef = useRef(voiceChat.handleRemoteSignal);
@@ -630,7 +633,7 @@ export default function LudoGame() {
       </div>
 
       {/* Voice chat — right below dice row */}
-      {!isBotOpponent && game.status === "active" && (
+      {!isBotOpponent && game.status === "active" && voiceChatEnabled && (
         <VoiceChatButton
           inline
           status={voiceChat.status}

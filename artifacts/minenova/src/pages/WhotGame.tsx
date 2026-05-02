@@ -12,6 +12,7 @@ import {
   type WhotGame, type WhotGameState, type WhotSettings, type WhotCard as WhotCardType, type WhotSuit,
 } from "@/lib/whotApi";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
+import { useAppSettings } from "@/hooks/useAppSettings";
 import VoiceChatButton from "@/components/VoiceChatButton";
 import {
   unlockAudio, playCardSelect, playCardPlay, playCardDraw,
@@ -245,10 +246,12 @@ export default function WhotGame() {
     try { await sendWhotSignal(gameId, type, payload); } catch { /* non-fatal */ }
   }, [gameId]);
 
+  const { voiceChatEnabled } = useAppSettings();
+
   const voiceChat = useVoiceChat({
     isInitiator: isVoiceInitiator,
     sendSignal,
-    enabled: !isBotOpponent && game?.status === "active",
+    enabled: !isBotOpponent && game?.status === "active" && voiceChatEnabled,
   });
 
   const handleRemoteSignalRef = useRef(voiceChat.handleRemoteSignal);
@@ -605,7 +608,7 @@ export default function WhotGame() {
       </div>
 
       {/* Voice chat — right below turn status bar */}
-      {!isBotOpponent && game.status === "active" && (
+      {!isBotOpponent && game.status === "active" && voiceChatEnabled && (
         <VoiceChatButton
           inline
           status={voiceChat.status}

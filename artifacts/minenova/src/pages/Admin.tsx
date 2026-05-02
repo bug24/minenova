@@ -105,6 +105,7 @@ interface Settings {
   whot_solo_enabled: string;
   whot_timeout_minutes: string;
   withdrawal_ticker_enabled: string;
+  voice_chat_enabled: string;
 }
 interface ShareMessage { id: number; platform: string; message: string; isActive: boolean; sortOrder: number; }
 interface UserReferral { id: number; referredId: number; referredUsername: string; totalEarned: number; bonusPaid: boolean; createdAt: string; }
@@ -1951,6 +1952,7 @@ function SettingsTab({ secret }: { secret: string }) {
     whot_solo_enabled: "true",
     whot_timeout_minutes: "5",
     withdrawal_ticker_enabled: "true",
+    voice_chat_enabled: "true",
   };
 
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
@@ -2135,6 +2137,27 @@ function SettingsTab({ secret }: { secret: string }) {
               on={settings.withdrawal_ticker_enabled !== "false"}
               disabled={isSaving("withdrawal_ticker_enabled")}
               onChange={v => saveSetting("withdrawal_ticker_enabled", v ? "true" : "false")}
+            />
+          </div>
+        </div>
+
+        {/* Voice chat button toggle */}
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Voice chat in games</p>
+            <p className="text-xs text-muted-foreground">
+              {settings.voice_chat_enabled === "false"
+                ? "Disabled — voice button hidden from all game screens"
+                : "Enabled — players can start voice chat during live games"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isSaving("voice_chat_enabled") && <span className="text-xs text-muted-foreground">Saving…</span>}
+            {isSaved("voice_chat_enabled") && <span className="text-xs text-green-400">Saved ✓</span>}
+            <Toggle
+              on={settings.voice_chat_enabled !== "false"}
+              disabled={isSaving("voice_chat_enabled")}
+              onChange={v => saveSetting("voice_chat_enabled", v ? "true" : "false")}
             />
           </div>
         </div>
