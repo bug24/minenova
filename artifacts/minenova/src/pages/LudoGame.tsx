@@ -242,11 +242,30 @@ export default function LudoGame() {
       }
     };
 
+    let retryDelay = 1000;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let closed = false;
+
     es.onerror = () => {
+      if (closed) return;
       es.close();
+      retryTimer = setTimeout(() => {
+        if (closed) return;
+        retryDelay = Math.min(retryDelay * 2, 30000);
+        // Re-trigger the effect by toggling a reconnect signal would require
+        // state, so we recreate EventSource manually here via recursion.
+        const reconnect = new EventSource(sseUrl);
+        Object.assign(es, reconnect);
+        reconnect.onmessage = es.onmessage;
+        reconnect.onerror = es.onerror;
+      }, retryDelay);
     };
 
-    return () => es.close();
+    return () => {
+      closed = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      es.close();
+    };
   }, [gameId, queryClient, myPlayerIndex, toast]);
 
   const handleRoll = useCallback(async () => {

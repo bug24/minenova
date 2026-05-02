@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from "react";
 import type { GameState } from "@/lib/ludoApi";
 
 const CELL = 46;
@@ -71,6 +72,31 @@ export default function LudoBoard({
   const W = 15 * CELL;
   const R = CELL * 0.36; // piece radius
   const isMyTurn = gameState.currentTurn === myPlayerIndex;
+
+  // Track pieces that were just captured (returned to progress=-1)
+  const [capturedKeys, setCapturedKeys] = useState<Set<string>>(new Set());
+  const prevPlayersRef = useRef(gameState.players);
+
+  useEffect(() => {
+    const prev = prevPlayersRef.current;
+    const newlyCaptured: string[] = [];
+    gameState.players.forEach((player, pi) => {
+      player.pieces.forEach((piece, idx) => {
+        const prevProgress = prev[pi]?.pieces[idx]?.progress;
+        if (piece.progress === -1 && prevProgress !== undefined && prevProgress > -1) {
+          newlyCaptured.push(`${pi}-${idx}`);
+        }
+      });
+    });
+    prevPlayersRef.current = gameState.players;
+
+    if (newlyCaptured.length > 0) {
+      setCapturedKeys(new Set(newlyCaptured));
+      const t = setTimeout(() => setCapturedKeys(new Set()), 700);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [gameState.players]);
 
   return (
     <svg
@@ -207,6 +233,7 @@ export default function LudoBoard({
           const { x, y } = getPieceXY(pi as 0 | 1, piece.progress, idx);
           const isValid = isMe && isMyTurn && gameState.diceRolled && validMoves.includes(idx);
           const isFinished = piece.progress === 57;
+          const justCaptured = capturedKeys.has(`${pi}-${idx}`);
 
           return (
             <g
@@ -214,6 +241,23 @@ export default function LudoBoard({
               onClick={isValid ? () => onPieceClick(idx) : undefined}
               style={{ cursor: isValid ? "pointer" : "default" }}
             >
+              {/* Capture burst flash — shown briefly when piece is sent back to base */}
+              {justCaptured && (
+                <circle cx={x} cy={y} r={R + 4} fill="rgba(251,191,36,0.6)">
+                  <animate
+                    attributeName="r"
+                    values={`${R};${R + 18};${R + 4}`}
+                    dur="0.6s"
+                    fill="freeze"
+                  />
+                  <animate
+                    attributeName="fill-opacity"
+                    values="0.8;0.4;0"
+                    dur="0.6s"
+                    fill="freeze"
+                  />
+                </circle>
+              )}
               {/* Glow ring for valid moves */}
               {isValid && (
                 <circle cx={x} cy={y} r={R + 6} fill="rgba(251,191,36,0.35)">
@@ -231,13 +275,26 @@ export default function LudoBoard({
                   />
                 </circle>
               )}
-              {/* Piece circle */}
+              {/* Piece circle — scales up briefly when just captured (sent back to base) */}
               <circle
                 cx={x} cy={y} r={R}
                 fill={isFinished ? "gold" : color}
                 stroke={isFinished ? "#b45309" : strokeColor}
                 strokeWidth={isValid ? 2.5 : 1.5}
-              />
+                style={justCaptured ? { animation: "captureReturn 0.5s ease-out" } : undefined}
+              >
+                {justCaptured && (
+                  <animateTransform
+                    attributeName="transform"
+                    type="scale"
+                    from={`1.8 1.8`}
+                    to="1 1"
+                    dur="0.5s"
+                    additive="sum"
+                    fill="freeze"
+                  />
+                )}
+              </circle>
               {/* Piece number */}
               <text
                 x={x} y={y + 1}
