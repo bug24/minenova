@@ -104,6 +104,7 @@ interface Settings {
   whot_solo_fee: string;
   whot_solo_enabled: string;
   whot_timeout_minutes: string;
+  withdrawal_ticker_enabled: string;
 }
 interface ShareMessage { id: number; platform: string; message: string; isActive: boolean; sortOrder: number; }
 interface UserReferral { id: number; referredId: number; referredUsername: string; totalEarned: number; bonusPaid: boolean; createdAt: string; }
@@ -1949,6 +1950,7 @@ function SettingsTab({ secret }: { secret: string }) {
     whot_solo_fee: "100",
     whot_solo_enabled: "true",
     whot_timeout_minutes: "5",
+    withdrawal_ticker_enabled: "true",
   };
 
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
@@ -2111,6 +2113,32 @@ function SettingsTab({ secret }: { secret: string }) {
 
   return (
     <div className="max-w-lg space-y-5">
+
+      {/* ── App Display ── */}
+      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+        <h3 className="font-semibold text-sm text-purple-400">App Display</h3>
+
+        {/* Withdrawal ticker toggle */}
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Withdrawal ticker</p>
+            <p className="text-xs text-muted-foreground">
+              {settings.withdrawal_ticker_enabled === "false"
+                ? "Hidden — ticker is not shown to users"
+                : "Visible — scrolling withdrawal banner shown at the bottom"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isSaving("withdrawal_ticker_enabled") && <span className="text-xs text-muted-foreground">Saving…</span>}
+            {isSaved("withdrawal_ticker_enabled") && <span className="text-xs text-green-400">Saved ✓</span>}
+            <Toggle
+              on={settings.withdrawal_ticker_enabled !== "false"}
+              disabled={isSaving("withdrawal_ticker_enabled")}
+              onChange={v => saveSetting("withdrawal_ticker_enabled", v ? "true" : "false")}
+            />
+          </div>
+        </div>
+      </div>
 
       {/* ── USDT Wallet Address ── */}
       <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">

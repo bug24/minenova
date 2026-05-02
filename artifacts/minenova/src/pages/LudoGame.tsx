@@ -629,6 +629,19 @@ export default function LudoGame() {
         {(isMyTurn || !diceValue || !diceRolled) && <div className="w-10 shrink-0" />}
       </div>
 
+      {/* Voice chat — right below dice row */}
+      {!isBotOpponent && game.status === "active" && (
+        <VoiceChatButton
+          inline
+          status={voiceChat.status}
+          isMuted={voiceChat.isMuted}
+          isRemoteSpeaking={voiceChat.isRemoteSpeaking}
+          onStart={voiceChat.start}
+          onStop={voiceChat.stop}
+          onToggleMute={voiceChat.toggleMute}
+        />
+      )}
+
       {/* Forfeit confirm overlay */}
       {showForfeitConfirm && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-6">
@@ -661,18 +674,6 @@ export default function LudoGame() {
           isSolo={isBotOpponent}
           settings={ludoSettings}
           onGoLobby={() => navigate("/ludo")}
-        />
-      )}
-
-      {/* Voice chat — hidden for bot games and after game ends */}
-      {!isBotOpponent && game.status === "active" && (
-        <VoiceChatButton
-          status={voiceChat.status}
-          isMuted={voiceChat.isMuted}
-          isRemoteSpeaking={voiceChat.isRemoteSpeaking}
-          onStart={voiceChat.start}
-          onStop={voiceChat.stop}
-          onToggleMute={voiceChat.toggleMute}
         />
       )}
     </div>

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLogout } from "@workspace/api-client-react";
@@ -39,8 +39,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const showUpgradeBtn = location !== "/upgrades";
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [resending, setResending] = useState(false);
+  const [tickerEnabled, setTickerEnabled] = useState(true);
 
   const showVerifyBanner = user && !user.emailVerified && !bannerDismissed;
+
+  // Fetch public display settings
+  useEffect(() => {
+    fetch("/api/app-settings")
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { withdrawalTickerEnabled: boolean } | null) => {
+        if (data !== null) setTickerEnabled(data.withdrawalTickerEnabled);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleResend = async () => {
     setResending(true);
@@ -160,8 +171,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
 
-      {/* Withdrawal Ticker */}
-      <WithdrawalTicker />
+      {/* Withdrawal Ticker — controlled by admin toggle */}
+      {tickerEnabled && <WithdrawalTicker />}
     </div>
   );
 }

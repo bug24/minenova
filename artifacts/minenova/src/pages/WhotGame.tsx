@@ -604,6 +604,19 @@ export default function WhotGame() {
         )}
       </div>
 
+      {/* Voice chat — right below turn status bar */}
+      {!isBotOpponent && game.status === "active" && (
+        <VoiceChatButton
+          inline
+          status={voiceChat.status}
+          isMuted={voiceChat.isMuted}
+          isRemoteSpeaking={voiceChat.isRemoteSpeaking}
+          onStart={voiceChat.start}
+          onStop={voiceChat.stop}
+          onToggleMute={voiceChat.toggleMute}
+        />
+      )}
+
       {/* My hand */}
       <div className={`rounded-xl border p-3 transition-all ${isMyTurn ? "border-amber-400/40 bg-amber-400/5" : "border-card-border bg-card"}`}>
         <div className="flex items-center justify-between mb-2">
@@ -644,17 +657,6 @@ export default function WhotGame() {
         </div>
       </div>
 
-      {/* Voice chat — hidden for bot games and after game ends */}
-      {!isBotOpponent && game.status === "active" && (
-        <VoiceChatButton
-          status={voiceChat.status}
-          isMuted={voiceChat.isMuted}
-          isRemoteSpeaking={voiceChat.isRemoteSpeaking}
-          onStart={voiceChat.start}
-          onStop={voiceChat.stop}
-          onToggleMute={voiceChat.toggleMute}
-        />
-      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, usersTable, referralsTable, transactionsTable } from "@workspace/db";
+import { db, usersTable, referralsTable, transactionsTable, adminConfigTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { GetLeaderboardResponse, GetActivityFeedResponse } from "@workspace/api-zod";
@@ -63,6 +63,18 @@ router.get("/activity/feed", async (req, res): Promise<void> => {
   }));
 
   res.json(GetActivityFeedResponse.parse(items));
+});
+
+// Public display settings (no auth required)
+router.get("/app-settings", async (_req, res): Promise<void> => {
+  const [row] = await db
+    .select()
+    .from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "withdrawal_ticker_enabled"))
+    .limit(1);
+  // Default to enabled when the key hasn't been set yet
+  const enabled = row ? row.value !== "false" : true;
+  res.json({ withdrawalTickerEnabled: enabled });
 });
 
 export default router;
