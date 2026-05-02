@@ -48,36 +48,45 @@ function parseBoard(raw: unknown): GameState {
   return raw as GameState;
 }
 
+type DbTx = Parameters<Parameters<(typeof db)["transaction"]>[0]>[0];
+
 async function payoutWinner(
+  tx: DbTx,
   winnerId: number,
   loserId: number,
   entryFee: number,
-  gameId: number,
 ): Promise<void> {
   const pot = entryFee * 2;
-  const winnings = pot * (1 - SYSTEM_FEE_RATE);
+  const systemFee = pot * SYSTEM_FEE_RATE;
+  const winnings = pot - systemFee;
 
-  await db.transaction(async tx => {
-    await tx
-      .update(usersTable)
-      .set({ coinBalance: sql`coin_balance + ${winnings}` })
-      .where(eq(usersTable.id, winnerId));
+  await tx
+    .update(usersTable)
+    .set({ coinBalance: sql`coin_balance + ${winnings}` })
+    .where(eq(usersTable.id, winnerId));
 
-    await tx.insert(transactionsTable).values({
-      userId: winnerId,
-      type: "ludo_win",
-      amount: winnings,
-      status: "completed",
-      description: `Ludo winnings — won ${pot} coin pot (10% fee applied)`,
-    });
+  await tx.insert(transactionsTable).values({
+    userId: winnerId,
+    type: "ludo_win",
+    amount: winnings,
+    status: "completed",
+    description: `Ludo winnings — won ${pot} coin pot`,
+  });
 
-    await tx.insert(transactionsTable).values({
-      userId: loserId,
-      type: "ludo_loss",
-      amount: -entryFee,
-      status: "completed",
-      description: `Ludo entry fee — lost match`,
-    });
+  await tx.insert(transactionsTable).values({
+    userId: winnerId,
+    type: "ludo_fee",
+    amount: -systemFee,
+    status: "completed",
+    description: `Ludo system fee (10% of ${pot} coin pot)`,
+  });
+
+  await tx.insert(transactionsTable).values({
+    userId: loserId,
+    type: "ludo_loss",
+    amount: -entryFee,
+    status: "completed",
+    description: `Ludo entry fee — lost match`,
   });
 }
 
@@ -156,6 +165,7 @@ router.post("/ludo/challenges/:id/accept", requireAuth, async (req: Request, res
   const challengeId = Number(req.params.id);
   if (Number.isNaN(challengeId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
+  // Pre-flight: verify challenge exists and caller is eligible (outside tx for fast rejection)
   const [challenge] = await db
     .select()
     .from(ludoChallengesTable)
@@ -166,42 +176,48 @@ router.post("/ludo/challenges/:id/accept", requireAuth, async (req: Request, res
   if (challenge.status !== "open") { res.status(409).json({ error: "Challenge is no longer open" }); return; }
   if (challenge.creatorId === req.userId) { res.status(400).json({ error: "Cannot accept your own challenge" }); return; }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
-  if (user.coinBalance < challenge.entryFee) {
-    res.status(400).json({ error: "Insufficient coin balance" });
-    return;
-  }
-
   let gameId = 0;
 
   await db.transaction(async tx => {
+    // Atomically claim the challenge — only succeeds if it is still 'open'
     const claimed = await tx
+      .update(ludoChallengesTable)
+      .set({ status: "matched", opponentId: req.userId })
+      .where(and(eq(ludoChallengesTable.id, challengeId), eq(ludoChallengesTable.status, "open")))
+      .returning({ id: ludoChallengesTable.id, entryFee: ludoChallengesTable.entryFee, creatorId: ludoChallengesTable.creatorId });
+
+    if (claimed.length === 0) throw Object.assign(new Error("Challenge no longer open"), { status: 409 });
+
+    const { entryFee, creatorId } = claimed[0];
+
+    // Deduct accepter's entry fee (with balance guard)
+    const deducted = await tx
       .update(usersTable)
-      .set({ coinBalance: sql`coin_balance - ${challenge.entryFee}` })
-      .where(and(eq(usersTable.id, req.userId!), sql`coin_balance >= ${challenge.entryFee}`))
+      .set({ coinBalance: sql`coin_balance - ${entryFee}` })
+      .where(and(eq(usersTable.id, req.userId!), sql`coin_balance >= ${entryFee}`))
       .returning({ id: usersTable.id });
 
-    if (claimed.length === 0) throw new Error("Insufficient balance");
+    if (deducted.length === 0) throw Object.assign(new Error("Insufficient balance"), { status: 400 });
 
     await tx.insert(transactionsTable).values({
       userId: req.userId!,
       type: "ludo_entry",
-      amount: -challenge.entryFee,
+      amount: -entryFee,
       status: "completed",
-      description: `Ludo entry fee held (${challenge.entryFee} coins)`,
+      description: `Ludo entry fee held (${entryFee} coins)`,
     });
 
-    const initialState = createInitialState(challenge.creatorId, req.userId!);
+    const initialState = createInitialState(creatorId, req.userId!);
 
     const [game] = await tx
       .insert(ludoGamesTable)
       .values({
         challengeId,
-        redPlayerId: challenge.creatorId,
+        redPlayerId: creatorId,
         bluePlayerId: req.userId!,
         boardState: initialState as unknown as Record<string, unknown>,
         status: "active",
-        entryFee: challenge.entryFee,
+        entryFee,
       })
       .returning();
 
@@ -209,7 +225,7 @@ router.post("/ludo/challenges/:id/accept", requireAuth, async (req: Request, res
 
     await tx
       .update(ludoChallengesTable)
-      .set({ status: "matched", opponentId: req.userId, gameId })
+      .set({ gameId })
       .where(eq(ludoChallengesTable.id, challengeId));
   });
 
@@ -429,7 +445,7 @@ router.post("/ludo/games/:id/move", requireAuth, async (req: Request, res: Respo
 
     if (won && newState.winnerId) {
       const loserId = newState.winnerId === game.redPlayerId ? game.bluePlayerId : game.redPlayerId;
-      await payoutWinner(newState.winnerId, loserId, game.entryFee, gameId);
+      await payoutWinner(tx, newState.winnerId, loserId, game.entryFee);
     }
   });
 
@@ -467,7 +483,7 @@ router.post("/ludo/games/:id/forfeit", requireAuth, async (req: Request, res: Re
       .where(eq(ludoGamesTable.id, gameId));
 
     if (newState.winnerId) {
-      await payoutWinner(newState.winnerId, req.userId!, game.entryFee, gameId);
+      await payoutWinner(tx, newState.winnerId, req.userId!, game.entryFee);
     }
   });
 
@@ -515,7 +531,7 @@ router.post("/ludo/games/:id/claim-timeout", requireAuth, async (req: Request, r
       })
       .where(eq(ludoGamesTable.id, gameId));
 
-    await payoutWinner(req.userId!, opponentId, game.entryFee, gameId);
+    await payoutWinner(tx, req.userId!, opponentId, game.entryFee);
   });
 
   emitGameUpdate(gameId, { type: "timeout", winner: req.userId, state: newState });
