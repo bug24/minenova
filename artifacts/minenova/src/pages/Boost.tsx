@@ -228,6 +228,11 @@ export default function Boost() {
       setPendingTier(null);
       setAdQueue([]);
       setAdIndex(0);
+      toast({
+        variant: "destructive",
+        title: "Could not load ad",
+        description: "Something went wrong preparing the boost. Please try again.",
+      });
     }
   };
 
