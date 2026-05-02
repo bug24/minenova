@@ -16,26 +16,59 @@ import {
 const router: IRouter = Router();
 
 // ---------------------------------------------------------------------------
-// SSE registry
+// SSE registry — nested per-player so each listener gets a sanitized view
 // ---------------------------------------------------------------------------
 type Listener = (data: string) => void;
-const sseListeners = new Map<number, Set<Listener>>();
+// gameId → userId → Set<Listener>
+const sseListeners = new Map<number, Map<number, Set<Listener>>>();
 
-function emitGameUpdate(gameId: number, payload: object): void {
-  const listeners = sseListeners.get(gameId);
-  if (!listeners || listeners.size === 0) return;
-  const msg = JSON.stringify(payload);
-  listeners.forEach(fn => fn(msg));
+function sanitiseState(state: GameState, viewerUserId: number, player0Id: number): GameState {
+  const myIndex: 0 | 1 = player0Id === viewerUserId ? 0 : 1;
+  return {
+    ...state,
+    players: [
+      myIndex === 0
+        ? state.players[0]
+        : { ...state.players[0], hand: state.players[0].hand.map(() => ({ suit: "WHOT" as const, value: 0 })) },
+      myIndex === 1
+        ? state.players[1]
+        : { ...state.players[1], hand: state.players[1].hand.map(() => ({ suit: "WHOT" as const, value: 0 })) },
+    ],
+    deck: state.deck.map(() => ({ suit: "WHOT" as const, value: 0 })),
+  };
 }
 
-function addSseListener(gameId: number, fn: Listener): () => void {
-  if (!sseListeners.has(gameId)) sseListeners.set(gameId, new Set());
-  sseListeners.get(gameId)!.add(fn);
+function emitGameUpdate(
+  gameId: number,
+  type: string,
+  rawState: GameState,
+  player0Id: number,
+  player1Id: number,
+  extra: Record<string, unknown> = {},
+): void {
+  const byUser = sseListeners.get(gameId);
+  if (!byUser || byUser.size === 0) return;
+  byUser.forEach((listeners, userId) => {
+    if (listeners.size === 0) return;
+    const sanitized = sanitiseState(rawState, userId, player0Id);
+    const payload = JSON.stringify({ type, state: sanitized, ...extra });
+    listeners.forEach(fn => fn(payload));
+  });
+}
+
+function addSseListener(gameId: number, userId: number, fn: Listener): () => void {
+  if (!sseListeners.has(gameId)) sseListeners.set(gameId, new Map());
+  const byUser = sseListeners.get(gameId)!;
+  if (!byUser.has(userId)) byUser.set(userId, new Set());
+  byUser.get(userId)!.add(fn);
   return () => {
-    const set = sseListeners.get(gameId);
+    const byUser2 = sseListeners.get(gameId);
+    if (!byUser2) return;
+    const set = byUser2.get(userId);
     if (!set) return;
     set.delete(fn);
-    if (set.size === 0) sseListeners.delete(gameId);
+    if (set.size === 0) byUser2.delete(userId);
+    if (byUser2.size === 0) sseListeners.delete(gameId);
   };
 }
 
@@ -224,14 +257,26 @@ function triggerBotMove(gameId: number): void {
 
         if (newState.status === "completed") {
           const { platformFeePct } = await getWhotSettings();
-          await payoutWinner(tx, systemUserId, newState.winnerId!, game.entryFee, platformFeePct / 100);
+          if (newState.winnerId === systemUserId) {
+            // Bot wins solo — platform retains the player's entry fee
+            await tx.insert(transactionsTable).values({
+              userId: systemUserId,
+              type: "whot_fee",
+              amount: game.entryFee,
+              status: "completed",
+              description: `WHOT solo — bot win, platform retains ${game.entryFee} coins`,
+            });
+          } else {
+            await payoutWinner(tx, systemUserId, newState.winnerId!, game.entryFee, platformFeePct / 100);
+          }
         }
 
         continueBotTurn = newState.status === "active" && newState.currentTurn === 1;
       });
 
       if (newState) {
-        emitGameUpdate(gameId, { type: "bot_move", state: newState });
+        const [g] = await db.select({ p0: whotGamesTable.player0Id, p1: whotGamesTable.player1Id }).from(whotGamesTable).where(eq(whotGamesTable.id, gameId)).limit(1);
+        if (g) emitGameUpdate(gameId, "bot_move", newState, g.p0, g.p1);
         if (continueBotTurn) {
           await new Promise(r => setTimeout(r, 600));
           triggerBotMove(gameId);
@@ -571,20 +616,9 @@ router.get("/whot/games/:id", requireAuth, async (req: Request, res: Response): 
       res.status(403).json({ error: "Not a participant" }); return;
     }
 
-    // Hide opponent's hand if game is active
+    // Hide opponent's hand and deck contents from the requesting player
     const state = parseState(game.gameState);
-    const myIndex: 0 | 1 = game.player0Id === req.userId ? 0 : 1;
-    const oppIndex: 0 | 1 = myIndex === 0 ? 1 : 0;
-
-    const sanitisedState: GameState = {
-      ...state,
-      players: [
-        myIndex === 0 ? state.players[0] : { ...state.players[0], hand: state.players[0].hand.map(() => ({ suit: "WHOT" as const, value: 0 })) },
-        myIndex === 1 ? state.players[1] : { ...state.players[1], hand: state.players[1].hand.map(() => ({ suit: "WHOT" as const, value: 0 })) },
-      ],
-      // Keep deck length but hide contents
-      deck: state.deck.map(() => ({ suit: "WHOT" as const, value: 0 })),
-    };
+    const sanitisedState = sanitiseState(state, req.userId!, game.player0Id);
 
     res.json({
       ...game,
@@ -611,6 +645,7 @@ router.post("/whot/games/:id/play", requireAuth, async (req: Request, res: Respo
 
     let newState: GameState | null = null;
     let botTriggered = false;
+    let p0Id = 0, p1Id = 0;
 
     await db.transaction(async tx => {
       const [game] = await tx
@@ -625,6 +660,8 @@ router.post("/whot/games/:id/play", requireAuth, async (req: Request, res: Respo
       if (game.player0Id !== req.userId && game.player1Id !== req.userId) {
         throw Object.assign(new Error("Not a participant"), { status: 403 });
       }
+
+      p0Id = game.player0Id; p1Id = game.player1Id;
 
       const state = parseState(game.gameState);
       const myIndex: 0 | 1 = game.player0Id === req.userId ? 0 : 1;
@@ -660,7 +697,14 @@ router.post("/whot/games/:id/play", requireAuth, async (req: Request, res: Respo
       if (newState.status === "completed") {
         const systemUserId = await getSystemUserId();
         const { platformFeePct } = await getWhotSettings();
-        await payoutWinner(tx, systemUserId, newState.winnerId!, game.entryFee, platformFeePct / 100);
+        if (newState.winnerId === systemUserId) {
+          await tx.insert(transactionsTable).values({
+            userId: systemUserId, type: "whot_fee", amount: game.entryFee, status: "completed",
+            description: `WHOT solo — bot win, platform retains ${game.entryFee} coins`,
+          });
+        } else {
+          await payoutWinner(tx, systemUserId, newState.winnerId!, game.entryFee, platformFeePct / 100);
+        }
       }
 
       const systemUserId = await getSystemUserId();
@@ -671,7 +715,7 @@ router.post("/whot/games/:id/play", requireAuth, async (req: Request, res: Respo
       );
     });
 
-    emitGameUpdate(gameId, { type: "play", state: newState });
+    emitGameUpdate(gameId, "play", newState!, p0Id, p1Id);
     if (botTriggered) {
       await new Promise(r => setTimeout(r, 700));
       triggerBotMove(gameId);
@@ -692,6 +736,7 @@ router.post("/whot/games/:id/draw", requireAuth, async (req: Request, res: Respo
 
     let newState: GameState | null = null;
     let botTriggered = false;
+    let p0Id = 0, p1Id = 0;
 
     await db.transaction(async tx => {
       const [game] = await tx
@@ -706,6 +751,8 @@ router.post("/whot/games/:id/draw", requireAuth, async (req: Request, res: Respo
       if (game.player0Id !== req.userId && game.player1Id !== req.userId) {
         throw Object.assign(new Error("Not a participant"), { status: 403 });
       }
+
+      p0Id = game.player0Id; p1Id = game.player1Id;
 
       const state = parseState(game.gameState);
       const myIndex: 0 | 1 = game.player0Id === req.userId ? 0 : 1;
@@ -736,7 +783,7 @@ router.post("/whot/games/:id/draw", requireAuth, async (req: Request, res: Respo
       );
     });
 
-    emitGameUpdate(gameId, { type: "draw", state: newState });
+    emitGameUpdate(gameId, "draw", newState!, p0Id, p1Id);
     if (botTriggered) {
       await new Promise(r => setTimeout(r, 700));
       triggerBotMove(gameId);
@@ -756,18 +803,31 @@ router.post("/whot/games/:id/call-suit", requireAuth, async (req: Request, res: 
     const { suit } = req.body as { suit?: unknown };
     if (!suit || typeof suit !== "string") { res.status(400).json({ error: "suit required" }); return; }
 
-    const [game] = await db.select().from(whotGamesTable).where(eq(whotGamesTable.id, gameId)).limit(1);
-    if (!game) { res.status(404).json({ error: "Game not found" }); return; }
-    if (game.status !== "active") { res.status(409).json({ error: "Game not active" }); return; }
+    let newState: GameState | null = null;
+    let p0Id = 0, p1Id = 0;
 
-    const state = parseState(game.gameState);
-    const top = state.discardPile[state.discardPile.length - 1];
-    if (top.suit !== "WHOT" || state.calledSuit) { res.status(409).json({ error: "No suit call needed" }); return; }
+    await db.transaction(async tx => {
+      const [game] = await tx.select().from(whotGamesTable).where(eq(whotGamesTable.id, gameId)).for("update").limit(1);
+      if (!game) throw Object.assign(new Error("Game not found"), { status: 404 });
+      if (game.status !== "active") throw Object.assign(new Error("Game not active"), { status: 409 });
+      if (game.player0Id !== req.userId && game.player1Id !== req.userId) {
+        throw Object.assign(new Error("Not a participant"), { status: 403 });
+      }
 
-    const newState = { ...state, calledSuit: suit as Suit };
-    await db.update(whotGamesTable).set({ gameState: newState as unknown as Record<string, unknown> }).where(eq(whotGamesTable.id, gameId));
+      p0Id = game.player0Id; p1Id = game.player1Id;
 
-    emitGameUpdate(gameId, { type: "suit_called", suit, state: newState });
+      const state = parseState(game.gameState);
+      const myIndex: 0 | 1 = game.player0Id === req.userId ? 0 : 1;
+      if (state.currentTurn !== myIndex) throw Object.assign(new Error("Not your turn"), { status: 409 });
+
+      const top = state.discardPile[state.discardPile.length - 1];
+      if (top.suit !== "WHOT" || state.calledSuit) throw Object.assign(new Error("No suit call needed"), { status: 409 });
+
+      newState = { ...state, calledSuit: suit as Suit };
+      await tx.update(whotGamesTable).set({ gameState: newState as unknown as Record<string, unknown> }).where(eq(whotGamesTable.id, gameId));
+    });
+
+    emitGameUpdate(gameId, "suit_called", newState!, p0Id, p1Id, { suit });
     res.json({ state: newState });
   } catch (err) {
     handleRouteError(err, res);
@@ -783,6 +843,7 @@ router.post("/whot/games/:id/forfeit", requireAuth, async (req: Request, res: Re
     if (Number.isNaN(gameId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
     let newState: GameState | null = null;
+    let p0Id = 0, p1Id = 0;
 
     await db.transaction(async tx => {
       const [game] = await tx
@@ -810,12 +871,21 @@ router.post("/whot/games/:id/forfeit", requireAuth, async (req: Request, res: Re
         endedAt: now,
       }).where(eq(whotGamesTable.id, gameId));
 
+      p0Id = game.player0Id; p1Id = game.player1Id;
+
       const systemUserId = await getSystemUserId();
       const { platformFeePct } = await getWhotSettings();
-      await payoutWinner(tx, systemUserId, winnerId, game.entryFee, platformFeePct / 100);
+      if (winnerId === systemUserId) {
+        await tx.insert(transactionsTable).values({
+          userId: systemUserId, type: "whot_fee", amount: game.entryFee, status: "completed",
+          description: `WHOT solo — bot win (forfeit), platform retains ${game.entryFee} coins`,
+        });
+      } else {
+        await payoutWinner(tx, systemUserId, winnerId, game.entryFee, platformFeePct / 100);
+      }
     });
 
-    emitGameUpdate(gameId, { type: "forfeit", winner: newState!.winnerId, state: newState });
+    emitGameUpdate(gameId, "forfeit", newState!, p0Id, p1Id, { winner: newState!.winnerId });
     res.json({ message: "Forfeited", state: newState });
   } catch (err) {
     handleRouteError(err, res);
@@ -831,6 +901,7 @@ router.post("/whot/games/:id/claim-timeout", requireAuth, async (req: Request, r
     if (Number.isNaN(gameId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
     let newState: GameState | null = null;
+    let p0Id = 0, p1Id = 0;
 
     await db.transaction(async tx => {
       const [game] = await tx
@@ -846,13 +917,17 @@ router.post("/whot/games/:id/claim-timeout", requireAuth, async (req: Request, r
         throw Object.assign(new Error("Not a participant"), { status: 403 });
       }
 
+      p0Id = game.player0Id; p1Id = game.player1Id;
+
       const state = parseState(game.gameState);
       const myIndex: 0 | 1 = game.player0Id === req.userId ? 0 : 1;
 
       if (state.currentTurn === myIndex) {
         throw Object.assign(new Error("It is your turn — opponent has not timed out"), { status: 400 });
       }
-      if (!isTimedOut(state)) {
+
+      const { timeoutMinutes, platformFeePct } = await getWhotSettings();
+      if (!isTimedOut(state, timeoutMinutes * 60 * 1000)) {
         throw Object.assign(new Error("Opponent has not timed out yet"), { status: 400 });
       }
 
@@ -868,11 +943,10 @@ router.post("/whot/games/:id/claim-timeout", requireAuth, async (req: Request, r
       }).where(eq(whotGamesTable.id, gameId));
 
       const systemUserId = await getSystemUserId();
-      const { platformFeePct } = await getWhotSettings();
       await payoutWinner(tx, systemUserId, req.userId!, game.entryFee, platformFeePct / 100);
     });
 
-    emitGameUpdate(gameId, { type: "timeout", winner: req.userId, state: newState });
+    emitGameUpdate(gameId, "timeout", newState!, p0Id, p1Id, { winner: req.userId });
     res.json({ message: "Won by timeout", state: newState });
   } catch (err) {
     handleRouteError(err, res);
@@ -880,27 +954,41 @@ router.post("/whot/games/:id/claim-timeout", requireAuth, async (req: Request, r
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/whot/games/:id/events — SSE
+// GET /api/whot/games/:id/events — SSE (auth via ?token= query param like Ludo)
+// EventSource cannot send custom headers, so token is accepted as a query param.
 // ---------------------------------------------------------------------------
 router.get("/whot/games/:id/events", async (req: Request, res: Response): Promise<void> => {
+  // Promote query-param token to Authorization header so verifyToken can read it
+  if (!req.headers.authorization && req.query.token) {
+    req.headers.authorization = `Bearer ${req.query.token as string}`;
+  }
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const { verifyToken } = await import("../lib/auth");
+  const uid = verifyToken(authHeader.replace("Bearer ", ""));
+  if (!uid) { res.status(401).json({ error: "Invalid or expired token" }); return; }
+  req.userId = uid;
+
   const gameId = Number(req.params.id);
   if (Number.isNaN(gameId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [game] = await db.select().from(whotGamesTable).where(eq(whotGamesTable.id, gameId)).limit(1);
+  if (!game) { res.status(404).json({ error: "Game not found" }); return; }
+  if (game.player0Id !== uid && game.player1Id !== uid) {
+    res.status(403).json({ error: "Not a participant" }); return;
+  }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
-  const send = (data: string) => {
-    res.write(`data: ${data}\n\n`);
-    if (typeof (res as unknown as { flush?: () => void }).flush === "function") {
-      (res as unknown as { flush: () => void }).flush();
-    }
-  };
+  const send = (data: string) => { res.write(`data: ${data}\n\n`); };
 
-  send(JSON.stringify({ type: "connected" }));
+  send(JSON.stringify({ type: "connected", gameId }));
 
-  const remove = addSseListener(gameId, send);
+  const remove = addSseListener(gameId, uid, send);
   const heartbeat = setInterval(() => res.write(": ping\n\n"), 25000);
 
   req.on("close", () => {
@@ -908,5 +996,59 @@ router.get("/whot/games/:id/events", async (req: Request, res: Response): Promis
     clearInterval(heartbeat);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Abandoned-game sweep — auto-forfeit games that have timed out with no claim
+// ---------------------------------------------------------------------------
+setInterval(async () => {
+  try {
+    const { timeoutMinutes, platformFeePct } = await getWhotSettings();
+    const cutoff = new Date(Date.now() - timeoutMinutes * 60 * 1000);
+
+    const staleGames = await db
+      .select()
+      .from(whotGamesTable)
+      .where(and(eq(whotGamesTable.status, "active"), sql`last_move_at < ${cutoff}`));
+
+    for (const game of staleGames) {
+      try {
+        const state = parseState(game.gameState);
+        const timedOutPlayerIndex = state.currentTurn as 0 | 1;
+        const timedOutPlayerId = timedOutPlayerIndex === 0 ? game.player0Id : game.player1Id;
+        const winnerId = timedOutPlayerIndex === 0 ? game.player1Id : game.player0Id;
+
+        const newState = forfeit(state, timedOutPlayerId);
+        const systemUserId = await getSystemUserId();
+
+        await db.transaction(async tx => {
+          const [current] = await tx.select({ status: whotGamesTable.status }).from(whotGamesTable).where(eq(whotGamesTable.id, game.id)).for("update").limit(1);
+          if (!current || current.status !== "active") return;
+
+          await tx.update(whotGamesTable).set({
+            gameState: newState as unknown as Record<string, unknown>,
+            status: "completed",
+            winnerId,
+            endedAt: new Date(),
+          }).where(eq(whotGamesTable.id, game.id));
+
+          if (winnerId === systemUserId) {
+            await tx.insert(transactionsTable).values({
+              userId: systemUserId, type: "whot_fee", amount: game.entryFee, status: "completed",
+              description: `WHOT sweep — bot win, platform retains ${game.entryFee} coins`,
+            });
+          } else {
+            await payoutWinner(tx, systemUserId, winnerId, game.entryFee, platformFeePct / 100);
+          }
+        });
+
+        emitGameUpdate(game.id, "timeout", newState, game.player0Id, game.player1Id, { winner: winnerId });
+      } catch {
+        // non-fatal — skip this game
+      }
+    }
+  } catch {
+    // non-fatal sweep error
+  }
+}, 60_000);
 
 export default router;
