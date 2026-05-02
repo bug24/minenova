@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "8jlPx3Il9b3lhORPjwLUd"
+uri = "file://minenova-cpanel.zip"
+type = "unspecified"
+title = "MineNova — cPanel Deployment Package"
