@@ -11,6 +11,7 @@ import {
   Sun, Moon, UserCircle, Copy, RotateCcw, Activity, ChevronRight,
   Play, Zap, AlertTriangle, ToggleLeft, ToggleRight, Menu, ChevronLeft,
   Film, Link, Clock, MonitorPlay, Code, Bell, Layers, ArrowUp, ArrowDown,
+  TrendingUp, TrendingDown, DollarSign, LineChart,
 } from "lucide-react";
 
 function apiFetch(path: string, options?: RequestInit) {
@@ -77,6 +78,43 @@ interface UpgradePayment {
 interface Analytics {
   totalUsers: number; activeMiners: number; totalCoinsDistributed: number;
   totalUsdtWithdrawn: number; totalReferralPayout: number; pendingWithdrawals: number;
+  usdtUpgradeRevenue: number; netPnlUsdt: number;
+}
+
+interface ReportMonth {
+  month: string;
+  upgradeRevenue: number;
+  withdrawalsCost: number;
+  gameFeeCoins: number;
+  gameFeeUsd: number;
+  referralCoins: number;
+  referralUsd: number;
+  totalRevenueUsd: number;
+  totalCostUsd: number;
+  netUsd: number;
+}
+interface ReportSummary {
+  allTime: {
+    upgradeRevenue: number;
+    withdrawalsCost: number;
+    gameFeeCoins: number;
+    gameFeeUsd: number;
+    referralCoins: number;
+    referralUsd: number;
+    totalRevenueUsd: number;
+    totalCostUsd: number;
+    netUsd: number;
+  };
+  months: ReportMonth[];
+  forecast: {
+    avgMonthlyNetUsd: number;
+    projectedNetUsd30d: number;
+    projectedNetUsd60d: number;
+    projectedNetUsd90d: number;
+    reserveMonths: number | null;
+    outlook: "profitable" | "breaking-even" | "at-risk";
+  };
+  coinUsdRate: number;
 }
 interface WithdrawalStats {
   pendingCount: number; pendingValue: number; approvedTotal: number; rejectedTotal: number;
@@ -125,7 +163,7 @@ interface UserProfile extends AdminUser {
   transactions: UserTransaction[];
 }
 
-type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads" | "scripts";
+type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads" | "scripts" | "reports";
 type UpgradeSubTab = "manage" | "history" | "approve-reject";
 
 interface AdminAd {
@@ -397,6 +435,7 @@ function DashboardTab({ secret }: { secret: string }) {
   if (loading) return <p className="text-muted-foreground text-sm py-8 text-center">Loading…</p>;
   if (!data) return <p className="text-destructive text-sm py-8 text-center">Failed to load analytics</p>;
 
+  const netPnl = data.netPnlUsdt ?? 0;
   const cards = [
     { label: "Total Users", value: data.totalUsers.toLocaleString(), icon: Users, color: "text-blue-400" },
     { label: "Active Miners", value: data.activeMiners.toLocaleString(), icon: Cpu, color: "text-purple-400" },
@@ -404,6 +443,8 @@ function DashboardTab({ secret }: { secret: string }) {
     { label: "USDT Withdrawn", value: `$${data.totalUsdtWithdrawn.toFixed(2)}`, icon: ArrowDownCircle, color: "text-emerald-400" },
     { label: "Referral Payouts", value: fmtCoins(data.totalReferralPayout) + " coins", icon: Share2, color: "text-sky-400" },
     { label: "Pending Withdrawals", value: data.pendingWithdrawals.toLocaleString(), icon: Wallet, color: "text-orange-400" },
+    { label: "USDT Upgrades Revenue", value: `$${(data.usdtUpgradeRevenue ?? 0).toFixed(2)}`, icon: TrendingUp, color: "text-violet-400" },
+    { label: "Net P&L (USDT)", value: `${netPnl >= 0 ? "+" : ""}$${netPnl.toFixed(2)}`, icon: netPnl >= 0 ? TrendingUp : TrendingDown, color: netPnl >= 0 ? "text-emerald-400" : "text-red-400" },
   ];
 
   return (
@@ -3483,6 +3524,217 @@ function ScriptsTab({ secret }: { secret: string }) {
   );
 }
 
+// ─── Reports Tab ─────────────────────────────────────────────────────────────
+
+function ReportsTab({ secret }: { secret: string }) {
+  const { toast } = useToast();
+  const h = useMemo(() => ({ "x-admin-secret": secret }), [secret]);
+  const [data, setData] = useState<ReportSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [coinUsdRate, setCoinUsdRate] = useState("0.001");
+  const [rateInput, setRateInput] = useState("0.001");
+
+  const load = useCallback((rate: string) => {
+    setLoading(true);
+    const params = new URLSearchParams({ coinUsdRate: rate });
+    apiFetch(`/admin/reports/summary?${params}`, { headers: h })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((d: ReportSummary) => { setData(d); setLoading(false); })
+      .catch(() => { toast({ variant: "destructive", title: "Failed to load report" }); setLoading(false); });
+  }, [h, toast]);
+
+  useEffect(() => { load(coinUsdRate); }, [load, coinUsdRate]);
+
+  const applyRate = () => {
+    const v = parseFloat(rateInput);
+    if (isNaN(v) || v <= 0) { toast({ variant: "destructive", title: "Invalid rate" }); return; }
+    setCoinUsdRate(rateInput);
+  };
+
+  const fmtUsd = (n: number) => `$${Math.abs(n).toFixed(2)}`;
+  const fmtSign = (n: number) => `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(2)}`;
+
+  const monthLabel = (m: string) => {
+    const [y, mo] = m.split("-");
+    return new Date(parseInt(y), parseInt(mo) - 1, 1).toLocaleString("default", { month: "short", year: "2-digit" });
+  };
+
+  const outlookConfig = (o: ReportSummary["forecast"]["outlook"]) => {
+    if (o === "profitable") return { label: "Profitable", cls: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400", Icon: TrendingUp };
+    if (o === "breaking-even") return { label: "Breaking Even", cls: "bg-amber-500/10 border-amber-500/30 text-amber-400", Icon: Activity };
+    return { label: "At Risk", cls: "bg-red-500/10 border-red-500/30 text-red-400", Icon: TrendingDown };
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold">Financial Reports</h2>
+          <p className="text-xs text-muted-foreground">P&amp;L breakdown, 6-month trend, and forecast</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground whitespace-nowrap">1 coin =</span>
+          <input
+            type="number"
+            step="0.0001"
+            min="0.0001"
+            value={rateInput}
+            onChange={e => setRateInput(e.target.value)}
+            className="w-24 text-xs px-2 py-1.5 rounded-lg border border-border bg-background"
+          />
+          <span className="text-xs text-muted-foreground">USDT</span>
+          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={applyRate}><RefreshCw className="w-3 h-3" /> Apply</Button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => <div key={i} className="bg-card border border-card-border rounded-xl p-4 h-24 animate-pulse" />)}
+        </div>
+      ) : !data ? null : (
+        <>
+          {/* All-time summary cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 space-y-1">
+              <div className="flex items-center gap-2 text-emerald-400">
+                <TrendingUp className="w-4 h-4" />
+                <p className="text-xs font-medium">Total Revenue</p>
+              </div>
+              <p className="text-2xl font-bold">{fmtUsd(data.allTime.totalRevenueUsd)}</p>
+              <p className="text-xs text-muted-foreground">
+                {fmtUsd(data.allTime.upgradeRevenue)} upgrades · {fmtUsd(data.allTime.gameFeeUsd)} game fees
+              </p>
+            </div>
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 space-y-1">
+              <div className="flex items-center gap-2 text-red-400">
+                <TrendingDown className="w-4 h-4" />
+                <p className="text-xs font-medium">Total Cost</p>
+              </div>
+              <p className="text-2xl font-bold">{fmtUsd(data.allTime.totalCostUsd)}</p>
+              <p className="text-xs text-muted-foreground">
+                {fmtUsd(data.allTime.withdrawalsCost)} withdrawals · {fmtUsd(data.allTime.referralUsd)} referrals
+              </p>
+            </div>
+            <div className={`rounded-xl p-4 space-y-1 border ${data.allTime.netUsd >= 0 ? "bg-blue-500/10 border-blue-500/20" : "bg-orange-500/10 border-orange-500/20"}`}>
+              <div className={`flex items-center gap-2 ${data.allTime.netUsd >= 0 ? "text-blue-400" : "text-orange-400"}`}>
+                <DollarSign className="w-4 h-4" />
+                <p className="text-xs font-medium">Net P&amp;L (All Time)</p>
+              </div>
+              <p className={`text-2xl font-bold ${data.allTime.netUsd >= 0 ? "text-blue-400" : "text-orange-400"}`}>
+                {fmtSign(data.allTime.netUsd)}
+              </p>
+              <p className="text-xs text-muted-foreground">Revenue − Cost</p>
+            </div>
+          </div>
+
+          {/* Coin breakdown */}
+          <div className="bg-card border border-card-border rounded-xl p-4 space-y-3">
+            <p className="text-sm font-semibold">Coin-Denominated Activity</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: "Game Fees Collected", coins: data.allTime.gameFeeCoins, usd: data.allTime.gameFeeUsd, color: "text-violet-400" },
+                { label: "Referral Payouts", coins: data.allTime.referralCoins, usd: data.allTime.referralUsd, color: "text-sky-400" },
+              ].map(item => (
+                <div key={item.label} className="bg-muted/40 rounded-lg p-3 space-y-0.5">
+                  <p className="text-xs text-muted-foreground">{item.label}</p>
+                  <p className={`text-base font-bold ${item.color}`}>{fmtCoins(item.coins)} coins</p>
+                  <p className="text-xs text-muted-foreground">≈ {fmtUsd(item.usd)}</p>
+                </div>
+              ))}
+              <div className="bg-muted/40 rounded-lg p-3 space-y-0.5">
+                <p className="text-xs text-muted-foreground">USDT Upgrades Revenue</p>
+                <p className="text-base font-bold text-emerald-400">{fmtUsd(data.allTime.upgradeRevenue)}</p>
+                <p className="text-xs text-muted-foreground">Paid upgrades</p>
+              </div>
+              <div className="bg-muted/40 rounded-lg p-3 space-y-0.5">
+                <p className="text-xs text-muted-foreground">USDT Withdrawals Paid</p>
+                <p className="text-base font-bold text-red-400">{fmtUsd(data.allTime.withdrawalsCost)}</p>
+                <p className="text-xs text-muted-foreground">Approved payouts</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Monthly Trend Table */}
+          <div className="bg-card border border-card-border rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-border">
+              <p className="text-sm font-semibold">Monthly Breakdown (Last 6 Months)</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Month</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Revenue</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Cost</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Net</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Upgrades</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Withdrawals</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Game Fees</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.months.map((m, i) => {
+                    const isEmpty = m.totalRevenueUsd === 0 && m.totalCostUsd === 0;
+                    return (
+                      <tr key={m.month} className={`border-b border-border last:border-0 ${i % 2 === 0 ? "" : "bg-muted/10"} ${isEmpty ? "opacity-40" : ""}`}>
+                        <td className="px-4 py-2.5 font-medium">{monthLabel(m.month)}</td>
+                        <td className="px-3 py-2.5 text-right text-emerald-400">{fmtUsd(m.totalRevenueUsd)}</td>
+                        <td className="px-3 py-2.5 text-right text-red-400">{fmtUsd(m.totalCostUsd)}</td>
+                        <td className={`px-3 py-2.5 text-right font-semibold ${m.netUsd >= 0 ? "text-blue-400" : "text-orange-400"}`}>
+                          {fmtSign(m.netUsd)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-muted-foreground">{fmtUsd(m.upgradeRevenue)}</td>
+                        <td className="px-3 py-2.5 text-right text-muted-foreground">{fmtUsd(m.withdrawalsCost)}</td>
+                        <td className="px-3 py-2.5 text-right text-muted-foreground">{fmtCoins(m.gameFeeCoins)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Forecast */}
+          {(() => {
+            const { forecast } = data;
+            const cfg = outlookConfig(forecast.outlook);
+            return (
+              <div className="space-y-3">
+                <p className="text-sm font-semibold">30 / 60 / 90-Day Forecast</p>
+                <div className={`flex items-center gap-3 rounded-xl border p-4 ${cfg.cls}`}>
+                  <cfg.Icon className="w-5 h-5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold">{cfg.label}</p>
+                    <p className="text-xs opacity-80">
+                      Avg monthly net: {fmtSign(forecast.avgMonthlyNetUsd)}
+                      {forecast.reserveMonths !== null && ` · Net reserve covers ≈${forecast.reserveMonths} month${forecast.reserveMonths !== 1 ? "s" : ""} of burn`}
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "30-Day Outlook", val: forecast.projectedNetUsd30d },
+                    { label: "60-Day Outlook", val: forecast.projectedNetUsd60d },
+                    { label: "90-Day Outlook", val: forecast.projectedNetUsd90d },
+                  ].map(f => (
+                    <div key={f.label} className="bg-card border border-card-border rounded-xl p-4 space-y-1">
+                      <p className="text-xs text-muted-foreground">{f.label}</p>
+                      <p className={`text-xl font-bold ${f.val >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtSign(f.val)}</p>
+                      <p className="text-xs text-muted-foreground">Projected net</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">* Forecast is based on the average of the last 3 complete months. Coin values use the configured rate above.</p>
+              </div>
+            );
+          })()}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function Admin() {
@@ -3697,6 +3949,7 @@ export default function Admin() {
 
   const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "reports", label: "Reports", icon: LineChart },
     { id: "users", label: "Users", icon: Users },
     { id: "withdrawals", label: "Withdrawals", icon: Wallet },
     { id: "transactions", label: "Transactions", icon: BarChart3 },
@@ -3834,6 +4087,7 @@ export default function Admin() {
               onPendingCountChange={setPendingPaymentsCount}
             />
           )}
+          {tab === "reports" && <ReportsTab secret={secret} />}
           {tab === "settings" && <SettingsTab secret={secret} />}
           {tab === "share" && <ShareMessagesTab secret={secret} />}
           {tab === "ads" && <AdsTab secret={secret} />}

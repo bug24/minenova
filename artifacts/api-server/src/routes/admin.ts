@@ -402,13 +402,20 @@ router.get("/admin/analytics", requireAdmin, async (_req, res): Promise<void> =>
   const [refPayoutRow] = await db.select({ sum: sql<number>`coalesce(sum(amount), 0)` }).from(transactionsTable).where(eq(transactionsTable.type, "referral"));
   const [pendingRow] = await db.select({ count: sql<number>`count(*)::int` }).from(transactionsTable).where(and(eq(transactionsTable.type, "withdrawal"), eq(transactionsTable.status, "pending")));
 
+  const [upgradeRevRow] = await db.select({ sum: sql<number>`coalesce(sum(amount), 0)::float8` }).from(transactionsTable).where(and(eq(transactionsTable.type, "upgrade_payment"), eq(transactionsTable.status, "completed")));
+  const usdtUpgradeRevenue = Math.round((upgradeRevRow.sum ?? 0) * 100) / 100;
+  const totalUsdtWithdrawn = Math.round((withdrawnRow.sum ?? 0) * 100) / 100;
+  const netPnlUsdt = Math.round((usdtUpgradeRevenue - totalUsdtWithdrawn) * 100) / 100;
+
   res.json({
     totalUsers: totalUsersRow.count,
     activeMiners: activeMinersRow.count,
     totalCoinsDistributed: Math.round((coinsRow.sum ?? 0) * 100) / 100,
-    totalUsdtWithdrawn: Math.round((withdrawnRow.sum ?? 0) * 100) / 100,
+    totalUsdtWithdrawn,
     totalReferralPayout: Math.round((refPayoutRow.sum ?? 0) * 100) / 100,
     pendingWithdrawals: pendingRow.count,
+    usdtUpgradeRevenue,
+    netPnlUsdt,
   });
 });
 
@@ -1525,6 +1532,143 @@ router.post("/admin/upgrade-payments/:transactionId/reject", requireAdmin, async
   ).catch(() => {});
 
   res.json({ success: true, message: `Payment rejected for ${user.username}.` });
+});
+
+// ─── Financial Reports ────────────────────────────────────────────────────────
+
+router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<void> => {
+  const coinUsdRate = parseFloat((req.query.coinUsdRate as string) || "0.001");
+
+  const RELEVANT_TYPES = ["upgrade_payment", "withdrawal", "ludo_fee", "whot_fee", "referral"];
+
+  // All-time totals grouped by type + status
+  const allTimeTotals = await db
+    .select({
+      type: transactionsTable.type,
+      status: transactionsTable.status,
+      total: sql<number>`coalesce(sum(amount), 0)::float8`,
+    })
+    .from(transactionsTable)
+    .where(sql`${transactionsTable.type} = ANY(ARRAY[${sql.join(RELEVANT_TYPES.map(t => sql`${t}`), sql`, `)}])`)
+    .groupBy(transactionsTable.type, transactionsTable.status);
+
+  // Monthly totals for last 6 months
+  const monthlyRows = await db
+    .select({
+      month: sql<string>`to_char(date_trunc('month', ${transactionsTable.createdAt}), 'YYYY-MM')`,
+      type: transactionsTable.type,
+      status: transactionsTable.status,
+      total: sql<number>`coalesce(sum(${transactionsTable.amount}), 0)::float8`,
+    })
+    .from(transactionsTable)
+    .where(
+      and(
+        sql`${transactionsTable.type} = ANY(ARRAY[${sql.join(RELEVANT_TYPES.map(t => sql`${t}`), sql`, `)}])`,
+        sql`${transactionsTable.createdAt} >= date_trunc('month', now()) - interval '5 months'`
+      )
+    )
+    .groupBy(
+      sql`date_trunc('month', ${transactionsTable.createdAt})`,
+      transactionsTable.type,
+      transactionsTable.status
+    )
+    .orderBy(sql`date_trunc('month', ${transactionsTable.createdAt})`);
+
+  // Helper: extract from all-time totals
+  const get = (type: string, status?: string) => {
+    const row = allTimeTotals.find(r => r.type === type && (status ? r.status === status : true));
+    return row?.total ?? 0;
+  };
+
+  const upgradeRevenue = get("upgrade_payment", "completed");
+  const withdrawalsCost = get("withdrawal", "approved");
+  const gameFeeCoins = (get("ludo_fee") + get("whot_fee"));
+  const gameFeeUsd = gameFeeCoins * coinUsdRate;
+  const referralCoins = get("referral");
+  const referralUsd = referralCoins * coinUsdRate;
+  const totalRevenueUsd = upgradeRevenue + gameFeeUsd;
+  const totalCostUsd = withdrawalsCost + referralUsd;
+  const netUsd = totalRevenueUsd - totalCostUsd;
+
+  // Build monthly buckets covering last 6 months (fill empty months)
+  const now = new Date();
+  const monthKeys: string[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    monthKeys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+
+  const months = monthKeys.map(month => {
+    const getM = (type: string, status?: string) =>
+      monthlyRows.filter(r => r.month === month && r.type === type && (status ? r.status === status : true))
+        .reduce((s, r) => s + r.total, 0);
+
+    const mUpgradeRev = getM("upgrade_payment", "completed");
+    const mWithdrawCost = getM("withdrawal", "approved");
+    const mGameCoins = getM("ludo_fee") + getM("whot_fee");
+    const mGameUsd = mGameCoins * coinUsdRate;
+    const mRefCoins = getM("referral");
+    const mRefUsd = mRefCoins * coinUsdRate;
+    const mRevUsd = mUpgradeRev + mGameUsd;
+    const mCostUsd = mWithdrawCost + mRefUsd;
+    const mNetUsd = mRevUsd - mCostUsd;
+
+    return {
+      month,
+      upgradeRevenue: Math.round(mUpgradeRev * 100) / 100,
+      withdrawalsCost: Math.round(mWithdrawCost * 100) / 100,
+      gameFeeCoins: Math.round(mGameCoins * 100) / 100,
+      gameFeeUsd: Math.round(mGameUsd * 100) / 100,
+      referralCoins: Math.round(mRefCoins * 100) / 100,
+      referralUsd: Math.round(mRefUsd * 100) / 100,
+      totalRevenueUsd: Math.round(mRevUsd * 100) / 100,
+      totalCostUsd: Math.round(mCostUsd * 100) / 100,
+      netUsd: Math.round(mNetUsd * 100) / 100,
+    };
+  });
+
+  // Forecast: average of last 3 complete months
+  const completedMonths = months.slice(0, 5); // exclude current (may be partial)
+  const last3 = completedMonths.slice(-3);
+  const avgMonthlyNetUsd = last3.length > 0
+    ? last3.reduce((s, m) => s + m.netUsd, 0) / last3.length
+    : 0;
+  const avgMonthlyBurn = last3.length > 0
+    ? last3.reduce((s, m) => s + m.totalCostUsd, 0) / last3.length
+    : 0;
+
+  let outlook: "profitable" | "breaking-even" | "at-risk";
+  if (avgMonthlyNetUsd > 0.5) outlook = "profitable";
+  else if (avgMonthlyNetUsd >= -0.5) outlook = "breaking-even";
+  else outlook = "at-risk";
+
+  const reserveMonths = avgMonthlyBurn > 0 && netUsd > 0
+    ? Math.floor((netUsd / avgMonthlyBurn) * 10) / 10
+    : null;
+
+  res.json({
+    allTime: {
+      upgradeRevenue: Math.round(upgradeRevenue * 100) / 100,
+      withdrawalsCost: Math.round(withdrawalsCost * 100) / 100,
+      gameFeeCoins: Math.round(gameFeeCoins * 100) / 100,
+      gameFeeUsd: Math.round(gameFeeUsd * 100) / 100,
+      referralCoins: Math.round(referralCoins * 100) / 100,
+      referralUsd: Math.round(referralUsd * 100) / 100,
+      totalRevenueUsd: Math.round(totalRevenueUsd * 100) / 100,
+      totalCostUsd: Math.round(totalCostUsd * 100) / 100,
+      netUsd: Math.round(netUsd * 100) / 100,
+    },
+    months,
+    forecast: {
+      avgMonthlyNetUsd: Math.round(avgMonthlyNetUsd * 100) / 100,
+      projectedNetUsd30d: Math.round(avgMonthlyNetUsd * 100) / 100,
+      projectedNetUsd60d: Math.round(avgMonthlyNetUsd * 2 * 100) / 100,
+      projectedNetUsd90d: Math.round(avgMonthlyNetUsd * 3 * 100) / 100,
+      reserveMonths,
+      outlook,
+    },
+    coinUsdRate,
+  });
 });
 
 const AdminPushSubscribeBody = z.object({
