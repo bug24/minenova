@@ -5,7 +5,7 @@ import { getGetWalletQueryKey } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import LudoBoard from "@/components/ludo/LudoBoard";
+import LudoBoard, { type AnimPiece } from "@/components/ludo/LudoBoard";
 import DiceFace from "@/components/ludo/DiceFace";
 import {
   ludoApi, fetchLudoSettings, getSSEUrl, getValidMovesClient,
@@ -30,6 +30,20 @@ function useGameId() {
 }
 
 // ---------------------------------------------------------------------------
+// Build progress steps for step animation
+// ---------------------------------------------------------------------------
+function buildProgressSteps(fromProgress: number, toProgress: number): number[] {
+  if (toProgress === fromProgress) return [];
+  // Coming out of home base — just one step to entry cell
+  if (fromProgress === -1) return [toProgress];
+  const steps: number[] = [];
+  for (let p = fromProgress + 1; p <= toProgress; p++) {
+    steps.push(p);
+  }
+  return steps;
+}
+
+// ---------------------------------------------------------------------------
 // Result modal
 // ---------------------------------------------------------------------------
 interface ResultModalProps {
@@ -50,8 +64,11 @@ function ResultModal({ game, myUserId, isSolo, settings, onGoLobby }: ResultModa
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-6">
       <div className="bg-card border border-card-border rounded-2xl p-6 w-full max-w-sm text-center space-y-4">
-        <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto ${won ? "bg-amber-400/20" : "bg-destructive/20"}`}>
-          {won ? <Trophy className="w-8 h-8 text-amber-400" /> : <Skull className="w-8 h-8 text-destructive" />}
+        <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto ${won ? "bg-amber-400/20" : "bg-destructive/20"}`}
+          style={won ? { boxShadow: "0 0 32px rgba(251,191,36,0.35)" } : {}}>
+          {won
+            ? <Trophy className="w-10 h-10 text-amber-400" />
+            : <Skull className="w-10 h-10 text-destructive" />}
         </div>
 
         <div>
@@ -59,7 +76,9 @@ function ResultModal({ game, myUserId, isSolo, settings, onGoLobby }: ResultModa
             {won ? "You Won! 🎉" : isSolo ? "Bot Won" : "You Lost"}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            {won ? "Congratulations! Coins have been credited." : isSolo ? "Better luck next time!" : "Better luck next time!"}
+            {won
+              ? "Congratulations! Coins have been credited."
+              : "Better luck next time!"}
           </p>
         </div>
 
@@ -93,12 +112,9 @@ function ResultModal({ game, myUserId, isSolo, settings, onGoLobby }: ResultModa
         )}
 
         <div className="flex gap-2">
-          <Button variant="outline" className="flex-1" onClick={onGoLobby}>
-            Lobby
-          </Button>
+          <Button variant="outline" className="flex-1" onClick={onGoLobby}>Lobby</Button>
           <Button className="flex-1 gap-1" onClick={onGoLobby}
-            style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
-          >
+            style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}>
             <RefreshCw className="w-3.5 h-3.5" />
             Play Again
           </Button>
@@ -122,26 +138,39 @@ interface PlayerPanelProps {
 }
 
 function PlayerPanel({ label, username, color, isMyTurn, isMe, piecesHome, isBot }: PlayerPanelProps) {
-  const bg = color === "red" ? "bg-red-500/10 border-red-500/30" : "bg-blue-500/10 border-blue-500/30";
-  const dot = color === "red" ? "bg-red-500" : "bg-blue-500";
-  const text = color === "red" ? "text-red-600" : "text-blue-600";
+  const bg   = color === "red" ? "bg-red-500/10 border-red-500/30"   : "bg-blue-500/10 border-blue-500/30";
+  const dot  = color === "red" ? "bg-red-500"   : "bg-blue-500";
+  const text = color === "red" ? "text-red-500"  : "text-blue-500";
 
   return (
-    <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${bg} ${isMyTurn ? "ring-2 ring-amber-400" : ""}`}>
-      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${dot}`}>
-        {isBot ? <Bot className="w-3.5 h-3.5" /> : username[0]?.toUpperCase()}
+    <div
+      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all duration-300 ${bg} ${isMyTurn ? "ring-2 ring-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.3)]" : ""}`}
+    >
+      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white ${dot} shadow-sm`}>
+        {isBot ? <Bot className="w-4 h-4" /> : username[0]?.toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
         <p className={`text-xs font-bold truncate ${text} flex items-center gap-1`}>
           {isMe ? "You" : isBot ? "Bot" : username}
-          {isMe && <span className="text-muted-foreground font-normal"> ({label})</span>}
-          {isBot && <span className="text-muted-foreground font-normal text-[10px]"> AI</span>}
+          {isMe && <span className="text-muted-foreground font-normal">({label})</span>}
+          {isBot && <span className="text-muted-foreground font-normal text-[10px]">AI</span>}
         </p>
-        <p className="text-[10px] text-muted-foreground">{piecesHome}/4 home</p>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <div className="flex gap-0.5">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className={`w-2 h-2 rounded-full transition-all duration-300 ${i < piecesHome ? (color === "red" ? "bg-red-500" : "bg-blue-500") : "bg-muted"}`}
+              />
+            ))}
+          </div>
+          <span className="text-[10px] text-muted-foreground">{piecesHome}/4 home</span>
+        </div>
       </div>
       {isMyTurn && (
-        <span className="text-[10px] font-bold text-amber-500 animate-pulse shrink-0">
-          {isBot ? "BOT…" : "TURN"}
+        <span className={`text-[11px] font-black shrink-0 ${isBot ? "text-amber-500" : "text-amber-400"}`}
+          style={{ animation: "pulse 1s infinite" }}>
+          {isBot ? "THINKING…" : "YOUR TURN"}
         </span>
       )}
     </div>
@@ -162,44 +191,33 @@ export default function LudoGame() {
   const [loading, setLoading] = useState(true);
   const [rolling, setRolling] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [animating, setAnimating] = useState(false);
+  const [animPiece, setAnimPiece] = useState<AnimPiece | null>(null);
   const [forfeiting, setForfeiting] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
 
   const prevStateRef = useRef<GameState | null>(null);
-
   const myUserId = user?.id ?? 0;
 
   const myPlayerIndex: 0 | 1 = game
     ? game.redPlayerId === myUserId ? 0 : 1
     : 0;
 
-  const boardState = game?.boardState ?? null;
-  const isMyTurn = boardState?.currentTurn === myPlayerIndex;
-  const diceRolled = boardState?.diceRolled ?? false;
-  const diceValue = boardState?.diceValue ?? null;
+  const boardState  = game?.boardState ?? null;
+  const isMyTurn    = boardState?.currentTurn === myPlayerIndex;
+  const diceRolled  = boardState?.diceRolled ?? false;
+  const diceValue   = boardState?.diceValue ?? null;
 
-  // Detect solo game
-  const isSolo = !!(game && (
-    game.redPlayerId === myUserId
-      ? game.bluePlayerId !== myUserId
-      : game.redPlayerId !== myUserId
-  ) && (
-    // Check opponent username from boardState
-    boardState?.players[myPlayerIndex === 0 ? 1 : 0]?.userId !== myUserId
-  ));
-
-  // More reliable: check if bluePlayer is bot via a simple flag on the game data
-  // We'll detect based on the username loaded from the game context
   const [opponentUsername, setOpponentUsername] = useState<string>("Opponent");
-  const isBotOpponent = opponentUsername === SYSTEM_USERNAME || opponentUsername === "bot" || opponentUsername === "__system__";
+  const isBotOpponent = opponentUsername === SYSTEM_USERNAME || opponentUsername === "__system__";
 
   const validMoves =
-    boardState && isMyTurn && diceRolled && diceValue
+    boardState && isMyTurn && diceRolled && diceValue && !animating
       ? getValidMovesClient(boardState, myPlayerIndex, diceValue)
       : [];
 
-  // Fetch initial game state + opponent username
+  // Fetch initial game state
   useEffect(() => {
     setLoading(true);
     ludoApi<LudoGame & { redUsername?: string; blueUsername?: string }>(`/ludo/games/${gameId}`)
@@ -207,7 +225,6 @@ export default function LudoGame() {
         setGame(g);
         prevStateRef.current = g.boardState;
         if (g.status === "completed") setShowResult(true);
-        // Determine opponent username
         const oppIdx = g.redPlayerId === myUserId ? 1 : 0;
         const oppUsername = oppIdx === 0
           ? ((g as unknown as Record<string, unknown>).redUsername as string | undefined) ?? "Opponent"
@@ -218,14 +235,19 @@ export default function LudoGame() {
       .finally(() => setLoading(false));
   }, [gameId, toast, myUserId]);
 
-  // Ludo settings (for dynamic fee display)
   const { data: ludoSettings = null } = useQuery<LudoSettings>({
     queryKey: ["/api/ludo/settings"],
     queryFn: fetchLudoSettings,
     staleTime: 5 * 60 * 1000,
   });
 
-  // SSE connection with exponential backoff
+  // Animation done handler
+  const handleAnimDone = useCallback(() => {
+    setAnimPiece(null);
+    setAnimating(false);
+  }, []);
+
+  // SSE connection
   useEffect(() => {
     if (!gameId) return;
     let es: EventSource | null = null;
@@ -235,8 +257,7 @@ export default function LudoGame() {
 
     const connect = () => {
       if (unmounted) return;
-      const sseUrl = getSSEUrl(gameId);
-      es = new EventSource(sseUrl);
+      es = new EventSource(getSSEUrl(gameId));
 
       es.onmessage = (e) => {
         try {
@@ -252,17 +273,46 @@ export default function LudoGame() {
           retryDelay = 1000;
 
           if (event.state) {
-            const prev = prevStateRef.current;
+            const prevState = prevStateRef.current;
             prevStateRef.current = event.state;
-            setGame(g => g ? { ...g, boardState: event.state!, status: event.state!.status, winnerId: event.state!.winnerId } : g);
 
+            setGame(g =>
+              g ? { ...g, boardState: event.state!, status: event.state!.status, winnerId: event.state!.winnerId } : g
+            );
+
+            // Dice roll animation for opponent's roll
             if (event.type === "rolled" && event.state.currentTurn !== myPlayerIndex) {
-              // Opponent rolled — show a brief dice animation
               setRolling(true);
-              setTimeout(() => setRolling(false), 600);
+              setTimeout(() => setRolling(false), 650);
             }
 
-            if ((event.type === "moved" || event.type === "forfeit" || event.type === "timeout" || event.type === "abandoned_timeout") && event.state.status === "completed") {
+            // Step-by-step piece movement animation
+            if (event.type === "moved" && prevState) {
+              for (let pi = 0; pi < 2; pi++) {
+                for (let idx = 0; idx < 4; idx++) {
+                  const prevProgress = prevState.players[pi]?.pieces[idx]?.progress;
+                  const currProgress = event.state.players[pi]?.pieces[idx]?.progress;
+                  if (
+                    prevProgress !== undefined &&
+                    currProgress !== undefined &&
+                    currProgress !== prevProgress &&
+                    currProgress !== -1 // captures are handled as flash, not step anim
+                  ) {
+                    const steps = buildProgressSteps(prevProgress, currProgress);
+                    if (steps.length > 0) {
+                      setAnimPiece({ playerIndex: pi as 0 | 1, pieceIdx: idx, steps });
+                      setAnimating(true);
+                    }
+                  }
+                }
+              }
+            }
+
+            // Game over
+            if (
+              (event.type === "moved" || event.type === "forfeit" || event.type === "timeout" || event.type === "abandoned_timeout") &&
+              event.state.status === "completed"
+            ) {
               setShowResult(true);
               queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
             }
@@ -304,7 +354,7 @@ export default function LudoGame() {
   }, [rolling, isMyTurn, diceRolled, gameId, toast]);
 
   const handleMove = useCallback(async (pieceIndex: number) => {
-    if (moving || !isMyTurn || !diceRolled) return;
+    if (moving || animating || !isMyTurn || !diceRolled) return;
     setMoving(true);
     try {
       await ludoApi(`/ludo/games/${gameId}/move`, {
@@ -316,7 +366,7 @@ export default function LudoGame() {
     } finally {
       setMoving(false);
     }
-  }, [moving, isMyTurn, diceRolled, gameId, toast]);
+  }, [moving, animating, isMyTurn, diceRolled, gameId, toast]);
 
   const handleForfeit = useCallback(async () => {
     setForfeiting(true);
@@ -361,18 +411,20 @@ export default function LudoGame() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <p className="text-sm text-muted-foreground">Game not found.</p>
-          <Button variant="outline" className="mt-4" onClick={() => navigate("/ludo")}>Back to Lobby</Button>
+          <Button variant="outline" className="mt-4" onClick={() => navigate("/ludo")}>
+            Back to Lobby
+          </Button>
         </div>
       </div>
     );
   }
 
-  const myPlayer = boardState.players[myPlayerIndex];
-  const oppPlayer = boardState.players[myPlayerIndex === 0 ? 1 : 0];
-  const myPiecesHome = myPlayer.pieces.filter(p => p.progress === 57).length;
+  const myPlayer    = boardState.players[myPlayerIndex];
+  const oppPlayer   = boardState.players[myPlayerIndex === 0 ? 1 : 0];
+  const myPiecesHome  = myPlayer.pieces.filter(p => p.progress === 57).length;
   const oppPiecesHome = oppPlayer.pieces.filter(p => p.progress === 57).length;
   const oppColor: "red" | "blue" = myPlayerIndex === 0 ? "blue" : "red";
-  const myColor: "red" | "blue" = myPlayerIndex === 0 ? "red" : "blue";
+  const myColor:  "red" | "blue" = myPlayerIndex === 0 ? "red"  : "blue";
   const isBotTurn = boardState.currentTurn !== myPlayerIndex && isBotOpponent;
 
   return (
@@ -416,12 +468,15 @@ export default function LudoGame() {
 
       {/* Board */}
       <div className="flex justify-center">
-        <div className="w-full max-w-sm">
+        <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+          style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.2)" }}>
           <LudoBoard
             gameState={boardState}
             myPlayerIndex={myPlayerIndex}
             validMoves={validMoves}
             onPieceClick={handleMove}
+            animPiece={animPiece}
+            onAnimDone={handleAnimDone}
           />
         </div>
       </div>
@@ -436,21 +491,23 @@ export default function LudoGame() {
         piecesHome={myPiecesHome}
       />
 
-      {/* Dice + controls */}
-      <div className="flex items-center justify-between gap-3 px-2 py-3 bg-card border border-card-border rounded-xl">
-        {/* Dice display */}
-        <div className="flex items-center gap-2">
-          <DiceFace value={diceValue} rolling={rolling} size={52} />
+      {/* ── Dice + controls ────────────────────────────────────── */}
+      <div className="flex items-center gap-3 px-3 py-3 bg-card border border-card-border rounded-2xl"
+        style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.1)" }}>
+
+        {/* Dice */}
+        <div className="flex items-center gap-2 shrink-0">
+          <DiceFace value={diceValue} rolling={rolling} size={56} />
           {diceValue && !rolling && (
-            <span className="text-lg font-black">{diceValue}</span>
+            <span className="text-2xl font-black tabular-nums">{diceValue}</span>
           )}
           {!diceValue && !rolling && (
-            <span className="text-xs text-muted-foreground">—</span>
+            <span className="text-sm text-muted-foreground">—</span>
           )}
         </div>
 
         {/* Status / action */}
-        <div className="flex-1 text-center">
+        <div className="flex-1 flex flex-col items-center justify-center gap-1">
           {game.status === "completed" ? (
             <span className="text-sm font-semibold text-primary">Game Over</span>
           ) : isMyTurn ? (
@@ -458,24 +515,28 @@ export default function LudoGame() {
               <Button
                 onClick={handleRoll}
                 disabled={rolling}
-                className="gap-2 px-6"
+                size="sm"
+                className="gap-2 px-5 font-bold"
                 style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
               >
-                {rolling ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Dices className="w-4 h-4" />}
+                {rolling
+                  ? <RefreshCw className="w-4 h-4 animate-spin" />
+                  : <Dices className="w-4 h-4" />}
                 {rolling ? "Rolling…" : "Roll Dice"}
               </Button>
             ) : validMoves.length > 0 ? (
-              <p className="text-sm font-semibold text-amber-500 animate-pulse">
-                Tap a piece to move
+              <p className="text-sm font-black text-amber-400 animate-pulse tracking-wide">
+                ↑ TAP A PIECE
               </p>
             ) : (
-              <p className="text-xs text-muted-foreground">No valid moves — auto-skipping…</p>
+              <p className="text-xs text-muted-foreground">No valid moves…</p>
             )
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-1 text-center">
               <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                 {isBotTurn ? (
-                  <><Bot className="w-3 h-3 text-amber-500" /><span className="text-amber-500">Bot is thinking…</span></>
+                  <><Bot className="w-3 h-3 text-amber-500" />
+                  <span className="text-amber-500 font-semibold">Bot is thinking…</span></>
                 ) : (
                   <><RefreshCw className="w-3 h-3 animate-spin" />Opponent's turn…</>
                 )}
@@ -493,14 +554,14 @@ export default function LudoGame() {
           )}
         </div>
 
-        {/* Dice mini for opponent */}
+        {/* Opponent's rolled dice (mini) */}
         {!isMyTurn && diceRolled && diceValue && (
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-muted-foreground">Rolled</span>
-            <DiceFace value={diceValue} rolling={false} size={36} />
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-[10px] text-muted-foreground">Rolled</span>
+            <DiceFace value={diceValue} rolling={false} size={38} />
           </div>
         )}
-        {(isMyTurn || !diceValue || !diceRolled) && <div className="w-12" />}
+        {(isMyTurn || !diceValue || !diceRolled) && <div className="w-10 shrink-0" />}
       </div>
 
       {/* Forfeit confirm overlay */}
@@ -519,12 +580,7 @@ export default function LudoGame() {
               <Button variant="outline" className="flex-1" onClick={() => setShowForfeitConfirm(false)}>
                 Keep Playing
               </Button>
-              <Button
-                variant="destructive"
-                className="flex-1"
-                onClick={handleForfeit}
-                disabled={forfeiting}
-              >
+              <Button variant="destructive" className="flex-1" onClick={handleForfeit} disabled={forfeiting}>
                 {forfeiting ? <RefreshCw className="w-3 h-3 animate-spin" /> : "Forfeit"}
               </Button>
             </div>
