@@ -93,9 +93,11 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
   }, [ad.id, currentAd, total, ad.type, tabOpened]);
 
   const handleOpenManually = () => {
-    window.open(ad.urlOrCode ?? "", "_blank", "noopener,noreferrer");
-    setPopupBlocked(false);
-    setTabOpened(true);
+    const win = window.open(ad.urlOrCode ?? "", "_blank", "noopener,noreferrer");
+    if (win) {
+      setPopupBlocked(false);
+      setTabOpened(true);
+    }
   };
 
   const progress = Math.min(100, (elapsed / total) * 100);
