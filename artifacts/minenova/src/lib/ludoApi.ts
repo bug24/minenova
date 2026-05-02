@@ -20,7 +20,9 @@ export interface PlayerState {
 export interface GameState {
   players: [PlayerState, PlayerState];
   currentTurn: 0 | 1;
-  diceValue: number | null;
+  diceValue: number | null;              // active die value for the current move
+  diceValues: [number, number] | null;   // both rolled dice
+  movesLeft: number;                     // moves remaining this turn (0, 1, or 2)
   diceRolled: boolean;
   status: string;
   winnerId: number | null;

@@ -67,6 +67,8 @@ interface LudoBoardProps {
   onAnimDone?: () => void;
   rolling: boolean;
   diceValue: number | null;
+  diceValues: [number, number] | null;
+  movesLeft: number;
   canRoll: boolean;
   onDiceRoll: () => void;
   playerNames: [string, string];
@@ -86,6 +88,8 @@ export default function LudoBoard({
   onAnimDone,
   rolling,
   diceValue,
+  diceValues,
+  movesLeft,
   canRoll,
   onDiceRoll,
   playerNames,
@@ -496,9 +500,10 @@ export default function LudoBoard({
       </svg>
 
       {/* ═══════════════════════════════════════
-          DICE OVERLAY — centered on board
+          DICE OVERLAY — two dice centered on board
       ═══════════════════════════════════════ */}
       <div
+        onClick={canRoll && !rolling ? onDiceRoll : undefined}
         style={{
           position: "absolute",
           left: "50%",
@@ -508,54 +513,81 @@ export default function LudoBoard({
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          gap: 0,
+          gap: 2,
+          cursor: canRoll && !rolling ? "pointer" : "default",
+          borderRadius: 12,
+          padding: 3,
+          boxShadow: canRoll && !rolling
+            ? "0 0 22px 10px rgba(251,191,36,0.55)"
+            : rolling
+            ? "0 0 16px 6px rgba(255,255,255,0.35)"
+            : "0 4px 16px rgba(0,0,0,0.4)",
+          transition: "box-shadow 0.3s ease",
         }}
       >
-        <div
-          style={{
-            borderRadius: "50%",
-            padding: 4,
-            boxShadow: canRoll && !rolling
-              ? "0 0 22px 10px rgba(251,191,36,0.55)"
-              : rolling
-              ? "0 0 16px 6px rgba(255,255,255,0.35)"
-              : "0 4px 16px rgba(0,0,0,0.4)",
-            transition: "box-shadow 0.3s ease",
-            cursor: canRoll && !rolling ? "pointer" : "default",
-          }}
-          onClick={canRoll && !rolling ? onDiceRoll : undefined}
-        >
-          <DiceFace
-            value={diceValue}
-            rolling={rolling}
-            size={68}
-            onRoll={onDiceRoll}
-            canRoll={canRoll}
-          />
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {/* Die 1 — active when movesLeft === 2 (or dice not yet used) */}
+          <div style={{
+            borderRadius: 8,
+            outline: diceValues !== null && !rolling && movesLeft === 2
+              ? "2.5px solid #fbbf24"
+              : "none",
+            boxShadow: diceValues !== null && !rolling && movesLeft === 2
+              ? "0 0 8px rgba(251,191,36,0.7)"
+              : "none",
+            transition: "all 0.2s ease",
+            opacity: diceValues !== null && !rolling && movesLeft === 1 ? 0.45 : 1,
+          }}>
+            <DiceFace
+              value={diceValues ? diceValues[0] : (diceValue ?? null)}
+              rolling={rolling}
+              size={44}
+              onRoll={onDiceRoll}
+              canRoll={canRoll}
+            />
+          </div>
+
+          {/* Die 2 — active when movesLeft === 1 */}
+          <div style={{
+            borderRadius: 8,
+            outline: diceValues !== null && !rolling && movesLeft === 1
+              ? "2.5px solid #fbbf24"
+              : "none",
+            boxShadow: diceValues !== null && !rolling && movesLeft === 1
+              ? "0 0 8px rgba(251,191,36,0.7)"
+              : "none",
+            transition: "all 0.2s ease",
+            opacity: diceValues !== null && !rolling && movesLeft === 2 ? 0.45 : 1,
+          }}>
+            <DiceFace
+              value={diceValues ? diceValues[1] : null}
+              rolling={rolling}
+              size={44}
+            />
+          </div>
         </div>
+
         {canRoll && !rolling && (
           <div style={{
-            fontSize: "7.5px",
+            fontSize: "7px",
             fontWeight: 900,
             letterSpacing: "0.08em",
             color: "#fbbf24",
             textShadow: "0 1px 4px rgba(0,0,0,0.9)",
-            marginTop: 2,
             lineHeight: 1,
           }}>
             TAP TO ROLL
           </div>
         )}
-        {diceValue !== null && !rolling && !canRoll && (
+        {diceValues !== null && !rolling && !canRoll && (
           <div style={{
-            fontSize: "10px",
+            fontSize: "9px",
             fontWeight: 900,
             color: "white",
             textShadow: "0 1px 5px rgba(0,0,0,0.9)",
-            marginTop: 1,
             lineHeight: 1,
           }}>
-            {diceValue}
+            {diceValues[0]} · {diceValues[1]}
           </div>
         )}
       </div>

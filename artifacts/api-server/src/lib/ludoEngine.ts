@@ -14,7 +14,9 @@ export interface PlayerState {
 export interface GameState {
   players: [PlayerState, PlayerState];
   currentTurn: 0 | 1;
-  diceValue: number | null;
+  diceValue: number | null;              // active die value for the current move
+  diceValues: [number, number] | null;   // both rolled dice
+  movesLeft: number;                     // moves remaining this turn (0, 1, or 2)
   diceRolled: boolean;
   status: GameStatus;
   winnerId: number | null;
@@ -42,6 +44,8 @@ export function createInitialState(redUserId: number, blueUserId: number): GameS
     players: [makePlayer(redUserId, "red"), makePlayer(blueUserId, "blue")],
     currentTurn: 0,
     diceValue: null,
+    diceValues: null,
+    movesLeft: 0,
     diceRolled: false,
     status: "active",
     winnerId: null,
@@ -93,8 +97,7 @@ export function applyMove(
     piece.progress += diceValue;
   }
 
-  const toProgress = piece.progress;
-
+  // Capture check — only for pieces on the open track (0..TRACK_SIZE-1)
   if (piece.progress >= 0 && piece.progress < TRACK_SIZE) {
     const absPos = getAbsolutePosition(playerIndex, piece.progress)!;
 
@@ -105,45 +108,93 @@ export function applyMove(
         if (oppProgress >= 0 && oppProgress < TRACK_SIZE) {
           const oppAbs = getAbsolutePosition(opponentIndex, oppProgress);
           if (oppAbs === absPos) {
-            oppPieces[j].progress = -1;
+            oppPieces[j].progress = -1;           // captured piece goes home
+            piece.progress = FINISHED_PROGRESS;   // capturing piece instant-wins (goes to finish)
             captured = true;
+            break;
           }
         }
       }
     }
   }
 
+  const toProgress = piece.progress;
   const won = newState.players[playerIndex].pieces.every(p => p.progress === FINISHED_PROGRESS);
 
   if (won) {
     newState.status = "completed";
     newState.winnerId = newState.players[playerIndex].userId;
-  } else if (diceValue === 6) {
-    // Standard Ludo rule: rolling a 6 grants an extra turn
-    // currentTurn stays with the same player
+    newState.diceRolled = false;
+    newState.diceValue = null;
+    newState.movesLeft = 0;
   } else {
-    newState.currentTurn = opponentIndex;
-  }
+    // movesLeft may be undefined in old persisted states — treat as 1 (single-die compat)
+    const currentMovesLeft = (newState.movesLeft ?? 1);
+    const newMovesLeft = currentMovesLeft - 1;
 
-  newState.diceRolled = false;
-  newState.diceValue = null;
+    if (newMovesLeft > 0 && newState.diceValues) {
+      // Still have moves remaining — advance to next die
+      const dieIdx = 2 - newMovesLeft;  // 0-based: first move used index 0, second uses index 1
+      const nextDieValue = newState.diceValues[dieIdx] ?? null;
+      newState.movesLeft = newMovesLeft;
+      newState.diceValue = nextDieValue;
+
+      if (nextDieValue !== null) {
+        const nextValid = getValidMoves(newState, playerIndex, nextDieValue);
+        if (nextValid.length === 0) {
+          // No valid moves with the next die — skip it, switch turn
+          newState.movesLeft = 0;
+          newState.currentTurn = opponentIndex;
+          newState.diceRolled = false;
+          newState.diceValue = null;
+        }
+      }
+    } else {
+      // All moves consumed
+      newState.movesLeft = 0;
+      newState.diceRolled = false;
+      newState.diceValue = null;
+
+      // 6-bonus: rolling a 6 grants the same player another full turn
+      if (diceValue === 6) {
+        // currentTurn stays with playerIndex
+      } else {
+        newState.currentTurn = opponentIndex;
+      }
+    }
+  }
 
   return { newState, captured, won, fromProgress, toProgress };
 }
 
-export function applyDiceRoll(state: GameState, diceValue: number, now: string): GameState {
+export function applyDiceRoll(state: GameState, diceValues: [number, number], now: string): GameState {
   const newState: GameState = JSON.parse(JSON.stringify(state));
-  newState.diceValue = diceValue;
-  newState.diceRolled = true;
+  const [d1, d2] = diceValues;
+  newState.diceValues = diceValues;
   newState.lastMoveAt = now;
 
-  const validMoves = getValidMoves(newState, newState.currentTurn, diceValue);
-  if (validMoves.length === 0) {
+  const validD1 = getValidMoves(newState, newState.currentTurn, d1);
+  const validD2 = getValidMoves(newState, newState.currentTurn, d2);
+
+  if (validD1.length === 0 && validD2.length === 0) {
+    // No valid moves with either die — skip turn
     newState.currentTurn = newState.currentTurn === 0 ? 1 : 0;
     newState.diceRolled = false;
+    newState.diceValues = null;
     newState.diceValue = null;
+    newState.movesLeft = 0;
+    return newState;
   }
 
+  if (validD1.length === 0) {
+    // First die has no moves — skip to second die only
+    newState.movesLeft = 1;
+    newState.diceValue = d2;
+  } else {
+    newState.movesLeft = 2;
+    newState.diceValue = d1;
+  }
+  newState.diceRolled = true;
   return newState;
 }
 

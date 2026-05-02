@@ -191,6 +191,8 @@ export default function LudoGame() {
   const isMyTurn    = boardState?.currentTurn === myPlayerIndex;
   const diceRolled  = boardState?.diceRolled ?? false;
   const diceValue   = boardState?.diceValue ?? null;
+  const diceValues  = boardState?.diceValues ?? null;
+  const movesLeft   = boardState?.movesLeft ?? 0;
 
   const [opponentUsername, setOpponentUsername] = useState<string>("Opponent");
   const isBotOpponent = opponentUsername === SYSTEM_USERNAME || opponentUsername === "__system__";
@@ -500,6 +502,8 @@ export default function LudoGame() {
             onAnimDone={handleAnimDone}
             rolling={rolling}
             diceValue={diceValue}
+            diceValues={diceValues}
+            movesLeft={movesLeft}
             canRoll={canRoll}
             onDiceRoll={handleRoll}
             playerNames={playerNames}
@@ -514,6 +518,11 @@ export default function LudoGame() {
           {isMyTurn && diceRolled && validMoves.length > 0 && (
             <p className="text-sm font-black text-amber-400 animate-pulse tracking-wide">
               ↑ TAP A HIGHLIGHTED PIECE
+              {movesLeft > 0 && (
+                <span className="ml-2 text-xs font-semibold text-amber-300 normal-case">
+                  (move {3 - movesLeft} of 2)
+                </span>
+              )}
             </p>
           )}
           {isMyTurn && diceRolled && validMoves.length === 0 && (

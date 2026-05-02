@@ -512,9 +512,11 @@ router.post("/ludo/games/:id/roll", requireAuth, async (req: Request, res: Respo
       if (state.currentTurn !== myIndex) throw Object.assign(new Error("Not your turn"), { status: 409 });
       if (state.diceRolled) throw Object.assign(new Error("Dice already rolled — make your move"), { status: 409 });
 
-      diceValue = rollDice();
+      const d1 = rollDice();
+      const d2 = rollDice();
+      diceValue = d1; // kept for emit compat; actual active die stored in state
       const now = new Date().toISOString();
-      newState = applyDiceRoll(state, diceValue, now);
+      newState = applyDiceRoll(state, [d1, d2], now);
 
       await tx
         .update(ludoGamesTable)
@@ -830,9 +832,11 @@ async function scheduleBotMove(gameId: number): Promise<void> {
       const botIndex: 0 | 1 = game.redPlayerId === botUserId ? 0 : 1;
       if (state.currentTurn !== botIndex || state.diceRolled) return;
 
-      rolledDice = rollDice();
+      const bd1 = rollDice();
+      const bd2 = rollDice();
+      rolledDice = bd1;
       const now = new Date().toISOString();
-      rolledState = applyDiceRoll(state, rolledDice, now);
+      rolledState = applyDiceRoll(state, [bd1, bd2], now);
 
       await tx.update(ludoGamesTable)
         .set({ boardState: rolledState as unknown as Record<string, unknown>, lastMoveAt: new Date(now) })
@@ -843,77 +847,82 @@ async function scheduleBotMove(gameId: number): Promise<void> {
     emitGameUpdate(gameId, { type: "rolled", diceValue: rolledDice, state: rolledState });
     if (!(rolledState as GameState).diceRolled) return; // turn auto-skipped, no move needed
 
-    // Move after 0.8 s
-    await new Promise<void>(r => setTimeout(r, 800));
+    // Make all bot moves for this turn (dual dice = up to 2 moves per turn)
+    let currentState: GameState = rolledState as GameState;
+    const botIndex: 0 | 1 = 1; // bot is always blue (index 1) in solo games
 
-    let moveResult: { newState: GameState; captured: boolean; won: boolean; pieceIdx: number } | null = null;
+    while (currentState.diceRolled && currentState.currentTurn === botIndex && currentState.status === "active") {
+      // Wait before each move
+      await new Promise<void>(r => setTimeout(r, 800));
 
-    await db.transaction(async tx => {
-      const [game] = await tx.select().from(ludoGamesTable)
-        .where(eq(ludoGamesTable.id, gameId)).for("update").limit(1);
-      if (!game || game.status !== "active") return;
+      let moveResult: { newState: GameState; captured: boolean; won: boolean; pieceIdx: number } | null = null;
 
-      const state = parseBoard(game.boardState);
-      const botIndex: 0 | 1 = game.redPlayerId === botUserId ? 0 : 1;
-      if (state.currentTurn !== botIndex || !state.diceRolled || state.diceValue === null) return;
+      await db.transaction(async tx => {
+        const [game] = await tx.select().from(ludoGamesTable)
+          .where(eq(ludoGamesTable.id, gameId)).for("update").limit(1);
+        if (!game || game.status !== "active") return;
 
-      const validMoves = getValidMoves(state, botIndex, state.diceValue);
-      if (validMoves.length === 0) return;
+        const state = parseBoard(game.boardState);
+        if (state.currentTurn !== botIndex || !state.diceRolled || state.diceValue === null) return;
 
-      // AI strategy: prefer pieces already on track, then highest progress
-      const sortedMoves = [...validMoves].sort((a, b) => {
-        const pa = state.players[botIndex].pieces[a].progress;
-        const pb = state.players[botIndex].pieces[b].progress;
-        if (pa === -1 && pb !== -1) return 1;
-        if (pb === -1 && pa !== -1) return -1;
-        return pb - pa;
-      });
-      const pieceIdx = sortedMoves[0];
-      const { newState, captured, won, fromProgress, toProgress } = applyMove(
-        state, botIndex, pieceIdx, state.diceValue,
-      );
+        const validMoves = getValidMoves(state, botIndex, state.diceValue);
+        if (validMoves.length === 0) return;
 
-      await tx.update(ludoGamesTable)
-        .set({
-          boardState: newState as unknown as Record<string, unknown>,
-          status: newState.status,
-          winnerId: newState.winnerId,
-          lastMoveAt: new Date(),
-          endedAt: newState.status === "completed" ? new Date() : undefined,
-        })
-        .where(eq(ludoGamesTable.id, gameId));
-
-      await tx.insert(ludoMovesTable).values({
-        gameId, playerId: botUserId, diceValue: state.diceValue,
-        pieceIndex: pieceIdx, fromProgress, toProgress, captured,
-      });
-
-      if (won) {
-        const systemUserId2 = await getSystemUserId();
-        // Bot won: human's entry fee stays deducted — record as platform income
-        await tx.insert(transactionsTable).values({
-          userId: systemUserId2,
-          type: "ludo_fee",
-          amount: game.entryFee,
-          status: "completed",
-          description: `Ludo solo — bot win, platform retains ${game.entryFee} coins`,
+        // AI strategy: prefer pieces already on track, then highest progress
+        const sortedMoves = [...validMoves].sort((a, b) => {
+          const pa = state.players[botIndex].pieces[a].progress;
+          const pb = state.players[botIndex].pieces[b].progress;
+          if (pa === -1 && pb !== -1) return 1;
+          if (pb === -1 && pa !== -1) return -1;
+          return pb - pa;
         });
-      } else if (won === false && newState.winnerId && newState.winnerId !== botUserId) {
-        // Human won
-        const { platformFeePct } = await getLudoSettings();
-        await payoutWinner(tx, botUserId, newState.winnerId, game.entryFee, platformFeePct / 100);
-      }
+        const pieceIdx = sortedMoves[0];
+        const { newState, captured, won, fromProgress, toProgress } = applyMove(
+          state, botIndex, pieceIdx, state.diceValue,
+        );
 
-      moveResult = { newState, captured, won, pieceIdx };
-    });
+        await tx.update(ludoGamesTable)
+          .set({
+            boardState: newState as unknown as Record<string, unknown>,
+            status: newState.status,
+            winnerId: newState.winnerId,
+            lastMoveAt: new Date(),
+            endedAt: newState.status === "completed" ? new Date() : undefined,
+          })
+          .where(eq(ludoGamesTable.id, gameId));
 
-    if (!moveResult) return;
-    const { newState, captured, won, pieceIdx } = moveResult!;
-    emitGameUpdate(gameId, { type: "moved", pieceIndex: pieceIdx, captured, won, state: newState });
+        await tx.insert(ludoMovesTable).values({
+          gameId, playerId: botUserId, diceValue: state.diceValue,
+          pieceIndex: pieceIdx, fromProgress, toProgress, captured,
+        });
 
-    // If still bot's turn (rolled 6), go again
-    const botIdx: 0 | 1 = 1;
-    if (!won && (newState as GameState).currentTurn === botIdx) {
+        if (won) {
+          const systemUserId2 = await getSystemUserId();
+          await tx.insert(transactionsTable).values({
+            userId: systemUserId2,
+            type: "ludo_fee",
+            amount: game.entryFee,
+            status: "completed",
+            description: `Ludo solo — bot win, platform retains ${game.entryFee} coins`,
+          });
+        } else if (won === false && newState.winnerId && newState.winnerId !== botUserId) {
+          const { platformFeePct } = await getLudoSettings();
+          await payoutWinner(tx, botUserId, newState.winnerId, game.entryFee, platformFeePct / 100);
+        }
+
+        moveResult = { newState, captured, won, pieceIdx };
+      });
+
+      if (!moveResult) break;
+      const { newState, captured, won, pieceIdx } = moveResult!;
+      emitGameUpdate(gameId, { type: "moved", pieceIndex: pieceIdx, captured, won, state: newState });
+      currentState = newState;
+
+      if (won) break;
+    }
+
+    // If still bot's turn after all moves (rolled 6 — extra turn), schedule another round
+    if (currentState.status === "active" && currentState.currentTurn === botIndex && !currentState.diceRolled) {
       void scheduleBotMove(gameId);
     }
   } catch {
