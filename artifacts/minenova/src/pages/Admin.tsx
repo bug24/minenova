@@ -2979,7 +2979,7 @@ const AD_TYPES = [
   { value: "video", label: "Video" },
   { value: "image", label: "Image" },
   { value: "script", label: "Script / Embed" },
-  { value: "external_link", label: "External Link (iframe)" },
+  { value: "external_link", label: "External Link (opens new tab)" },
 ] as const;
 
 type AdType = "video" | "image" | "script" | "external_link";
@@ -3054,8 +3054,15 @@ function AdsTab({ secret }: { secret: string }) {
     if (res.ok) { toast({ title: "Deleted" }); fetchAds(); }
   };
 
-  const urlLabel = form.type === "script" ? "Ad unit code" : "URL";
-  const urlPlaceholder = form.type === "script" ? "<ins class='adsbygoogle'>…</ins>" : "https://example.com/ad.mp4";
+  const urlLabel = form.type === "script" ? "Ad unit code" : form.type === "external_link" ? "Destination URL" : "URL";
+  const urlPlaceholder =
+    form.type === "script"
+      ? "<ins class='adsbygoogle'>…</ins>"
+      : form.type === "external_link"
+        ? "https://your-ad-network.com/landing-page"
+        : form.type === "video"
+          ? "https://example.com/ad.mp4"
+          : "https://example.com/ad-image.jpg";
 
   return (
     <div className="space-y-4">
@@ -3125,6 +3132,11 @@ function AdsTab({ secret }: { secret: string }) {
                   onChange={e => setForm(f => ({ ...f, urlOrCode: e.target.value }))}
                   placeholder={urlPlaceholder}
                 />
+              )}
+              {form.type === "external_link" && (
+                <p className="text-xs text-amber-500 mt-1.5">
+                  Enter a full page URL starting with <span className="font-mono">https://</span> — this page opens in a new tab when the user watches the ad. Do <strong>not</strong> paste iframe or script code here.
+                </p>
               )}
             </div>
             <div>

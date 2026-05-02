@@ -20,6 +20,31 @@ interface AdModalProps {
   onComplete: () => void;
 }
 
+/**
+ * Resolves a raw stored value into a safe, openable URL.
+ * If the admin accidentally pasted iframe/script HTML instead of a direct URL,
+ * this extracts the src/href so window.open() gets an actual URL.
+ */
+function resolveExternalUrl(raw: string | null | undefined): string {
+  const value = (raw ?? "").trim();
+  if (!value) return "";
+
+  // Already a valid URL
+  if (/^https?:\/\//i.test(value)) return value;
+
+  // Looks like HTML — try to pull the first src or href attribute
+  const srcMatch = value.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
+  if (srcMatch?.[1] && /^https?:\/\//i.test(srcMatch[1])) return srcMatch[1];
+
+  const hrefMatch = value.match(/\bhref\s*=\s*["']([^"']+)["']/i);
+  if (hrefMatch?.[1] && /^https?:\/\//i.test(hrefMatch[1])) return hrefMatch[1];
+
+  // Try prepending https:// as a last resort
+  if (!value.startsWith("http")) return `https://${value}`;
+
+  return value;
+}
+
 function injectAdHtml(container: HTMLElement, providerScript: string, body: string) {
   container.innerHTML = "";
   const wrapper = document.createElement("div");
@@ -66,7 +91,9 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
     if (ad.type !== "external_link") return;
     setPopupBlocked(false);
     setTabOpened(false);
-    const win = window.open(ad.urlOrCode ?? "", "_blank", "noopener,noreferrer");
+    const url = resolveExternalUrl(ad.urlOrCode);
+    if (!url) { setPopupBlocked(true); return; }
+    const win = window.open(url, "_blank", "noopener,noreferrer");
     if (win) {
       setTabOpened(true);
     } else {
@@ -93,7 +120,9 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
   }, [ad.id, currentAd, total, ad.type, tabOpened]);
 
   const handleOpenManually = () => {
-    const win = window.open(ad.urlOrCode ?? "", "_blank", "noopener,noreferrer");
+    const url = resolveExternalUrl(ad.urlOrCode);
+    if (!url) return;
+    const win = window.open(url, "_blank", "noopener,noreferrer");
     if (win) {
       setPopupBlocked(false);
       setTabOpened(true);
