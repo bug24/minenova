@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { ludoApi, fetchLudoSettings, type LudoChallenge, type LudoGame, type LudoSettings } from "@/lib/ludoApi";
-import { Dices, Plus, Trophy, Clock, Coins, Users, RefreshCw, X, Bot, Swords, ChevronLeft } from "lucide-react";
+import { Dices, Plus, Trophy, Clock, Coins, Users, RefreshCw, X, Bot, Swords, ChevronLeft, ChevronDown, BookOpen } from "lucide-react";
 
 function CoinIcon({ className }: { className?: string }) {
   return <span className={`inline-block ${className ?? "w-4 h-4"}`}>🪙</span>;
@@ -22,6 +22,7 @@ export default function Ludo() {
 
   const [showCreate, setShowCreate] = useState(false);
   const [showSolo, setShowSolo] = useState(false);
+  const [showHowTo, setShowHowTo] = useState(false);
   const [entryFee, setEntryFee] = useState("");
   const [soloFee, setSoloFee] = useState("");
   const [creating, setCreating] = useState(false);
@@ -268,6 +269,83 @@ export default function Ludo() {
             <Bot className="w-4 h-4" />
             vs Bot
           </Button>
+        )}
+      </div>
+
+      {/* How to Play */}
+      <div className="bg-card border border-card-border rounded-xl overflow-hidden">
+        <button
+          className="w-full flex items-center justify-between px-4 py-3 text-left active:bg-muted/40 transition-colors"
+          onClick={() => setShowHowTo(v => !v)}
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold">
+            <BookOpen className="w-4 h-4 text-primary" />
+            How to Play Ludo
+          </span>
+          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${showHowTo ? "rotate-180" : ""}`} />
+        </button>
+
+        {showHowTo && (
+          <div className="px-4 pb-4 space-y-4 border-t border-card-border">
+
+            {/* Game Rules */}
+            <div className="pt-3">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2.5">Game Rules</p>
+              <ol className="space-y-2">
+                {[
+                  "Each player controls 4 tokens that start locked in their home base.",
+                  "Roll the dice on your turn. Roll a 6 to unlock and place a token on the board.",
+                  "Move your tokens clockwise around the board according to each dice roll.",
+                  "Land exactly on an opponent's token to send it back to their base.",
+                  "Roll a 6 at any point to get a bonus roll.",
+                  "Race all 4 of your tokens to the centre finish square to win!",
+                ].map((rule, i) => (
+                  <li key={i} className="flex gap-2.5 text-xs text-muted-foreground leading-relaxed">
+                    <span className="w-4 h-4 rounded-full bg-primary/15 text-primary font-bold flex items-center justify-center flex-shrink-0 text-[10px] mt-0.5">
+                      {i + 1}
+                    </span>
+                    {rule}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Coins & Winnings */}
+            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3 space-y-2.5">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                <Trophy className="w-3.5 h-3.5" />
+                Coins &amp; Winning Procedure
+              </p>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Your entry fee</span>
+                  <span className="font-semibold text-foreground">X coins</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Opponent's entry fee</span>
+                  <span className="font-semibold text-foreground">+ X coins</span>
+                </div>
+                <div className="h-px bg-border" />
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Total pot</span>
+                  <span className="font-semibold text-foreground">2X coins</span>
+                </div>
+                <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
+                  <span>Winner receives ({winPct}%)</span>
+                  <span>≈ {winPct * 2 / 100}× your fee</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground/60 text-[11px]">
+                  <span>Platform fee ({platformFeePct}%)</span>
+                  <span>kept by house</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground/60 leading-relaxed pt-0.5">
+                Example: Enter <strong>100 coins</strong> → Pot = 200 coins → You win{" "}
+                <strong className="text-emerald-500">{(200 * winPct / 100).toFixed(0)} coins</strong> if you beat your opponent.
+              </p>
+            </div>
+
+          </div>
         )}
       </div>
 

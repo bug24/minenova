@@ -11,7 +11,7 @@ import {
   whotApi, fetchWhotSettings,
   type WhotChallenge, type WhotGame, type WhotSettings,
 } from "@/lib/whotApi";
-import { Layers, Plus, Trophy, Clock, Users, RefreshCw, X, Bot, Swords, Coins, ChevronLeft } from "lucide-react";
+import { Layers, Plus, Trophy, Clock, Users, RefreshCw, X, Bot, Swords, Coins, ChevronLeft, ChevronDown, BookOpen } from "lucide-react";
 
 function CoinIcon({ className }: { className?: string }) {
   return <span className={`inline-block ${className ?? "w-4 h-4"}`}>🪙</span>;
@@ -25,6 +25,7 @@ export default function Whot() {
 
   const [showCreate, setShowCreate] = useState(false);
   const [showSolo, setShowSolo] = useState(false);
+  const [showHowTo, setShowHowTo] = useState(false);
   const [entryFee, setEntryFee] = useState("");
   const [soloFee, setSoloFee] = useState("");
   const [creating, setCreating] = useState(false);
@@ -263,6 +264,108 @@ export default function Whot() {
             <Bot className="w-4 h-4" />
             vs Bot
           </Button>
+        )}
+      </div>
+
+      {/* How to Play */}
+      <div className="bg-card border border-card-border rounded-xl overflow-hidden">
+        <button
+          className="w-full flex items-center justify-between px-4 py-3 text-left active:bg-muted/40 transition-colors"
+          onClick={() => setShowHowTo(v => !v)}
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold">
+            <BookOpen className="w-4 h-4 text-primary" />
+            How to Play WHOT
+          </span>
+          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${showHowTo ? "rotate-180" : ""}`} />
+        </button>
+
+        {showHowTo && (
+          <div className="px-4 pb-4 space-y-4 border-t border-card-border">
+
+            {/* Game Rules */}
+            <div className="pt-3">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2.5">Game Rules</p>
+              <ol className="space-y-2">
+                {[
+                  "Each player is dealt 5 cards. The remaining cards form the draw pile; the top card starts the discard pile.",
+                  "On your turn, play a card that matches the top discard card's suit OR value.",
+                  "If you have no playable card, draw one from the pile.",
+                  "Playing a WHOT (20) card is a wild — you call the next suit to continue with.",
+                  "Empty your hand first to win the round!",
+                ].map((rule, i) => (
+                  <li key={i} className="flex gap-2.5 text-xs text-muted-foreground leading-relaxed">
+                    <span className="w-4 h-4 rounded-full bg-primary/15 text-primary font-bold flex items-center justify-center flex-shrink-0 text-[10px] mt-0.5">
+                      {i + 1}
+                    </span>
+                    {rule}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Action Cards */}
+            <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 space-y-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                Special / Action Cards
+              </p>
+              <div className="grid grid-cols-1 gap-1.5">
+                {[
+                  { val: "1", label: "Hold On", desc: "Next player loses their turn." },
+                  { val: "2", label: "Pick Two", desc: "Next player draws 2 cards." },
+                  { val: "5", label: "Pick Three", desc: "Next player draws 3 cards." },
+                  { val: "8", label: "Suspension", desc: "Next player is skipped." },
+                  { val: "14", label: "General Market", desc: "All players draw cards until someone draws a matching card." },
+                  { val: "20", label: "WHOT (Wild)", desc: "Play on anything — call the suit you want next." },
+                ].map(({ val, label, desc }) => (
+                  <div key={val} className="flex gap-2 text-xs">
+                    <span className="w-6 h-6 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 font-black flex items-center justify-center flex-shrink-0 text-[10px]">
+                      {val}
+                    </span>
+                    <span className="text-muted-foreground leading-relaxed">
+                      <strong className="text-foreground">{label}:</strong> {desc}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Coins & Winnings */}
+            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3 space-y-2.5">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                <Trophy className="w-3.5 h-3.5" />
+                Coins &amp; Winning Procedure
+              </p>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Your entry fee</span>
+                  <span className="font-semibold text-foreground">X coins</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Opponent's entry fee</span>
+                  <span className="font-semibold text-foreground">+ X coins</span>
+                </div>
+                <div className="h-px bg-border" />
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Total pot</span>
+                  <span className="font-semibold text-foreground">2X coins</span>
+                </div>
+                <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
+                  <span>Winner receives ({winPct}%)</span>
+                  <span>≈ {winPct * 2 / 100}× your fee</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground/60 text-[11px]">
+                  <span>Platform fee ({platformFeePct}%)</span>
+                  <span>kept by house</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground/60 leading-relaxed pt-0.5">
+                Example: Enter <strong>100 coins</strong> → Pot = 200 coins → You win{" "}
+                <strong className="text-emerald-500">{(200 * winPct / 100).toFixed(0)} coins</strong> if you empty your hand first.
+              </p>
+            </div>
+
+          </div>
         )}
       </div>
 
