@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { ExternalLink, MonitorPlay } from "lucide-react";
 
 export interface AdData {
   id: number;
@@ -47,6 +47,8 @@ function injectAdHtml(container: HTMLElement, providerScript: string, body: stri
 export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete }: AdModalProps) {
   const [elapsed, setElapsed] = useState(0);
   const [canSkip, setCanSkip] = useState(false);
+  const [popupBlocked, setPopupBlocked] = useState(false);
+  const [tabOpened, setTabOpened] = useState(false);
   const total = Math.max(1, ad.durationSeconds);
   const scriptContainerRef = useRef<HTMLDivElement>(null);
 
@@ -61,8 +63,21 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
   }, [ad.id, ad.type, ad.providerScript, ad.urlOrCode, currentAd]);
 
   useEffect(() => {
+    if (ad.type !== "external_link") return;
+    setPopupBlocked(false);
+    setTabOpened(false);
+    const win = window.open(ad.urlOrCode ?? "", "_blank", "noopener,noreferrer");
+    if (win) {
+      setTabOpened(true);
+    } else {
+      setPopupBlocked(true);
+    }
+  }, [ad.id, ad.type, ad.urlOrCode, currentAd]);
+
+  useEffect(() => {
     setElapsed(0);
     setCanSkip(false);
+    if (ad.type === "external_link" && !tabOpened) return;
     const interval = setInterval(() => {
       setElapsed(e => {
         const next = e + 0.1;
@@ -75,10 +90,23 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
       });
     }, 100);
     return () => clearInterval(interval);
-  }, [ad.id, currentAd, total]);
+  }, [ad.id, currentAd, total, ad.type, tabOpened]);
+
+  const handleOpenManually = () => {
+    window.open(ad.urlOrCode ?? "", "_blank", "noopener,noreferrer");
+    setPopupBlocked(false);
+    setTabOpened(true);
+  };
 
   const progress = Math.min(100, (elapsed / total) * 100);
   const remaining = Math.max(0, Math.ceil(total - elapsed));
+
+  const statusLabel = (() => {
+    if (canSkip) return "Ad complete!";
+    if (ad.type === "external_link" && popupBlocked) return "Open the ad to start the timer…";
+    if (ad.type === "external_link") return "Ad playing in new tab…";
+    return "Watching ad…";
+  })();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -118,13 +146,42 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
             />
           )}
           {ad.type === "external_link" && (
-            <iframe
-              src={ad.urlOrCode ?? ""}
-              title={ad.title}
-              sandbox="allow-scripts allow-same-origin allow-popups"
-              className="w-full"
-              style={{ height: 320, border: "none" }}
-            />
+            <div
+              className="w-full flex flex-col items-center justify-center gap-4 p-6"
+              style={{ height: 220 }}
+            >
+              <div
+                className="w-16 h-16 rounded-2xl flex items-center justify-center"
+                style={{ background: "rgba(168,85,247,0.15)", border: "1px solid rgba(168,85,247,0.3)" }}
+              >
+                <MonitorPlay className="w-8 h-8 text-purple-400" />
+              </div>
+              {popupBlocked ? (
+                <>
+                  <div className="text-center space-y-1">
+                    <p className="text-sm font-semibold text-foreground">Popup blocked by your browser</p>
+                    <p className="text-xs text-muted-foreground">
+                      Tap the button below to open the ad, then keep this window open.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleOpenManually}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-95"
+                    style={{ background: gradient }}
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Open Ad
+                  </button>
+                </>
+              ) : (
+                <div className="text-center space-y-1.5">
+                  <p className="text-sm font-semibold text-foreground">Ad opened in a new tab</p>
+                  <p className="text-xs text-muted-foreground max-w-[260px]">
+                    Keep this window open — your boost will activate once the timer finishes.
+                  </p>
+                </div>
+              )}
+            </div>
           )}
           {ad.type === "script" && (
             <div
@@ -144,7 +201,7 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
             />
           </div>
           <div className="flex justify-between text-xs text-muted-foreground mt-1.5">
-            <span>{canSkip ? "Ad complete!" : "Watching ad..."}</span>
+            <span>{statusLabel}</span>
             <span>{Math.round(progress)}%</span>
           </div>
         </div>
