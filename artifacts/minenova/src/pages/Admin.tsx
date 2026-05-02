@@ -89,6 +89,10 @@ interface ReportMonth {
   gameFeeUsd: number;
   referralCoins: number;
   referralUsd: number;
+  bonusCoins: number;
+  bonusUsd: number;
+  upgradeCommUsd: number;
+  upgradeCommCoins: number;
   totalRevenueUsd: number;
   totalCostUsd: number;
   netUsd: number;
@@ -96,11 +100,17 @@ interface ReportMonth {
 interface ReportSummary {
   allTime: {
     upgradeRevenue: number;
+    retainedUpgradeRevenue: number;
     withdrawalsCost: number;
     gameFeeCoins: number;
     gameFeeUsd: number;
     referralCoins: number;
     referralUsd: number;
+    bonusCoins: number;
+    bonusUsd: number;
+    upgradeCommUsd: number;
+    upgradeCommCoins: number;
+    upgradeCommCoinsUsd: number;
     totalRevenueUsd: number;
     totalCostUsd: number;
     netUsd: number;
@@ -3539,7 +3549,11 @@ function ReportsTab({ secret }: { secret: string }) {
     const params = new URLSearchParams({ coinUsdRate: rate });
     apiFetch(`/admin/reports/summary?${params}`, { headers: h })
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-      .then((d: ReportSummary) => { setData(d); setLoading(false); })
+      .then((d: ReportSummary) => {
+        setData(d);
+        setRateInput(String(d.coinUsdRate));
+        setLoading(false);
+      })
       .catch(() => { toast({ variant: "destructive", title: "Failed to load report" }); setLoading(false); });
   }, [h, toast]);
 
@@ -3628,29 +3642,51 @@ function ReportsTab({ secret }: { secret: string }) {
             </div>
           </div>
 
-          {/* Coin breakdown */}
+          {/* P&L Breakdown */}
           <div className="bg-card border border-card-border rounded-xl p-4 space-y-3">
-            <p className="text-sm font-semibold">Coin-Denominated Activity</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: "Game Fees Collected", coins: data.allTime.gameFeeCoins, usd: data.allTime.gameFeeUsd, color: "text-violet-400" },
-                { label: "Referral Payouts", coins: data.allTime.referralCoins, usd: data.allTime.referralUsd, color: "text-sky-400" },
-              ].map(item => (
-                <div key={item.label} className="bg-muted/40 rounded-lg p-3 space-y-0.5">
-                  <p className="text-xs text-muted-foreground">{item.label}</p>
-                  <p className={`text-base font-bold ${item.color}`}>{fmtCoins(item.coins)} coins</p>
-                  <p className="text-xs text-muted-foreground">≈ {fmtUsd(item.usd)}</p>
-                </div>
-              ))}
-              <div className="bg-muted/40 rounded-lg p-3 space-y-0.5">
-                <p className="text-xs text-muted-foreground">USDT Upgrades Revenue</p>
-                <p className="text-base font-bold text-emerald-400">{fmtUsd(data.allTime.upgradeRevenue)}</p>
-                <p className="text-xs text-muted-foreground">Paid upgrades</p>
+            <p className="text-sm font-semibold">Full P&amp;L Breakdown</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {/* Revenue items */}
+              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3 space-y-0.5">
+                <p className="text-xs text-emerald-400 font-medium">Upgrade Revenue (Gross)</p>
+                <p className="text-base font-bold">{fmtUsd(data.allTime.upgradeRevenue)}</p>
+                <p className="text-xs text-muted-foreground">USDT received</p>
               </div>
-              <div className="bg-muted/40 rounded-lg p-3 space-y-0.5">
-                <p className="text-xs text-muted-foreground">USDT Withdrawals Paid</p>
-                <p className="text-base font-bold text-red-400">{fmtUsd(data.allTime.withdrawalsCost)}</p>
+              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3 space-y-0.5">
+                <p className="text-xs text-emerald-400 font-medium">Upgrade Revenue (Retained)</p>
+                <p className="text-base font-bold">{fmtUsd(data.allTime.retainedUpgradeRevenue)}</p>
+                <p className="text-xs text-muted-foreground">After referral commissions</p>
+              </div>
+              <div className="bg-violet-500/5 border border-violet-500/20 rounded-lg p-3 space-y-0.5">
+                <p className="text-xs text-violet-400 font-medium">Game Fees (Coins)</p>
+                <p className="text-base font-bold">{fmtCoins(data.allTime.gameFeeCoins)}</p>
+                <p className="text-xs text-muted-foreground">≈ {fmtUsd(data.allTime.gameFeeUsd)}</p>
+              </div>
+              {/* Cost items */}
+              <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3 space-y-0.5">
+                <p className="text-xs text-red-400 font-medium">USDT Withdrawals</p>
+                <p className="text-base font-bold">{fmtUsd(data.allTime.withdrawalsCost)}</p>
                 <p className="text-xs text-muted-foreground">Approved payouts</p>
+              </div>
+              <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3 space-y-0.5">
+                <p className="text-xs text-red-400 font-medium">Upgrade Commissions (USDT)</p>
+                <p className="text-base font-bold">{fmtUsd(data.allTime.upgradeCommUsd)}</p>
+                <p className="text-xs text-muted-foreground">Locked USDT to referrers</p>
+              </div>
+              <div className="bg-orange-500/5 border border-orange-500/20 rounded-lg p-3 space-y-0.5">
+                <p className="text-xs text-orange-400 font-medium">Upgrade Commissions (Coins)</p>
+                <p className="text-base font-bold">{fmtCoins(data.allTime.upgradeCommCoins)}</p>
+                <p className="text-xs text-muted-foreground">≈ {fmtUsd(data.allTime.upgradeCommCoinsUsd)}</p>
+              </div>
+              <div className="bg-sky-500/5 border border-sky-500/20 rounded-lg p-3 space-y-0.5">
+                <p className="text-xs text-sky-400 font-medium">Referral Payouts (Coins)</p>
+                <p className="text-base font-bold">{fmtCoins(data.allTime.referralCoins)}</p>
+                <p className="text-xs text-muted-foreground">≈ {fmtUsd(data.allTime.referralUsd)}</p>
+              </div>
+              <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 space-y-0.5">
+                <p className="text-xs text-amber-400 font-medium">Signup Bonus Coins</p>
+                <p className="text-base font-bold">{fmtCoins(data.allTime.bonusCoins)}</p>
+                <p className="text-xs text-muted-foreground">≈ {fmtUsd(data.allTime.bonusUsd)}</p>
               </div>
             </div>
           </div>

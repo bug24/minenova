@@ -8,6 +8,7 @@ import {
   miningSessionsTable,
   referralsTable,
   referralTransactionsTable,
+  referralEarningsTable,
   upgradesTable,
   userUpgradesTable,
   adsTable,
@@ -402,10 +403,12 @@ router.get("/admin/analytics", requireAdmin, async (_req, res): Promise<void> =>
   const [refPayoutRow] = await db.select({ sum: sql<number>`coalesce(sum(amount), 0)` }).from(transactionsTable).where(eq(transactionsTable.type, "referral"));
   const [pendingRow] = await db.select({ count: sql<number>`count(*)::int` }).from(transactionsTable).where(and(eq(transactionsTable.type, "withdrawal"), eq(transactionsTable.status, "pending")));
 
-  const [upgradeRevRow] = await db.select({ sum: sql<number>`coalesce(sum(amount), 0)::float8` }).from(transactionsTable).where(and(eq(transactionsTable.type, "upgrade_payment"), eq(transactionsTable.status, "completed")));
+  const [upgradeRevRow] = await db.select({ sum: sql<number>`coalesce(sum(abs(amount)), 0)::float8` }).from(transactionsTable).where(and(eq(transactionsTable.type, "upgrade_payment"), eq(transactionsTable.status, "completed")));
+  const [upgradeCommRow] = await db.select({ sum: sql<number>`coalesce(sum(reward_locked_usdt), 0)::float8` }).from(referralEarningsTable);
   const usdtUpgradeRevenue = Math.round((upgradeRevRow.sum ?? 0) * 100) / 100;
   const totalUsdtWithdrawn = Math.round((withdrawnRow.sum ?? 0) * 100) / 100;
-  const netPnlUsdt = Math.round((usdtUpgradeRevenue - totalUsdtWithdrawn) * 100) / 100;
+  const upgradeCommUsd = Math.round((upgradeCommRow.sum ?? 0) * 100) / 100;
+  const netPnlUsdt = Math.round((usdtUpgradeRevenue - totalUsdtWithdrawn - upgradeCommUsd) * 100) / 100;
 
   res.json({
     totalUsers: totalUsersRow.count,
@@ -1537,28 +1540,48 @@ router.post("/admin/upgrade-payments/:transactionId/reject", requireAdmin, async
 // ─── Financial Reports ────────────────────────────────────────────────────────
 
 router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<void> => {
-  const coinUsdRate = parseFloat((req.query.coinUsdRate as string) || "0.001");
+  // Load coin rate from admin config, override allowed via query param
+  const [rateRow] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "coin_usd_rate")).limit(1);
+  const defaultRate = rateRow ? parseFloat(rateRow.value) : 0.001;
+  const coinUsdRate = req.query.coinUsdRate ? parseFloat(req.query.coinUsdRate as string) : defaultRate;
 
   const RELEVANT_TYPES = ["upgrade_payment", "withdrawal", "ludo_fee", "whot_fee", "referral"];
 
-  // All-time totals grouped by type + status
+  // All-time totals grouped by type + status — upgrade_payment uses ABS since stored as negative
   const allTimeTotals = await db
     .select({
       type: transactionsTable.type,
       status: transactionsTable.status,
-      total: sql<number>`coalesce(sum(amount), 0)::float8`,
+      total: sql<number>`coalesce(sum(abs(amount)), 0)::float8`,
     })
     .from(transactionsTable)
     .where(sql`${transactionsTable.type} = ANY(ARRAY[${sql.join(RELEVANT_TYPES.map(t => sql`${t}`), sql`, `)}])`)
     .groupBy(transactionsTable.type, transactionsTable.status);
 
-  // Monthly totals for last 6 months
+  // All-time referral bonus coins from referralTransactionsTable (signup bonuses = platform coin cost)
+  const [bonusCoinsRow] = await db
+    .select({ total: sql<number>`coalesce(sum(amount), 0)::float8` })
+    .from(referralTransactionsTable)
+    .where(eq(referralTransactionsTable.rewardType, "bonus"));
+
+  // All-time upgrade commission USDT payouts (locked USDT given to referrers)
+  const [upgradeCommUsdRow] = await db
+    .select({ total: sql<number>`coalesce(sum(reward_locked_usdt), 0)::float8` })
+    .from(referralEarningsTable);
+
+  // All-time upgrade commission coin payouts
+  const [upgradeCommCoinsRow] = await db
+    .select({ total: sql<number>`coalesce(sum(reward_coins), 0)::float8` })
+    .from(referralEarningsTable);
+
+  // Monthly totals from transactionsTable for last 6 months
   const monthlyRows = await db
     .select({
       month: sql<string>`to_char(date_trunc('month', ${transactionsTable.createdAt}), 'YYYY-MM')`,
       type: transactionsTable.type,
       status: transactionsTable.status,
-      total: sql<number>`coalesce(sum(${transactionsTable.amount}), 0)::float8`,
+      total: sql<number>`coalesce(sum(abs(${transactionsTable.amount})), 0)::float8`,
     })
     .from(transactionsTable)
     .where(
@@ -1574,20 +1597,55 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
     )
     .orderBy(sql`date_trunc('month', ${transactionsTable.createdAt})`);
 
-  // Helper: extract from all-time totals
+  // Monthly referral bonus coins
+  const monthlyBonusRows = await db
+    .select({
+      month: sql<string>`to_char(date_trunc('month', ${referralTransactionsTable.createdAt}), 'YYYY-MM')`,
+      total: sql<number>`coalesce(sum(${referralTransactionsTable.amount}), 0)::float8`,
+    })
+    .from(referralTransactionsTable)
+    .where(
+      and(
+        eq(referralTransactionsTable.rewardType, "bonus"),
+        sql`${referralTransactionsTable.createdAt} >= date_trunc('month', now()) - interval '5 months'`
+      )
+    )
+    .groupBy(sql`date_trunc('month', ${referralTransactionsTable.createdAt})`)
+    .orderBy(sql`date_trunc('month', ${referralTransactionsTable.createdAt})`);
+
+  // Monthly upgrade commission USDT + coins
+  const monthlyCommRows = await db
+    .select({
+      month: sql<string>`to_char(date_trunc('month', ${referralEarningsTable.createdAt}), 'YYYY-MM')`,
+      commUsdt: sql<number>`coalesce(sum(${referralEarningsTable.rewardLockedUsdt}), 0)::float8`,
+      commCoins: sql<number>`coalesce(sum(${referralEarningsTable.rewardCoins}), 0)::float8`,
+    })
+    .from(referralEarningsTable)
+    .where(sql`${referralEarningsTable.createdAt} >= date_trunc('month', now()) - interval '5 months'`)
+    .groupBy(sql`date_trunc('month', ${referralEarningsTable.createdAt})`)
+    .orderBy(sql`date_trunc('month', ${referralEarningsTable.createdAt})`);
+
+  // Helper: extract from all-time totals (all amounts already ABS'd)
   const get = (type: string, status?: string) => {
-    const row = allTimeTotals.find(r => r.type === type && (status ? r.status === status : true));
-    return row?.total ?? 0;
+    const rows = allTimeTotals.filter(r => r.type === type && (status ? r.status === status : true));
+    return rows.reduce((s, r) => s + r.total, 0);
   };
 
   const upgradeRevenue = get("upgrade_payment", "completed");
   const withdrawalsCost = get("withdrawal", "approved");
-  const gameFeeCoins = (get("ludo_fee") + get("whot_fee"));
+  const gameFeeCoins = get("ludo_fee") + get("whot_fee");
   const gameFeeUsd = gameFeeCoins * coinUsdRate;
   const referralCoins = get("referral");
   const referralUsd = referralCoins * coinUsdRate;
+  const bonusCoins = bonusCoinsRow.total ?? 0;
+  const bonusUsd = bonusCoins * coinUsdRate;
+  const upgradeCommUsd = upgradeCommUsdRow.total ?? 0;
+  const upgradeCommCoins = upgradeCommCoinsRow.total ?? 0;
+  const upgradeCommCoinsUsd = upgradeCommCoins * coinUsdRate;
+  const retainedUpgradeRevenue = upgradeRevenue - upgradeCommUsd;
+
   const totalRevenueUsd = upgradeRevenue + gameFeeUsd;
-  const totalCostUsd = withdrawalsCost + referralUsd;
+  const totalCostUsd = withdrawalsCost + referralUsd + bonusUsd + upgradeCommUsd + upgradeCommCoinsUsd;
   const netUsd = totalRevenueUsd - totalCostUsd;
 
   // Build monthly buckets covering last 6 months (fill empty months)
@@ -1609,8 +1667,15 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
     const mGameUsd = mGameCoins * coinUsdRate;
     const mRefCoins = getM("referral");
     const mRefUsd = mRefCoins * coinUsdRate;
+    const mBonusCoins = monthlyBonusRows.find(r => r.month === month)?.total ?? 0;
+    const mBonusUsd = mBonusCoins * coinUsdRate;
+    const mCommRow = monthlyCommRows.find(r => r.month === month);
+    const mCommUsd = mCommRow?.commUsdt ?? 0;
+    const mCommCoins = mCommRow?.commCoins ?? 0;
+    const mCommCoinsUsd = mCommCoins * coinUsdRate;
+
     const mRevUsd = mUpgradeRev + mGameUsd;
-    const mCostUsd = mWithdrawCost + mRefUsd;
+    const mCostUsd = mWithdrawCost + mRefUsd + mBonusUsd + mCommUsd + mCommCoinsUsd;
     const mNetUsd = mRevUsd - mCostUsd;
 
     return {
@@ -1621,6 +1686,10 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
       gameFeeUsd: Math.round(mGameUsd * 100) / 100,
       referralCoins: Math.round(mRefCoins * 100) / 100,
       referralUsd: Math.round(mRefUsd * 100) / 100,
+      bonusCoins: Math.round(mBonusCoins * 100) / 100,
+      bonusUsd: Math.round(mBonusUsd * 100) / 100,
+      upgradeCommUsd: Math.round(mCommUsd * 100) / 100,
+      upgradeCommCoins: Math.round(mCommCoins * 100) / 100,
       totalRevenueUsd: Math.round(mRevUsd * 100) / 100,
       totalCostUsd: Math.round(mCostUsd * 100) / 100,
       netUsd: Math.round(mNetUsd * 100) / 100,
@@ -1628,7 +1697,7 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
   });
 
   // Forecast: average of last 3 complete months
-  const completedMonths = months.slice(0, 5); // exclude current (may be partial)
+  const completedMonths = months.slice(0, 5);
   const last3 = completedMonths.slice(-3);
   const avgMonthlyNetUsd = last3.length > 0
     ? last3.reduce((s, m) => s + m.netUsd, 0) / last3.length
@@ -1649,11 +1718,17 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
   res.json({
     allTime: {
       upgradeRevenue: Math.round(upgradeRevenue * 100) / 100,
+      retainedUpgradeRevenue: Math.round(retainedUpgradeRevenue * 100) / 100,
       withdrawalsCost: Math.round(withdrawalsCost * 100) / 100,
       gameFeeCoins: Math.round(gameFeeCoins * 100) / 100,
       gameFeeUsd: Math.round(gameFeeUsd * 100) / 100,
       referralCoins: Math.round(referralCoins * 100) / 100,
       referralUsd: Math.round(referralUsd * 100) / 100,
+      bonusCoins: Math.round(bonusCoins * 100) / 100,
+      bonusUsd: Math.round(bonusUsd * 100) / 100,
+      upgradeCommUsd: Math.round(upgradeCommUsd * 100) / 100,
+      upgradeCommCoins: Math.round(upgradeCommCoins * 100) / 100,
+      upgradeCommCoinsUsd: Math.round(upgradeCommCoinsUsd * 100) / 100,
       totalRevenueUsd: Math.round(totalRevenueUsd * 100) / 100,
       totalCostUsd: Math.round(totalCostUsd * 100) / 100,
       netUsd: Math.round(netUsd * 100) / 100,
