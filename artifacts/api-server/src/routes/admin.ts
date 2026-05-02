@@ -1237,7 +1237,7 @@ const adCreateSchema = z.object({
   urlOrCode: z.string().optional(),
   providerScript: z.string().optional(),
   durationSeconds: z.number().int().min(1).default(15),
-  placement: z.string().min(1).default("boost"),
+  placement: z.string().min(1).default("boost_2x"),
   isActive: z.boolean().default(true),
 });
 

@@ -342,24 +342,37 @@ router.post("/mining/claim", requireAuth, async (req, res): Promise<void> => {
     const now = new Date();
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
 
-    const [session] = await db
+    // Collect ALL expired unclaimed sessions so one tap clears the full backlog.
+    const expiredSessions = await db
       .select()
       .from(miningSessionsTable)
       .where(and(
         eq(miningSessionsTable.userId, req.userId!),
         eq(miningSessionsTable.isActive, true),
         isNull(miningSessionsTable.claimedAt),
+        lte(miningSessionsTable.endsAt, now),
       ))
-      .orderBy(miningSessionsTable.startedAt)
+      .orderBy(miningSessionsTable.startedAt);
+
+    // Also check whether there is an in-progress (not yet expired) session,
+    // so we can return the right error message when truly nothing is claimable.
+    const [liveSession] = await db
+      .select()
+      .from(miningSessionsTable)
+      .where(and(
+        eq(miningSessionsTable.userId, req.userId!),
+        eq(miningSessionsTable.isActive, true),
+        isNull(miningSessionsTable.claimedAt),
+        gt(miningSessionsTable.endsAt, now),
+      ))
       .limit(1);
 
-    if (!session) {
-      res.status(400).json({ error: "No active session to claim" });
-      return;
-    }
-
-    if (now < new Date(session.endsAt)) {
-      res.status(400).json({ error: "Mining session not complete yet" });
+    if (expiredSessions.length === 0) {
+      if (liveSession) {
+        res.status(400).json({ error: "Mining session not complete yet" });
+      } else {
+        res.status(400).json({ error: "No active session to claim" });
+      }
       return;
     }
 
@@ -367,13 +380,16 @@ router.post("/mining/claim", requireAuth, async (req, res): Promise<void> => {
       getEffectiveBaseRate(req.userId!),
       getUserEffectiveUpgrade(req.userId!),
     ]);
-    const statusData = computeMiningStatus(session, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier);
-    const coinsEarned = statusData.accumulatedCoins;
 
-    await db
-      .update(miningSessionsTable)
-      .set({ claimedAt: now, isActive: false, coinsEarned })
-      .where(eq(miningSessionsTable.id, session.id));
+    let coinsEarned = 0;
+    for (const session of expiredSessions) {
+      const statusData = computeMiningStatus(session, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier);
+      coinsEarned += statusData.accumulatedCoins;
+      await db
+        .update(miningSessionsTable)
+        .set({ claimedAt: now, isActive: false, coinsEarned: statusData.accumulatedCoins })
+        .where(eq(miningSessionsTable.id, session.id));
+    }
 
     const newBalance = user.coinBalance + coinsEarned;
     const newTotalEarned = user.totalEarned + coinsEarned;
@@ -383,12 +399,15 @@ router.post("/mining/claim", requireAuth, async (req, res): Promise<void> => {
       .set({ coinBalance: newBalance, totalEarned: newTotalEarned })
       .where(eq(usersTable.id, req.userId!));
 
+    const sessionCount = expiredSessions.length;
     await db.insert(transactionsTable).values({
       userId: req.userId!,
       type: "mining",
       amount: coinsEarned,
       status: "completed",
-      description: "Mining session reward",
+      description: sessionCount > 1
+        ? `Mining reward (${sessionCount} sessions)`
+        : "Mining session reward",
     });
 
     if (!(await isReferralDisabled())) {

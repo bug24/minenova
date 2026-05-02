@@ -1,4 +1,4 @@
-import { useGetMe, useGetReferrals, useGetTransactions, useGetWallet } from "@workspace/api-client-react";
+import { useGetMe, useGetReferrals, useGetTransactions, useGetWallet, useGetMiningStatus } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ export default function Profile() {
   const { theme, toggleTheme } = useTheme();
   const { data: wallet } = useGetWallet();
   const { data: referrals } = useGetReferrals();
+  const { data: miningStatus } = useGetMiningStatus();
   const logoutMutation = useLogout();
 
   const handleLogout = () => {
@@ -37,7 +38,11 @@ export default function Profile() {
             <p className="text-sm text-muted-foreground">{user?.email}</p>
             <div className="flex items-center gap-2 mt-1">
               <Pickaxe className="w-3.5 h-3.5 text-primary" />
-              <span className="text-xs font-medium text-primary">Mining Level {user?.miningLevel}</span>
+              <span className="text-xs font-medium text-primary">
+                {miningStatus?.upgradeName
+                  ? `${miningStatus.upgradeName} · Tier ${miningStatus.upgradeTier}`
+                  : `Mining Level ${user?.miningLevel}`}
+              </span>
             </div>
           </div>
         </div>
