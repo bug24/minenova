@@ -110,14 +110,8 @@ async function payoutWinner(
     status: "completed",
     description: `Ludo system fee — 10% of ${pot} coin pot`,
   });
-
-  await tx.insert(transactionsTable).values({
-    userId: loserId,
-    type: "ludo_loss",
-    amount: -entryFee,
-    status: "completed",
-    description: `Ludo entry fee — lost match`,
-  });
+  // Note: no ludo_loss insert here — the loser's coins were already deducted
+  // and recorded as ludo_entry at challenge creation / acceptance.
 }
 
 // ---------------------------------------------------------------------------
