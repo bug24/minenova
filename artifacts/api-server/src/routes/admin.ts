@@ -1567,18 +1567,23 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
     .where(sql`${transactionsTable.type} = ANY(ARRAY[${sql.join(RELEVANT_TYPES.map(t => sql`${t}`), sql`, `)}])`)
     .groupBy(transactionsTable.type, transactionsTable.status);
 
-  // NOTE: transactions.type="referral" already captures all coin referral payouts
-  // (both signup bonuses and mining commissions), so no separate bonus query is needed.
+  // Split referral coin payouts by reward type (bonus = signup activation; commission = mining)
+  // Source: referralTransactionsTable which has rewardType detail. This avoids double-counting
+  // with transactions.type="referral" — we only use ONE source for each category.
+  const referralByType = await db
+    .select({
+      rewardType: referralTransactionsTable.rewardType,
+      total: sql<number>`coalesce(sum(${referralTransactionsTable.amount}), 0)::float8`,
+    })
+    .from(referralTransactionsTable)
+    .where(sql`${referralTransactionsTable.rewardType} IN ('bonus', 'commission')`)
+    .groupBy(referralTransactionsTable.rewardType);
 
   // All-time upgrade commission USDT payouts (locked USDT given to referrers)
-  const [upgradeCommUsdRow] = await db
-    .select({ total: sql<number>`coalesce(sum(reward_locked_usdt), 0)::float8` })
-    .from(referralEarningsTable);
-
-  // All-time upgrade commission coin payouts
-  const [upgradeCommCoinsRow] = await db
-    .select({ total: sql<number>`coalesce(sum(reward_coins), 0)::float8` })
-    .from(referralEarningsTable);
+  const [[upgradeCommUsdRow], [upgradeCommCoinsRow]] = await Promise.all([
+    db.select({ total: sql<number>`coalesce(sum(reward_locked_usdt), 0)::float8` }).from(referralEarningsTable),
+    db.select({ total: sql<number>`coalesce(sum(reward_coins), 0)::float8` }).from(referralEarningsTable),
+  ]);
 
   // Monthly totals from transactionsTable for last 6 months
   const monthlyRows = await db
@@ -1602,6 +1607,23 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
     )
     .orderBy(sql`date_trunc('month', ${transactionsTable.createdAt})`);
 
+  // Monthly referral coin breakdown by rewardType (bonus vs commission)
+  const monthlyReferralRows = await db
+    .select({
+      month: sql<string>`to_char(date_trunc('month', ${referralTransactionsTable.createdAt}), 'YYYY-MM')`,
+      rewardType: referralTransactionsTable.rewardType,
+      total: sql<number>`coalesce(sum(${referralTransactionsTable.amount}), 0)::float8`,
+    })
+    .from(referralTransactionsTable)
+    .where(
+      and(
+        sql`${referralTransactionsTable.rewardType} IN ('bonus', 'commission')`,
+        sql`${referralTransactionsTable.createdAt} >= date_trunc('month', now()) - interval '5 months'`
+      )
+    )
+    .groupBy(sql`date_trunc('month', ${referralTransactionsTable.createdAt})`, referralTransactionsTable.rewardType)
+    .orderBy(sql`date_trunc('month', ${referralTransactionsTable.createdAt})`);
+
   // Monthly upgrade commission USDT + coins
   const monthlyCommRows = await db
     .select({
@@ -1624,16 +1646,22 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
   const withdrawalsCost = get("withdrawal", "approved");
   const gameFeeCoins = get("ludo_fee") + get("whot_fee");
   const gameFeeUsd = gameFeeCoins * coinUsdRate;
-  const referralCoins = get("referral");
-  const referralUsd = referralCoins * coinUsdRate;
+
+  // Separate referral coin costs from referralTransactionsTable (single source, no double-count)
+  const bonusCoins = referralByType.find(r => r.rewardType === "bonus")?.total ?? 0;
+  const miningCommCoins = referralByType.find(r => r.rewardType === "commission")?.total ?? 0;
+  const bonusUsd = bonusCoins * coinUsdRate;
+  const miningCommUsd = miningCommCoins * coinUsdRate;
+  const totalReferralCoins = bonusCoins + miningCommCoins;
+  const totalReferralUsd = totalReferralCoins * coinUsdRate;
+
   const upgradeCommUsd = upgradeCommUsdRow.total ?? 0;
   const upgradeCommCoins = upgradeCommCoinsRow.total ?? 0;
   const upgradeCommCoinsUsd = upgradeCommCoins * coinUsdRate;
   const retainedUpgradeRevenue = upgradeRevenue - upgradeCommUsd;
 
   const totalRevenueUsd = upgradeRevenue + gameFeeUsd;
-  // referralUsd already includes signup bonuses + mining commissions (via transactions.type="referral")
-  const totalCostUsd = withdrawalsCost + referralUsd + upgradeCommUsd + upgradeCommCoinsUsd;
+  const totalCostUsd = withdrawalsCost + totalReferralUsd + upgradeCommUsd + upgradeCommCoinsUsd;
   const netUsd = totalRevenueUsd - totalCostUsd;
 
   // Build monthly buckets covering last 6 months (fill empty months)
@@ -1653,16 +1681,21 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
     const mWithdrawCost = getM("withdrawal", "approved");
     const mGameCoins = getM("ludo_fee") + getM("whot_fee");
     const mGameUsd = mGameCoins * coinUsdRate;
-    const mRefCoins = getM("referral");
-    const mRefUsd = mRefCoins * coinUsdRate;
+    // Split referral payouts by type from referralTransactionsTable for this month
+    const mBonusCoins = monthlyReferralRows.find(r => r.month === month && r.rewardType === "bonus")?.total ?? 0;
+    const mMiningCommCoins = monthlyReferralRows.find(r => r.month === month && r.rewardType === "commission")?.total ?? 0;
+    const mBonusUsd = mBonusCoins * coinUsdRate;
+    const mMiningCommUsd = mMiningCommCoins * coinUsdRate;
+    const mTotalRefCoins = mBonusCoins + mMiningCommCoins;
+    const mTotalRefUsd = mTotalRefCoins * coinUsdRate;
+
     const mCommRow = monthlyCommRows.find(r => r.month === month);
     const mCommUsd = mCommRow?.commUsdt ?? 0;
     const mCommCoins = mCommRow?.commCoins ?? 0;
     const mCommCoinsUsd = mCommCoins * coinUsdRate;
 
     const mRevUsd = mUpgradeRev + mGameUsd;
-    // mRefUsd already includes all coin referral payouts (bonuses + commissions)
-    const mCostUsd = mWithdrawCost + mRefUsd + mCommUsd + mCommCoinsUsd;
+    const mCostUsd = mWithdrawCost + mTotalRefUsd + mCommUsd + mCommCoinsUsd;
     const mNetUsd = mRevUsd - mCostUsd;
 
     return {
@@ -1671,8 +1704,12 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
       withdrawalsCost: Math.round(mWithdrawCost * 100) / 100,
       gameFeeCoins: Math.round(mGameCoins * 100) / 100,
       gameFeeUsd: Math.round(mGameUsd * 100) / 100,
-      referralCoins: Math.round(mRefCoins * 100) / 100,
-      referralUsd: Math.round(mRefUsd * 100) / 100,
+      bonusCoins: Math.round(mBonusCoins * 100) / 100,
+      bonusUsd: Math.round(mBonusUsd * 100) / 100,
+      miningCommCoins: Math.round(mMiningCommCoins * 100) / 100,
+      miningCommUsd: Math.round(mMiningCommUsd * 100) / 100,
+      totalReferralCoins: Math.round(mTotalRefCoins * 100) / 100,
+      totalReferralUsd: Math.round(mTotalRefUsd * 100) / 100,
       upgradeCommUsd: Math.round(mCommUsd * 100) / 100,
       upgradeCommCoins: Math.round(mCommCoins * 100) / 100,
       totalRevenueUsd: Math.round(mRevUsd * 100) / 100,
@@ -1707,8 +1744,12 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
       withdrawalsCost: Math.round(withdrawalsCost * 100) / 100,
       gameFeeCoins: Math.round(gameFeeCoins * 100) / 100,
       gameFeeUsd: Math.round(gameFeeUsd * 100) / 100,
-      referralCoins: Math.round(referralCoins * 100) / 100,
-      referralUsd: Math.round(referralUsd * 100) / 100,
+      bonusCoins: Math.round(bonusCoins * 100) / 100,
+      bonusUsd: Math.round(bonusUsd * 100) / 100,
+      miningCommCoins: Math.round(miningCommCoins * 100) / 100,
+      miningCommUsd: Math.round(miningCommUsd * 100) / 100,
+      totalReferralCoins: Math.round(totalReferralCoins * 100) / 100,
+      totalReferralUsd: Math.round(totalReferralUsd * 100) / 100,
       upgradeCommUsd: Math.round(upgradeCommUsd * 100) / 100,
       upgradeCommCoins: Math.round(upgradeCommCoins * 100) / 100,
       upgradeCommCoinsUsd: Math.round(upgradeCommCoinsUsd * 100) / 100,

@@ -87,8 +87,12 @@ interface ReportMonth {
   withdrawalsCost: number;
   gameFeeCoins: number;
   gameFeeUsd: number;
-  referralCoins: number;
-  referralUsd: number;
+  bonusCoins: number;
+  bonusUsd: number;
+  miningCommCoins: number;
+  miningCommUsd: number;
+  totalReferralCoins: number;
+  totalReferralUsd: number;
   upgradeCommUsd: number;
   upgradeCommCoins: number;
   totalRevenueUsd: number;
@@ -102,8 +106,12 @@ interface ReportSummary {
     withdrawalsCost: number;
     gameFeeCoins: number;
     gameFeeUsd: number;
-    referralCoins: number;
-    referralUsd: number;
+    bonusCoins: number;
+    bonusUsd: number;
+    miningCommCoins: number;
+    miningCommUsd: number;
+    totalReferralCoins: number;
+    totalReferralUsd: number;
     upgradeCommUsd: number;
     upgradeCommCoins: number;
     upgradeCommCoinsUsd: number;
@@ -3623,7 +3631,7 @@ function ReportsTab({ secret }: { secret: string }) {
               </div>
               <p className="text-2xl font-bold">{fmtUsd(data.allTime.totalCostUsd)}</p>
               <p className="text-xs text-muted-foreground">
-                {fmtUsd(data.allTime.withdrawalsCost)} withdrawals · {fmtUsd(data.allTime.referralUsd)} referrals
+                {fmtUsd(data.allTime.withdrawalsCost)} withdrawals · {fmtUsd(data.allTime.totalReferralUsd)} referrals
               </p>
             </div>
             <div className={`rounded-xl p-4 space-y-1 border ${data.allTime.netUsd >= 0 ? "bg-blue-500/10 border-blue-500/20" : "bg-orange-500/10 border-orange-500/20"}`}>
@@ -3675,9 +3683,14 @@ function ReportsTab({ secret }: { secret: string }) {
                 <p className="text-xs text-muted-foreground">≈ {fmtUsd(data.allTime.upgradeCommCoinsUsd)}</p>
               </div>
               <div className="bg-sky-500/5 border border-sky-500/20 rounded-lg p-3 space-y-0.5">
-                <p className="text-xs text-sky-400 font-medium">Referral Coin Payouts</p>
-                <p className="text-base font-bold">{fmtCoins(data.allTime.referralCoins)}</p>
-                <p className="text-xs text-muted-foreground">≈ {fmtUsd(data.allTime.referralUsd)} · bonuses &amp; commissions</p>
+                <p className="text-xs text-sky-400 font-medium">Signup Bonus Coins</p>
+                <p className="text-base font-bold">{fmtCoins(data.allTime.bonusCoins)}</p>
+                <p className="text-xs text-muted-foreground">≈ {fmtUsd(data.allTime.bonusUsd)} · activation bonuses</p>
+              </div>
+              <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-3 space-y-0.5">
+                <p className="text-xs text-cyan-400 font-medium">Mining Referral Commissions</p>
+                <p className="text-base font-bold">{fmtCoins(data.allTime.miningCommCoins)}</p>
+                <p className="text-xs text-muted-foreground">≈ {fmtUsd(data.allTime.miningCommUsd)} · mining commissions</p>
               </div>
             </div>
           </div>
@@ -3698,6 +3711,8 @@ function ReportsTab({ secret }: { secret: string }) {
                     <th className="text-right px-3 py-2 font-medium text-muted-foreground">Upgrades</th>
                     <th className="text-right px-3 py-2 font-medium text-muted-foreground">Withdrawals</th>
                     <th className="text-right px-3 py-2 font-medium text-muted-foreground">Game Fees</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Bonuses</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Ref Commissions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3714,6 +3729,8 @@ function ReportsTab({ secret }: { secret: string }) {
                         <td className="px-3 py-2.5 text-right text-muted-foreground">{fmtUsd(m.upgradeRevenue)}</td>
                         <td className="px-3 py-2.5 text-right text-muted-foreground">{fmtUsd(m.withdrawalsCost)}</td>
                         <td className="px-3 py-2.5 text-right text-muted-foreground">{fmtCoins(m.gameFeeCoins)}</td>
+                        <td className="px-3 py-2.5 text-right text-sky-400">{fmtCoins(m.bonusCoins)}</td>
+                        <td className="px-3 py-2.5 text-right text-cyan-400">{fmtCoins(m.miningCommCoins)}</td>
                       </tr>
                     );
                   })}
