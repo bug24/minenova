@@ -13,6 +13,10 @@ import {
 } from "@/lib/whotApi";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
 import VoiceChatButton from "@/components/VoiceChatButton";
+import {
+  unlockAudio, playCardSelect, playCardPlay, playCardDraw,
+  playTap, playWin, playLose,
+} from "@/lib/sounds";
 import { ArrowLeft, Trophy, Skull, RefreshCw, Flag, Bot, Timer, Layers } from "lucide-react";
 
 const SUITS: WhotSuit[] = ["Circle", "Triangle", "Cross", "Square", "Star"];
@@ -311,12 +315,17 @@ export default function WhotGame() {
           }
 
           if (event.state) {
+            // Opponent's move arrives via SSE — play card sound
+            if (event.type === "played" || event.type === "drew") {
+              playCardPlay();
+            }
             setGame(g => g
               ? { ...g, gameState: event.state!, status: event.state!.status, winnerId: event.state!.winnerId }
               : g
             );
             setSelectedCardIdx(null);
             if (event.state.status === "completed") {
+              if (event.state.winnerId === myUserId) playWin(); else playLose();
               setShowResult(true);
               queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
             }
@@ -347,6 +356,8 @@ export default function WhotGame() {
   const handleCardClick = (idx: number) => {
     if (!isMyTurn || !gameState) return;
     if (!isCardPlayable(myHand[idx], gameState)) return;
+    unlockAudio();
+    playCardSelect();
     setSelectedCardIdx(prev => prev === idx ? null : idx);
   };
 
@@ -355,10 +366,12 @@ export default function WhotGame() {
     const card = myHand[selectedCardIdx];
 
     if (card.suit === "WHOT" && !calledSuit) {
+      playTap();
       setPendingSuit(true);
       return;
     }
 
+    playCardPlay();
     setPlaying(true);
     try {
       const result = await whotApi<{ state: WhotGameState }>(`/whot/games/${gameId}/play`, {
@@ -369,6 +382,7 @@ export default function WhotGame() {
       setSelectedCardIdx(null);
       setPendingSuit(false);
       if (result.state.status === "completed") {
+        if (result.state.winnerId === myUserId) playWin(); else playLose();
         setShowResult(true);
         queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
       }
@@ -386,6 +400,7 @@ export default function WhotGame() {
 
   const handleDraw = useCallback(async () => {
     if (!isMyTurn || drawing) return;
+    playCardDraw();
     setDrawing(true);
     try {
       const result = await whotApi<{ state: WhotGameState }>(`/whot/games/${gameId}/draw`, { method: "POST" });

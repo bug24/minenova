@@ -14,6 +14,10 @@ import {
 import { useVoiceChat } from "@/hooks/useVoiceChat";
 import VoiceChatButton from "@/components/VoiceChatButton";
 import {
+  unlockAudio, playDiceRoll, playPieceTap, playPieceMove,
+  playCapture, playPieceHome, playWin, playLose,
+} from "@/lib/sounds";
+import {
   Dices,
   ArrowLeft,
   Trophy,
@@ -313,10 +317,32 @@ export default function LudoGame() {
               g ? { ...g, boardState: event.state!, status: event.state!.status, winnerId: event.state!.winnerId } : g
             );
 
-            // Dice roll animation for opponent's roll
+            // Dice roll sound + animation for opponent's roll
             if (event.type === "rolled" && event.state.currentTurn !== myPlayerIndex) {
+              playDiceRoll();
               setRolling(true);
               setTimeout(() => setRolling(false), 650);
+            }
+
+            // Piece movement sounds
+            if (event.type === "moved") {
+              if (event.captured) {
+                playCapture();
+              } else {
+                // Detect if any piece reached home (progress 57)
+                let reachedHome = false;
+                if (prevState) {
+                  for (let pi = 0; pi < 2; pi++) {
+                    for (let idx = 0; idx < 4; idx++) {
+                      const prev = prevState.players[pi]?.pieces[idx]?.progress;
+                      const curr = event.state.players[pi]?.pieces[idx]?.progress;
+                      if (prev !== undefined && curr === 57 && prev !== 57) reachedHome = true;
+                    }
+                  }
+                }
+                if (reachedHome) playPieceHome();
+                else playPieceMove();
+              }
             }
 
             // Step-by-step piece movement animation
@@ -346,6 +372,8 @@ export default function LudoGame() {
               (event.type === "moved" || event.type === "forfeit" || event.type === "timeout" || event.type === "abandoned_timeout") &&
               event.state.status === "completed"
             ) {
+              if (event.state.winnerId === myUserId) playWin();
+              else playLose();
               setShowResult(true);
               queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
             }
@@ -376,6 +404,8 @@ export default function LudoGame() {
 
   const handleRoll = useCallback(async () => {
     if (rolling || !isMyTurn || diceRolled) return;
+    unlockAudio();
+    playDiceRoll();
     setRolling(true);
     try {
       await ludoApi(`/ludo/games/${gameId}/roll`, { method: "POST" });
@@ -388,6 +418,7 @@ export default function LudoGame() {
 
   const handleMove = useCallback(async (pieceIndex: number) => {
     if (moving || animating || !isMyTurn || !diceRolled) return;
+    playPieceTap();
     setMoving(true);
     try {
       await ludoApi(`/ludo/games/${gameId}/move`, {
