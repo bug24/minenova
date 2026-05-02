@@ -125,10 +125,14 @@ async function getLudoSettings(): Promise<{
   soloFee: number;
   soloEnabled: boolean;
   timeoutMinutes: number;
+  pvpEnabled: boolean;
+  pvpMinFee: number;
+  pvpMaxFee: number;
 }> {
   const keys = [
     "ludo_platform_fee_pct", "ludo_win_pct", "ludo_min_fee", "ludo_max_fee",
     "ludo_solo_fee", "ludo_solo_enabled", "ludo_timeout_minutes",
+    "ludo_pvp_enabled", "ludo_pvp_min_fee", "ludo_pvp_max_fee",
   ];
   const rows = await db.select().from(adminConfigTable)
     .where(sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`);
@@ -142,6 +146,9 @@ async function getLudoSettings(): Promise<{
     soloFee: parseFloat(cfg.ludo_solo_fee ?? "100"),
     soloEnabled: (cfg.ludo_solo_enabled ?? "true") === "true",
     timeoutMinutes: parseInt(cfg.ludo_timeout_minutes ?? "5"),
+    pvpEnabled: (cfg.ludo_pvp_enabled ?? "true") === "true",
+    pvpMinFee: parseFloat(cfg.ludo_pvp_min_fee ?? "10"),
+    pvpMaxFee: parseFloat(cfg.ludo_pvp_max_fee ?? "10000"),
   };
 }
 
@@ -247,6 +254,16 @@ router.post("/ludo/challenges", requireAuth, async (req: Request, res: Response)
     const fee = Number(entryFee);
     if (!fee || fee <= 0) {
       res.status(400).json({ error: "entryFee must be a positive number" });
+      return;
+    }
+
+    const settings = await getLudoSettings();
+    if (!settings.pvpEnabled) {
+      res.status(403).json({ error: "PvP challenges are currently disabled" });
+      return;
+    }
+    if (fee < settings.pvpMinFee || fee > settings.pvpMaxFee) {
+      res.status(400).json({ error: `Entry fee must be between ${settings.pvpMinFee} and ${settings.pvpMaxFee} coins` });
       return;
     }
 

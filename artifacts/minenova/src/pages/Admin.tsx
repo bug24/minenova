@@ -97,6 +97,9 @@ interface Settings {
   ludo_solo_fee: string;
   ludo_solo_enabled: string;
   ludo_timeout_minutes: string;
+  ludo_pvp_enabled: string;
+  ludo_pvp_min_fee: string;
+  ludo_pvp_max_fee: string;
   whot_platform_fee_pct: string;
   whot_win_pct: string;
   whot_min_fee: string;
@@ -104,6 +107,9 @@ interface Settings {
   whot_solo_fee: string;
   whot_solo_enabled: string;
   whot_timeout_minutes: string;
+  whot_pvp_enabled: string;
+  whot_pvp_min_fee: string;
+  whot_pvp_max_fee: string;
   withdrawal_ticker_enabled: string;
   voice_chat_enabled: string;
   auto_miner_interval_minutes: string;
@@ -1945,6 +1951,9 @@ function SettingsTab({ secret }: { secret: string }) {
     ludo_solo_fee: "100",
     ludo_solo_enabled: "true",
     ludo_timeout_minutes: "5",
+    ludo_pvp_enabled: "true",
+    ludo_pvp_min_fee: "10",
+    ludo_pvp_max_fee: "10000",
     whot_platform_fee_pct: "10",
     whot_win_pct: "90",
     whot_min_fee: "10",
@@ -1952,6 +1961,9 @@ function SettingsTab({ secret }: { secret: string }) {
     whot_solo_fee: "100",
     whot_solo_enabled: "true",
     whot_timeout_minutes: "5",
+    whot_pvp_enabled: "true",
+    whot_pvp_min_fee: "10",
+    whot_pvp_max_fee: "10000",
     withdrawal_ticker_enabled: "true",
     voice_chat_enabled: "true",
     auto_miner_interval_minutes: "15",
@@ -2412,6 +2424,57 @@ function SettingsTab({ secret }: { secret: string }) {
           </div>
           <p className="text-xs text-muted-foreground">Games idle longer than this are auto-forfeited</p>
         </div>
+
+        <div className="border-t border-card-border pt-4 space-y-4">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Player vs Player</p>
+
+          {/* PvP toggle */}
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Enable PvP</p>
+              <p className="text-xs text-muted-foreground">
+                {settings.ludo_pvp_enabled === "true"
+                  ? "PvP is ON — players can create and accept challenges"
+                  : "PvP is OFF — challenge creation is blocked for all users"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {isSaving("ludo_pvp_enabled") && <span className="text-xs text-muted-foreground">Saving…</span>}
+              {isSaved("ludo_pvp_enabled") && <span className="text-xs text-green-400">Saved ✓</span>}
+              <Toggle
+                on={settings.ludo_pvp_enabled === "true"}
+                disabled={isSaving("ludo_pvp_enabled")}
+                onChange={v => saveSetting("ludo_pvp_enabled", v ? "true" : "false")}
+              />
+            </div>
+          </div>
+
+          {/* PvP min/max fee */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">PvP min entry fee (coins)</label>
+              <div className="flex gap-2">
+                <Input
+                  type="number" step="1" min="1"
+                  value={settings.ludo_pvp_min_fee}
+                  onChange={e => setSettings(p => ({ ...p, ludo_pvp_min_fee: e.target.value }))}
+                />
+                <SaveBtn k="ludo_pvp_min_fee" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">PvP max entry fee (coins)</label>
+              <div className="flex gap-2">
+                <Input
+                  type="number" step="100" min="1"
+                  value={settings.ludo_pvp_max_fee}
+                  onChange={e => setSettings(p => ({ ...p, ludo_pvp_max_fee: e.target.value }))}
+                />
+                <SaveBtn k="ludo_pvp_max_fee" />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ── WHOT Settings ── */}
@@ -2517,6 +2580,57 @@ function SettingsTab({ secret }: { secret: string }) {
             <SaveBtn k="whot_timeout_minutes" />
           </div>
           <p className="text-xs text-muted-foreground">Games idle longer than this are auto-forfeited</p>
+        </div>
+
+        <div className="border-t border-card-border pt-4 space-y-4">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Player vs Player</p>
+
+          {/* PvP toggle */}
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Enable PvP</p>
+              <p className="text-xs text-muted-foreground">
+                {settings.whot_pvp_enabled === "true"
+                  ? "PvP is ON — players can create and accept challenges"
+                  : "PvP is OFF — challenge creation is blocked for all users"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {isSaving("whot_pvp_enabled") && <span className="text-xs text-muted-foreground">Saving…</span>}
+              {isSaved("whot_pvp_enabled") && <span className="text-xs text-green-400">Saved ✓</span>}
+              <Toggle
+                on={settings.whot_pvp_enabled === "true"}
+                disabled={isSaving("whot_pvp_enabled")}
+                onChange={v => saveSetting("whot_pvp_enabled", v ? "true" : "false")}
+              />
+            </div>
+          </div>
+
+          {/* PvP min/max fee */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">PvP min entry fee (coins)</label>
+              <div className="flex gap-2">
+                <Input
+                  type="number" step="1" min="1"
+                  value={settings.whot_pvp_min_fee}
+                  onChange={e => setSettings(p => ({ ...p, whot_pvp_min_fee: e.target.value }))}
+                />
+                <SaveBtn k="whot_pvp_min_fee" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">PvP max entry fee (coins)</label>
+              <div className="flex gap-2">
+                <Input
+                  type="number" step="100" min="1"
+                  value={settings.whot_pvp_max_fee}
+                  onChange={e => setSettings(p => ({ ...p, whot_pvp_max_fee: e.target.value }))}
+                />
+                <SaveBtn k="whot_pvp_max_fee" />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

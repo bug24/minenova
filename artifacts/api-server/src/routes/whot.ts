@@ -150,6 +150,7 @@ async function getWhotSettings() {
   const keys = [
     "whot_platform_fee_pct", "whot_win_pct", "whot_min_fee", "whot_max_fee",
     "whot_solo_fee", "whot_solo_enabled", "whot_timeout_minutes",
+    "whot_pvp_enabled", "whot_pvp_min_fee", "whot_pvp_max_fee",
   ];
   const rows = await db.select().from(adminConfigTable)
     .where(sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`);
@@ -163,6 +164,9 @@ async function getWhotSettings() {
     soloFee: parseFloat(cfg.whot_solo_fee ?? "100"),
     soloEnabled: (cfg.whot_solo_enabled ?? "true") === "true",
     timeoutMinutes: parseInt(cfg.whot_timeout_minutes ?? "5"),
+    pvpEnabled: (cfg.whot_pvp_enabled ?? "true") === "true",
+    pvpMinFee: parseFloat(cfg.whot_pvp_min_fee ?? "10"),
+    pvpMaxFee: parseFloat(cfg.whot_pvp_max_fee ?? "10000"),
   };
 }
 
@@ -369,8 +373,11 @@ router.post("/whot/challenges", requireAuth, async (req: Request, res: Response)
     const fee = Number(entryFee);
     const settings = await getWhotSettings();
 
-    if (!Number.isFinite(fee) || fee < settings.minFee || fee > settings.maxFee) {
-      res.status(400).json({ error: `Entry fee must be between ${settings.minFee} and ${settings.maxFee} coins` }); return;
+    if (!settings.pvpEnabled) {
+      res.status(403).json({ error: "PvP challenges are currently disabled" }); return;
+    }
+    if (!Number.isFinite(fee) || fee < settings.pvpMinFee || fee > settings.pvpMaxFee) {
+      res.status(400).json({ error: `Entry fee must be between ${settings.pvpMinFee} and ${settings.pvpMaxFee} coins` }); return;
     }
 
     let newChallenge: { id: number; entryFee: number } | null = null;

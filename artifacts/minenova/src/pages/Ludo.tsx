@@ -250,12 +250,21 @@ export default function Ludo() {
         </div>
       )}
 
+      {/* PvP disabled banner */}
+      {ludoSettings && ludoSettings.pvpEnabled === false && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+          <Swords className="w-4 h-4 shrink-0" />
+          PvP is currently disabled. You can still play against the bot while it's off.
+        </div>
+      )}
+
       {/* Play buttons */}
       <div className="grid grid-cols-2 gap-3">
         <Button
           className="gap-2 h-12"
           onClick={() => setShowCreate(true)}
-          style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
+          disabled={ludoSettings?.pvpEnabled === false}
+          style={ludoSettings?.pvpEnabled === false ? undefined : { background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
         >
           <Swords className="w-4 h-4" />
           vs Player
