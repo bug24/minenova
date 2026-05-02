@@ -267,6 +267,25 @@ export function applyDiceRoll(state: GameState, diceValues: [number, number], no
   return newState;
 }
 
+/**
+ * Force-end the current player's turn without a move.
+ * Used as a safety valve when validMoves is empty but diceRolled is true
+ * (can happen with old persisted game states that predate the diceQueue field).
+ */
+export function forceEndTurn(state: GameState): GameState {
+  const newState: GameState = JSON.parse(JSON.stringify(state));
+  const opponentIndex: 0 | 1 = newState.currentTurn === 0 ? 1 : 0;
+  newState.diceRolled = false;
+  newState.diceQueue = [];
+  newState.dieIndexQueue = [];
+  newState.movesLeft = 0;
+  newState.diceValue = null;
+  newState.activeDieIndex = null;
+  newState.primaryMoveNumber = 0;
+  newState.currentTurn = opponentIndex;
+  return newState;
+}
+
 export function forfeit(state: GameState, forfeiterUserId: number): GameState {
   const newState: GameState = JSON.parse(JSON.stringify(state));
   const winner = newState.players.find(p => p.userId !== forfeiterUserId);

@@ -181,6 +181,8 @@ export default function LudoGame() {
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
 
   const prevStateRef = useRef<GameState | null>(null);
+  const rollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sseConnectedOnceRef = useRef(false);
   const myUserId = user?.id ?? 0;
 
   const myPlayerIndex: 0 | 1 = game
@@ -256,6 +258,17 @@ export default function LudoGame() {
     setAnimating(false);
   }, []);
 
+  // Safety net: if animating stays true for >2.5 s (e.g. callback never fired),
+  // force-clear it so the player can always interact with the board.
+  useEffect(() => {
+    if (!animating) return;
+    const t = setTimeout(() => {
+      setAnimPiece(null);
+      setAnimating(false);
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [animating]);
+
   // SSE
   useEffect(() => {
     if (!gameId) return;
@@ -284,6 +297,17 @@ export default function LudoGame() {
           };
           retryDelay = 1000;
 
+          // On reconnect (second+ "connected" message), re-fetch full state to catch up
+          if (event.type === "connected") {
+            if (sseConnectedOnceRef.current) {
+              ludoApi<LudoGame & { redUsername?: string; blueUsername?: string }>(`/ludo/games/${gameId}`)
+                .then(g => { setGame(g); prevStateRef.current = g.boardState; })
+                .catch(() => {});
+            }
+            sseConnectedOnceRef.current = true;
+            return;
+          }
+
           if (event.type === "signal" && event.from !== myUserId && event.signalType) {
             handleRemoteSignalRef.current(event.signalType, event.payload);
             return;
@@ -296,8 +320,9 @@ export default function LudoGame() {
 
             if (event.type === "rolled" && event.state.currentTurn !== myPlayerIndex) {
               playDiceRoll();
+              if (rollingTimerRef.current) clearTimeout(rollingTimerRef.current);
               setRolling(true);
-              setTimeout(() => setRolling(false), 650);
+              rollingTimerRef.current = setTimeout(() => setRolling(false), 650);
             }
 
             if (event.type === "moved") {
@@ -319,6 +344,10 @@ export default function LudoGame() {
               }
             }
 
+            // Max animation steps to prevent very long animations (e.g. capture-win
+            // jumps a piece directly to 57, which can produce 50+ steps @ 185ms each).
+            // We take the LAST N steps so the piece always visually arrives at the target.
+            const MAX_ANIM_STEPS = 6;
             if (event.type === "moved" && prevState) {
               for (let pi = 0; pi < 2; pi++) {
                 for (let idx = 0; idx < 4; idx++) {
@@ -326,7 +355,10 @@ export default function LudoGame() {
                   const currProgress = event.state.players[pi]?.pieces[idx]?.progress;
                   if (prevProgress !== undefined && currProgress !== undefined &&
                       currProgress !== prevProgress && currProgress !== -1) {
-                    const steps = buildProgressSteps(prevProgress, currProgress);
+                    const allSteps = buildProgressSteps(prevProgress, currProgress);
+                    const steps = allSteps.length > MAX_ANIM_STEPS
+                      ? allSteps.slice(allSteps.length - MAX_ANIM_STEPS)
+                      : allSteps;
                     if (steps.length > 0) {
                       setAnimPiece({ playerIndex: pi as 0|1, pieceIdx: idx, steps });
                       setAnimating(true);
@@ -361,6 +393,7 @@ export default function LudoGame() {
       unmounted = true;
       es?.close();
       if (retryTimeout) clearTimeout(retryTimeout);
+      if (rollingTimerRef.current) clearTimeout(rollingTimerRef.current);
     };
   }, [gameId, myPlayerIndex, myUserId, queryClient]);
 

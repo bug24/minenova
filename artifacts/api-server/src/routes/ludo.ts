@@ -8,6 +8,7 @@ import {
   getValidMoves,
   applyMove,
   applyDiceRoll,
+  forceEndTurn,
   forfeit,
   isTimedOut,
   type GameState,
@@ -526,12 +527,23 @@ router.post("/ludo/games/:id/roll", requireAuth, async (req: Request, res: Respo
         })
         .where(eq(ludoGamesTable.id, gameId));
 
-      // If no valid moves (turn auto-skipped to bot), trigger bot
-      botTriggeredByRoll = !newState.diceRolled && _systemUserId !== null && game.bluePlayerId === _systemUserId && newState.currentTurn === 1;
     });
 
     emitGameUpdate(gameId, { type: "rolled", diceValue, state: newState });
-    if (botTriggeredByRoll) triggerBotMove(gameId);
+    // Trigger bot asynchronously so we never block on a null _systemUserId cache
+    if (!newState!.diceRolled && newState!.currentTurn === 1) {
+      getSystemUserId().then(sysId => {
+        const [g] = [newState!]; // capture for closure
+        if (g) {
+          // We need bluePlayerId — re-read it from the result kept in closure
+          void (async () => {
+            const [row] = await db.select({ bluePlayerId: ludoGamesTable.bluePlayerId })
+              .from(ludoGamesTable).where(eq(ludoGamesTable.id, gameId)).limit(1);
+            if (row && row.bluePlayerId === sysId) triggerBotMove(gameId);
+          })();
+        }
+      }).catch(() => {});
+    }
     res.json({ diceValue, state: newState });
   } catch (err) {
     handleRouteError(err, res);
@@ -553,8 +565,7 @@ router.post("/ludo/games/:id/move", requireAuth, async (req: Request, res: Respo
       res.status(400).json({ error: "pieceIndex must be 0-3" }); return;
     }
 
-    let moveResult: { newState: GameState; captured: boolean; captureWin: boolean; won: boolean } | null = null;
-    let botTriggered = false;
+    let moveResult: { newState: GameState; captured: boolean; captureWin: boolean; won: boolean; bluePlayerId: number } | null = null;
 
     await db.transaction(async tx => {
       const [game] = await tx
@@ -614,13 +625,17 @@ router.post("/ludo/games/:id/move", requireAuth, async (req: Request, res: Respo
         await payoutWinner(tx, systemUserId, newState.winnerId, game.entryFee, platformFeePct / 100);
       }
 
-      moveResult = { newState, captured, captureWin, won };
-      botTriggered = !won && _systemUserId !== null && game.bluePlayerId === _systemUserId && newState.currentTurn === 1;
+      moveResult = { newState, captured, captureWin, won, bluePlayerId: game.bluePlayerId };
     });
 
     const r = moveResult!;
     emitGameUpdate(gameId, { type: "moved", pieceIndex: idx, captured: r.captured, captureWin: r.captureWin, won: r.won, state: r.newState });
-    if (botTriggered) triggerBotMove(gameId);
+    // Trigger bot asynchronously — avoids stale _systemUserId null on cold boot
+    if (!r.won && r.newState.currentTurn === 1) {
+      getSystemUserId().then(sysId => {
+        if (r.bluePlayerId === sysId) triggerBotMove(gameId);
+      }).catch(() => {});
+    }
     res.json({ captured: r.captured, captureWin: r.captureWin, won: r.won, state: r.newState });
   } catch (err) {
     handleRouteError(err, res);
@@ -866,7 +881,16 @@ async function scheduleBotMove(gameId: number): Promise<void> {
         if (state.currentTurn !== botIndex || !state.diceRolled || state.diceValue === null) return;
 
         const validMoves = getValidMoves(state, botIndex, state.diceValue);
-        if (validMoves.length === 0) return;
+        if (validMoves.length === 0) {
+          // Safety valve: diceRolled=true but no valid moves (e.g. old persisted state).
+          // Force-end the turn so the human player isn't permanently locked out.
+          const skippedState = forceEndTurn(state);
+          await tx.update(ludoGamesTable)
+            .set({ boardState: skippedState as unknown as Record<string, unknown>, lastMoveAt: new Date() })
+            .where(eq(ludoGamesTable.id, gameId));
+          moveResult = { newState: skippedState, captured: false, captureWin: false, won: false, pieceIdx: -1 };
+          return;
+        }
 
         // AI strategy: prefer pieces already on track, then highest progress
         const sortedMoves = [...validMoves].sort((a, b) => {
