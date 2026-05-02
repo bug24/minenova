@@ -70,6 +70,22 @@ A full-stack gamified crypto mining engagement web app.
 - Secret stored in `admin_config` table as `admin_totp_secret`
 - Login flow: password check → 2FA status check → TOTP step if enabled
 
+### Ludo Game
+
+- **Lobby** (`/ludo`) — browse open challenges, create new challenge (entry fee in coins), waiting screen with cancel/refund
+- **Game screen** (`/ludo/game/:id`) — full 2-player Ludo on a 15×15 SVG board
+  - Animated dice (`DiceFace` component) with rolling animation
+  - Real-time updates via SSE (`EventSource`) — token passed as `?token=<jwt>` query param (EventSource cannot set headers)
+  - Valid moves highlighted with a pulsing gold ring animation
+  - Piece capture toast, "reached home" toast
+  - Forfeit with confirmation overlay
+  - Win/lose modal with payout breakdown (10% house fee, 90% to winner)
+  - Wallet balance auto-refreshes after game ends
+- **Board layout**: TRACK_CELLS[52] defines the clockwise 15×15 path; RED_HOME_COL/BLUE_HOME_COL define progress 52-57 home column cells
+- **Entry points**: Red=0 (row 6, col 1), Blue=26 (row 8, col 13); SAFE_SQUARES={0,8,13,21,26,34,39,47}
+- **API**: plain fetch (not OpenAPI-generated) via `src/lib/ludoApi.ts`
+- **SSE auth fix**: `ludo.ts` SSE route promotes `?token=` query param to `Authorization` header before inline auth
+
 ### Database Schema Key Tables
 - `users` — emailVerified, verificationToken, verificationTokenExpiry added
 - `admin_config` — key/value store for settings, scripts, SMTP, TOTP secret
@@ -78,3 +94,6 @@ A full-stack gamified crypto mining engagement web app.
 - `withdrawals`, `transactions` — financial records
 - `upgrades`, `user_upgrades` — rig upgrade catalog and purchases
 - `ads`, `tasks` — admin-managed content
+- `ludo_challenges` — open/matched/cancelled challenges with entry fees
+- `ludo_games` — active/completed games with full board state (JSONB)
+- `ludo_moves` — individual move log per game

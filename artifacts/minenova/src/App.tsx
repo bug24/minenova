@@ -16,6 +16,8 @@ import Upgrades from "@/pages/Upgrades";
 import Boost from "@/pages/Boost";
 import Profile from "@/pages/Profile";
 import Admin from "@/pages/Admin";
+import Ludo from "@/pages/Ludo";
+import LudoGame from "@/pages/LudoGame";
 import NotFound from "@/pages/not-found";
 import { useEffect } from "react";
 
@@ -89,6 +91,8 @@ function Router() {
       <Route path="/upgrades" component={() => <ProtectedRoute component={Upgrades} />} />
       <Route path="/boost" component={() => <ProtectedRoute component={Boost} />} />
       <Route path="/profile" component={() => <ProtectedRoute component={Profile} />} />
+      <Route path="/ludo" component={() => <ProtectedRoute component={Ludo} />} />
+      <Route path="/ludo/game/:id" component={() => <ProtectedRoute component={LudoGame} />} />
       <Route path="/admin" component={Admin} />
       <Route component={NotFound} />
     </Switch>

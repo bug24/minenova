@@ -17,6 +17,7 @@ import {
   Moon,
   MailWarning,
   X,
+  Dices,
 } from "lucide-react";
 import WithdrawalTicker from "@/components/WithdrawalTicker";
 
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/boost", label: "Boost", icon: Zap },
   { href: "/referrals", label: "Refer", icon: Users },
   { href: "/wallet", label: "Wallet", icon: Wallet },
+  { href: "/ludo", label: "Ludo", icon: Dices },
   { href: "/profile", label: "Profile", icon: User },
 ];
 

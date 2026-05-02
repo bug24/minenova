@@ -666,8 +666,21 @@ router.post("/ludo/games/:id/claim-timeout", requireAuth, async (req: Request, r
 
 // ---------------------------------------------------------------------------
 // GET /api/ludo/games/:id/events — SSE stream
+// EventSource cannot set custom headers, so we also accept ?token=<jwt>
 // ---------------------------------------------------------------------------
-router.get("/ludo/games/:id/events", requireAuth, async (req: Request, res: Response): Promise<void> => {
+router.get("/ludo/games/:id/events", async (req: Request, res: Response): Promise<void> => {
+  // Promote query-param token to the Authorization header so requireAuth works normally
+  if (!req.headers.authorization && req.query.token) {
+    req.headers.authorization = `Bearer ${req.query.token as string}`;
+  }
+  // Inline auth (requireAuth as a one-shot call)
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const { verifyToken } = await import("../lib/auth");
+  const uid = verifyToken(authHeader.replace("Bearer ", ""));
+  if (!uid) { res.status(401).json({ error: "Invalid or expired token" }); return; }
+  req.userId = uid;
+
   try {
     const gameId = Number(req.params.id);
     if (Number.isNaN(gameId)) { res.status(400).json({ error: "Invalid id" }); return; }
