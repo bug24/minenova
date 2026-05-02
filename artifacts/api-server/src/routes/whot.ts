@@ -9,8 +9,11 @@ import {
   forfeit,
   isTimedOut,
   botChooseAction,
+  getPlayableCards,
+  drawOneCardRetain,
   type GameState,
   type Suit,
+  type Card,
 } from "../lib/whotEngine";
 
 const router: IRouter = Router();
@@ -214,17 +217,42 @@ function triggerBotMove(gameId: number): void {
         const state = parseState(game.gameState);
         if (state.currentTurn !== 1) return;
 
-        const choice = botChooseAction(state);
+        // --- Bot move computation with draw-retry (up to 3 draws) ---
+        const botMoves: Array<{
+          action: string;
+          cardPlayed: Record<string, unknown> | null;
+          calledSuit: string | null;
+          drewCount: number;
+        }> = [];
 
-        if (choice.action === "draw") {
+        if (state.pendingPickCount > 0) {
+          // Forced pick resolution — draw the pending count and pass turn
           newState = applyDraw(state, 1);
+          botMoves.push({ action: "draw", cardPlayed: null, calledSuit: null, drewCount: state.pendingPickCount });
         } else {
-          newState = applyPlay(
-            state,
-            1,
-            choice.cardIndex!,
-            choice.calledSuit ?? null,
-          );
+          let botState = state;
+          let choice = botChooseAction(botState);
+          let drawCount = 0;
+          const MAX_DRAWS = 3;
+
+          while (choice.action === "draw" && drawCount < MAX_DRAWS) {
+            botState = drawOneCardRetain(botState, 1);
+            drawCount++;
+            botMoves.push({ action: "draw", cardPlayed: null, calledSuit: null, drewCount: 1 });
+            choice = botChooseAction(botState);
+          }
+
+          if (choice.action === "play") {
+            const cardToPlay = botState.players[1].hand[choice.cardIndex!] as unknown as Record<string, unknown>;
+            newState = applyPlay(botState, 1, choice.cardIndex!, choice.calledSuit ?? null);
+            botMoves.push({ action: "play", cardPlayed: cardToPlay, calledSuit: choice.calledSuit ?? null, drewCount: 0 });
+          } else {
+            // Max draws exhausted — pass turn to player
+            newState = { ...botState, currentTurn: 0 as const, lastMoveAt: new Date().toISOString() };
+            if (botMoves.length === 0) {
+              botMoves.push({ action: "draw", cardPlayed: null, calledSuit: null, drewCount: 0 });
+            }
+          }
         }
 
         const now = new Date();
@@ -244,16 +272,16 @@ function triggerBotMove(gameId: number): void {
           .set(updates)
           .where(eq(whotGamesTable.id, gameId));
 
-        await tx.insert(whotMovesTable).values({
-          gameId,
-          playerId: systemUserId,
-          action: choice.action,
-          cardPlayed: choice.action === "play" && choice.cardIndex !== undefined
-            ? (state.players[1].hand[choice.cardIndex] as unknown as Record<string, unknown>)
-            : null,
-          calledSuit: choice.calledSuit ?? null,
-          drewCount: choice.action === "draw" ? (state.pendingPickCount || 1) : 0,
-        });
+        for (const m of botMoves) {
+          await tx.insert(whotMovesTable).values({
+            gameId,
+            playerId: systemUserId,
+            action: m.action,
+            cardPlayed: m.cardPlayed,
+            calledSuit: m.calledSuit,
+            drewCount: m.drewCount,
+          });
+        }
 
         if (newState.status === "completed") {
           const { platformFeePct } = await getWhotSettings();
@@ -488,13 +516,12 @@ router.post("/whot/challenges/:id/accept", requireAuth, async (req: Request, res
         challengeId: id,
         player0Id: ch.creatorId,
         player1Id: req.userId!,
-        gameState: initialState as unknown as Record<string, unknown>,
+        gameState: initialState as unknown,
         status: "active",
         entryFee: fee,
         startedAt: new Date(),
         lastMoveAt: new Date(),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any).returning();
+      }).returning();
       gameId = game.id;
 
       await tx.update(whotChallengesTable).set({
@@ -549,13 +576,12 @@ router.post("/whot/solo", requireAuth, async (req: Request, res: Response): Prom
       const [game] = await tx.insert(whotGamesTable).values({
         player0Id: req.userId!,
         player1Id: systemUserId,
-        gameState: initialState as unknown as Record<string, unknown>,
+        gameState: initialState as unknown,
         status: "active",
         entryFee: fee,
         startedAt: new Date(),
         lastMoveAt: new Date(),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any).returning();
+      }).returning();
       gameId = game.id;
     });
 
@@ -582,7 +608,9 @@ router.get("/whot/my-game", requireAuth, async (req: Request, res: Response): Pr
       .orderBy(whotGamesTable.startedAt)
       .limit(1);
 
-    res.json({ game: game ?? null });
+    if (!game) { res.json({ game: null }); return; }
+    const sanitised = sanitiseState(parseState(game.gameState), req.userId!, game.player0Id);
+    res.json({ game: { ...game, gameState: sanitised } });
   } catch (err) {
     handleRouteError(err, res);
   }
@@ -720,7 +748,7 @@ router.post("/whot/games/:id/play", requireAuth, async (req: Request, res: Respo
       await new Promise(r => setTimeout(r, 700));
       triggerBotMove(gameId);
     }
-    res.json({ state: newState });
+    res.json({ state: sanitiseState(newState!, req.userId!, p0Id) });
   } catch (err) {
     handleRouteError(err, res);
   }
@@ -759,6 +787,14 @@ router.post("/whot/games/:id/draw", requireAuth, async (req: Request, res: Respo
 
       if (state.currentTurn !== myIndex) throw Object.assign(new Error("Not your turn"), { status: 409 });
 
+      // Server-side enforcement: draw only when no playable card (unless resolving pending pick)
+      if (state.pendingPickCount === 0) {
+        const playable = getPlayableCards(state, myIndex);
+        if (playable.length > 0) {
+          throw Object.assign(new Error("You have playable cards — you must play one"), { status: 400 });
+        }
+      }
+
       newState = applyDraw(state, myIndex);
 
       const now = new Date();
@@ -788,7 +824,7 @@ router.post("/whot/games/:id/draw", requireAuth, async (req: Request, res: Respo
       await new Promise(r => setTimeout(r, 700));
       triggerBotMove(gameId);
     }
-    res.json({ state: newState });
+    res.json({ state: sanitiseState(newState!, req.userId!, p0Id) });
   } catch (err) {
     handleRouteError(err, res);
   }
@@ -886,7 +922,7 @@ router.post("/whot/games/:id/forfeit", requireAuth, async (req: Request, res: Re
     });
 
     emitGameUpdate(gameId, "forfeit", newState!, p0Id, p1Id, { winner: newState!.winnerId });
-    res.json({ message: "Forfeited", state: newState });
+    res.json({ message: "Forfeited", state: sanitiseState(newState!, req.userId!, p0Id) });
   } catch (err) {
     handleRouteError(err, res);
   }
@@ -947,7 +983,7 @@ router.post("/whot/games/:id/claim-timeout", requireAuth, async (req: Request, r
     });
 
     emitGameUpdate(gameId, "timeout", newState!, p0Id, p1Id, { winner: req.userId });
-    res.json({ message: "Won by timeout", state: newState });
+    res.json({ message: "Won by timeout", state: sanitiseState(newState!, req.userId!, p0Id) });
   } catch (err) {
     handleRouteError(err, res);
   }

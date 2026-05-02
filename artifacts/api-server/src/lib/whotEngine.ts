@@ -256,6 +256,14 @@ export function applyDraw(state: GameState, playerIndex: 0 | 1): GameState {
   return { ...newState, currentTurn: opponent, lastMoveAt: now };
 }
 
+/**
+ * Draw one card WITHOUT changing currentTurn.
+ * Used by bot draw-retry logic: draw up to 3 cards before passing turn.
+ */
+export function drawOneCardRetain(state: GameState, playerIndex: 0 | 1): GameState {
+  return drawCards(state, playerIndex, 1);
+}
+
 // ---------------------------------------------------------------------------
 // Forfeit
 // ---------------------------------------------------------------------------
