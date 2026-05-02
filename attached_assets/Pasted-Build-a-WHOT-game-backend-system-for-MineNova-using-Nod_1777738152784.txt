@@ -1,0 +1,252 @@
+Build a WHOT game backend system for MineNova using Node.js (Express) and a real-time matchmaking system with WebSockets (Socket.io).
+
+---
+
+TECH STACK:
+
+* Node.js (Express)
+* Socket.io (real-time communication)
+* MongoDB (or PostgreSQL if preferred)
+* JWT authentication
+
+---
+
+CORE OBJECTIVE:
+
+Create a backend that supports:
+
+* Player vs Player (PVP)
+* Player vs Bot (PVB)
+* Coin-based entry system
+* Matchmaking lobby
+* Game state management
+* Reward distribution with platform fee
+
+---
+
+1. DATABASE STRUCTURE
+
+Users:
+
+* id
+* username
+* coin_balance
+* status (online/offline/in-game)
+
+Games:
+
+* id
+* game_type (whot)
+* mode (pvp / bot)
+* entry_fee
+* player_1
+* player_2
+* status (waiting, active, completed)
+* winner_id
+* created_at
+
+GameMoves:
+
+* game_id
+* player_id
+* move_data
+* timestamp
+
+Transactions:
+
+* user_id
+* type (entry_fee, reward, fee)
+* amount
+* status
+* created_at
+
+---
+
+2. MATCHMAKING SYSTEM (PVP)
+
+Create a lobby system:
+
+* Users can create a challenge:
+  POST /whot/create-challenge
+
+  * entry_fee
+  * creates game with status = "waiting"
+
+* Users can view open challenges:
+  GET /whot/challenges
+
+* Users can accept challenge:
+  POST /whot/join-challenge/:gameId
+
+Logic:
+
+* Deduct entry fee from both players
+* Lock coins in system
+* Change status → "active"
+
+---
+
+3. QUICK MATCH (AUTO MATCHMAKING)
+
+* Endpoint: POST /whot/quick-match
+
+Logic:
+
+* Find available waiting game with same entry fee
+* If found → join it
+* If not → create new challenge
+
+---
+
+4. PLAYER VS BOT (PVB)
+
+Endpoint:
+POST /whot/play-bot
+
+Logic:
+
+* Deduct entry fee
+* Start game instantly
+* Generate bot opponent
+
+---
+
+BOT RULES:
+
+* Bot difficulty: easy / medium / hard
+* Bot has probability-based decision system
+* Bot should win ~55% of games (slight house edge)
+
+---
+
+5. GAME ENGINE (WHOT LOGIC)
+
+Implement:
+
+* Card deck generation
+* Card distribution to players
+* Turn-based system
+* Move validation
+* WHOT rules (match by number or shape)
+
+Use Socket.io:
+
+Events:
+
+* "join_game"
+* "start_game"
+* "player_move"
+* "update_state"
+* "end_game"
+
+---
+
+6. REAL-TIME GAME FLOW
+
+* When game starts:
+  → emit initial cards
+
+* On each move:
+  → validate move server-side
+  → update game state
+  → broadcast to both players
+
+* Add turn timer (10 seconds)
+
+---
+
+7. WINNER DETERMINATION
+
+Game ends when:
+
+* Player finishes cards
+  OR
+* Opponent times out repeatedly
+
+---
+
+8. REWARD DISTRIBUTION
+
+PVP:
+
+* Total pot = entry_fee * 2
+* Platform fee = 10%
+* Winner gets 90%
+
+Example:
+
+* 500 + 500 = 1000
+* Fee = 100
+* Winner = 900
+
+---
+
+PVB:
+
+* Entry = 500
+* Win reward = 800 (1.6x)
+* Platform keeps margin
+
+---
+
+9. SECURITY & VALIDATION
+
+* All moves validated on server
+* Prevent duplicate moves
+* Prevent replay attacks
+* Ensure player turn enforcement
+
+---
+
+10. ANTI-ABUSE SYSTEM
+
+* Prevent same players matching repeatedly
+* Limit matches per minute
+* Detect suspicious win patterns
+
+---
+
+11. USER STATUS TRACKING
+
+* Track:
+
+  * online
+  * in-game
+  * available
+
+---
+
+12. SOCKET CONNECTION FLOW
+
+* On login → connect socket
+* Join user to lobby
+* Broadcast available players
+
+---
+
+13. API ENDPOINTS SUMMARY
+
+POST /whot/create-challenge
+GET /whot/challenges
+POST /whot/join-challenge/:id
+POST /whot/quick-match
+POST /whot/play-bot
+
+---
+
+14. OPTIONAL FEATURES
+
+* Leaderboard system
+* Win streak tracking
+* Rematch option
+
+---
+
+GOAL:
+
+Build a scalable WHOT backend system that:
+
+* Supports real-time gameplay
+* Handles matchmaking efficiently
+* Enforces coin economy rules
+* Ensures fairness and profitability
