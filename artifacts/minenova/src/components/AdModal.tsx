@@ -28,7 +28,7 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
     if (ad.type !== "script") return "";
     const provider = ad.providerScript ?? "";
     const body = ad.urlOrCode ?? "";
-    return `<!doctype html><html><head><meta charset="utf-8">${provider}</head><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;">${body}</body></html>`;
+    return `<!doctype html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box}</style>${provider}</head><body style="margin:0;padding:8px;display:flex;align-items:center;justify-content:center;min-height:100%;background:#000;color:#fff;">${body}</body></html>`;
   }, [ad]);
 
   useEffect(() => {
@@ -69,7 +69,7 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
         </div>
 
         {/* Ad content */}
-        <div className="relative bg-black w-full" style={{ minHeight: 220 }}>
+        <div className="relative bg-black w-full" style={{ minHeight: ad.type === "script" ? 80 : 220 }}>
           {ad.type === "image" && (
             <img
               src={ad.urlOrCode ?? ""}
@@ -102,9 +102,9 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
               key={`${ad.id}-${currentAd}`}
               srcDoc={srcDoc}
               title={ad.title}
-              sandbox="allow-scripts allow-popups"
+              sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
               className="w-full"
-              style={{ height: 300, border: "none" }}
+              style={{ height: 120, border: "none" }}
             />
           )}
         </div>
