@@ -125,6 +125,14 @@ app.get("/ads.txt", async (_req, res): Promise<void> => {
   res.send(adsTxt);
 });
 
+// ─── /coinserom_sM9ryP1XSABc.txt — domain ownership verification ─────────────
+
+app.get("/coinserom_sM9ryP1XSABc.txt", (_req, res): void => {
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.send("Verification code: sM9ryP1XSABc\nDomain: minenova.xyz\n");
+});
+
 // ─── API routes ───────────────────────────────────────────────────────────────
 
 app.use("/api", router);
