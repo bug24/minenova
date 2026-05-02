@@ -74,6 +74,12 @@ export function useVoiceChat({ isInitiator, sendSignal, enabled }: UseVoiceChatO
 
   useEffect(() => () => { cleanup(); }, [cleanup]);
 
+  useEffect(() => {
+    if (!enabled && startedRef.current) {
+      cleanup();
+    }
+  }, [enabled, cleanup]);
+
   const trackRemoteLevel = useCallback((stream: MediaStream) => {
     try {
       const ctx = new AudioContext();
@@ -122,7 +128,9 @@ export function useVoiceChat({ isInitiator, sendSignal, enabled }: UseVoiceChatO
     };
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+      const state = pc.connectionState;
+      if (state === "failed" || state === "disconnected" || state === "closed") {
+        cleanup();
         setStatus("error");
       }
     };
