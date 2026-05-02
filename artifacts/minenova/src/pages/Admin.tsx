@@ -89,8 +89,6 @@ interface ReportMonth {
   gameFeeUsd: number;
   referralCoins: number;
   referralUsd: number;
-  bonusCoins: number;
-  bonusUsd: number;
   upgradeCommUsd: number;
   upgradeCommCoins: number;
   totalRevenueUsd: number;
@@ -106,8 +104,6 @@ interface ReportSummary {
     gameFeeUsd: number;
     referralCoins: number;
     referralUsd: number;
-    bonusCoins: number;
-    bonusUsd: number;
     upgradeCommUsd: number;
     upgradeCommCoins: number;
     upgradeCommCoinsUsd: number;
@@ -3679,14 +3675,9 @@ function ReportsTab({ secret }: { secret: string }) {
                 <p className="text-xs text-muted-foreground">≈ {fmtUsd(data.allTime.upgradeCommCoinsUsd)}</p>
               </div>
               <div className="bg-sky-500/5 border border-sky-500/20 rounded-lg p-3 space-y-0.5">
-                <p className="text-xs text-sky-400 font-medium">Referral Payouts (Coins)</p>
+                <p className="text-xs text-sky-400 font-medium">Referral Coin Payouts</p>
                 <p className="text-base font-bold">{fmtCoins(data.allTime.referralCoins)}</p>
-                <p className="text-xs text-muted-foreground">≈ {fmtUsd(data.allTime.referralUsd)}</p>
-              </div>
-              <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 space-y-0.5">
-                <p className="text-xs text-amber-400 font-medium">Signup Bonus Coins</p>
-                <p className="text-base font-bold">{fmtCoins(data.allTime.bonusCoins)}</p>
-                <p className="text-xs text-muted-foreground">≈ {fmtUsd(data.allTime.bonusUsd)}</p>
+                <p className="text-xs text-muted-foreground">≈ {fmtUsd(data.allTime.referralUsd)} · bonuses &amp; commissions</p>
               </div>
             </div>
           </div>
