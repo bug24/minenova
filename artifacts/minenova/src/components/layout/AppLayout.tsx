@@ -70,7 +70,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <header className="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
         <div>
           <div className="flex items-center gap-2">
-            <Pickaxe className="w-5 h-5 text-primary" />
+            <img src="/logo.png" alt="MineNova" className="w-8 h-8 object-contain rounded-lg" />
             <span className="text-xl font-black font-serif text-foreground">MineNova</span>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">Earn Smarter. Grow Faster.</p>

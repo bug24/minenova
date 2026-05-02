@@ -9,7 +9,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Pickaxe, Sun, Moon, Eye, EyeOff, Gift } from "lucide-react";
+import { Sun, Moon, Eye, EyeOff, Gift } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const registerSchema = z.object({
@@ -63,9 +63,7 @@ export default function Register() {
         <div className="text-center mb-8">
           <Link href="/">
             <div className="inline-flex items-center gap-3 cursor-pointer">
-              <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center pulse-glow">
-                <Pickaxe className="w-6 h-6 text-primary-foreground" />
-              </div>
+              <img src="/logo.png" alt="MineNova" className="w-12 h-12 object-contain rounded-2xl" />
               <span className="text-2xl font-black font-serif">MineNova</span>
             </div>
           </Link>

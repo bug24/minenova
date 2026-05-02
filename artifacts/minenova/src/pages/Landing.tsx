@@ -11,7 +11,7 @@ export default function Landing() {
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border px-4 md:px-8 h-16 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Pickaxe className="w-5 h-5 text-primary" />
+          <img src="/logo.png" alt="MineNova" className="w-8 h-8 object-contain rounded-lg" />
           <span className="text-xl font-black font-serif">MineNova</span>
         </div>
         <div className="flex items-center gap-2">
