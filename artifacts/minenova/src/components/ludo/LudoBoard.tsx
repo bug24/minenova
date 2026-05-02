@@ -213,12 +213,12 @@ export default function LudoBoard({
         <circle cx={2.6*C} cy={11.6*C} r={1.92*C} fill="#22c55e" />
         <circle cx={2.6*C} cy={11.6*C} r={1.65*C} fill="#16a34a" opacity={0.4} />
 
-        {/* Orange home — bottom-right */}
-        <rect x={9*C} y={9*C} width={6*C} height={6*C} fill="#f97316" />
-        <rect x={9*C} y={9*C} width={6*C} height={6*C} fill="none" stroke="#c2410c" strokeWidth={4} />
-        <circle cx={11.6*C} cy={11.6*C} r={2.18*C} fill="#c2410c" />
-        <circle cx={11.6*C} cy={11.6*C} r={1.92*C} fill="#f97316" />
-        <circle cx={11.6*C} cy={11.6*C} r={1.65*C} fill="#ea580c" opacity={0.4} />
+        {/* Yellow home — bottom-right */}
+        <rect x={9*C} y={9*C} width={6*C} height={6*C} fill="#eab308" />
+        <rect x={9*C} y={9*C} width={6*C} height={6*C} fill="none" stroke="#a16207" strokeWidth={4} />
+        <circle cx={11.6*C} cy={11.6*C} r={2.18*C} fill="#a16207" />
+        <circle cx={11.6*C} cy={11.6*C} r={1.92*C} fill="#eab308" />
+        <circle cx={11.6*C} cy={11.6*C} r={1.65*C} fill="#ca8a04" opacity={0.4} />
 
         {/* ══════════════════════════════════════════════════════
             TRACK CELLS
@@ -282,12 +282,12 @@ export default function LudoBoard({
           />
         ))}
 
-        {/* Orange corridor (row 7, cols 13→8) */}
+        {/* Yellow corridor (row 7, cols 13→8) */}
         {YELLOW_HOME_COL.map(([row, col], i) => (
           <rect key={`yhc-${i}`}
             x={col*C+1} y={row*C+1} width={C-2} height={C-2}
-            fill={i === 5 ? "#c2410c" : "#f97316"}
-            stroke="#c2410c" strokeWidth={0.6} rx={1}
+            fill={i === 5 ? "#a16207" : "#eab308"}
+            stroke="#a16207" strokeWidth={0.6} rx={1}
           />
         ))}
 
@@ -309,8 +309,8 @@ export default function LudoBoard({
         <polygon points={`${6*C},${9*C} ${9*C},${9*C} ${cx},${cy}`} fill="#22c55e" />
         {/* Left triangle → Red */}
         <polygon points={`${6*C},${6*C} ${6*C},${9*C} ${cx},${cy}`} fill="#ef4444" />
-        {/* Right triangle → Orange */}
-        <polygon points={`${9*C},${6*C} ${9*C},${9*C} ${cx},${cy}`} fill="#f97316" />
+        {/* Right triangle → Yellow */}
+        <polygon points={`${9*C},${6*C} ${9*C},${9*C} ${cx},${cy}`} fill="#eab308" />
         {/* Center circle — where dice sits */}
         <circle cx={cx} cy={cy} r={C*0.72} fill="rgba(255,255,255,0.18)" />
 
@@ -351,13 +351,13 @@ export default function LudoBoard({
           </g>
         ))}
 
-        {/* Orange spawns (decorative) */}
+        {/* Yellow spawns (decorative) */}
         {YELLOW_STARTS.map(([r, c], i) => (
           <g key={`ys-${i}`}>
-            <circle cx={c*C} cy={r*C} r={C*0.44} fill="#c2410c" />
-            <circle cx={c*C} cy={r*C} r={C*0.38} fill="#fed7aa" stroke="#f97316" strokeWidth={1.5} />
+            <circle cx={c*C} cy={r*C} r={C*0.44} fill="#a16207" />
+            <circle cx={c*C} cy={r*C} r={C*0.38} fill="#fef9c3" stroke="#eab308" strokeWidth={1.5} />
             <text x={c*C} y={r*C+1.5} textAnchor="middle" dominantBaseline="middle"
-              fontSize={C*0.28} fill="#ea580c" fontWeight="900"
+              fontSize={C*0.28} fill="#ca8a04" fontWeight="900"
               style={{ userSelect:"none", pointerEvents:"none" }}>♛</text>
           </g>
         ))}
