@@ -1323,6 +1323,21 @@ router.delete("/admin/ads/:id", requireAdmin, async (req, res): Promise<void> =>
   res.json({ success: true });
 });
 
+// ─── Public Ad Slots (top / bottom / floating) ───────────────────────────────
+
+router.get("/ad-slots", async (_req, res): Promise<void> => {
+  const rows = await db
+    .select()
+    .from(adminConfigTable)
+    .where(sql`key IN ('ad_slot_top', 'ad_slot_bottom', 'ad_slot_floating')`);
+  const map = new Map(rows.map(r => [r.key, r.value]));
+  res.json({
+    top:      map.get("ad_slot_top")      ?? "",
+    bottom:   map.get("ad_slot_bottom")   ?? "",
+    floating: map.get("ad_slot_floating") ?? "",
+  });
+});
+
 // ─── Public Body Scripts ─────────────────────────────────────────────────────
 
 router.get("/body-scripts", async (_req, res): Promise<void> => {

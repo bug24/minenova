@@ -20,6 +20,7 @@ import {
   Gamepad2,
 } from "lucide-react";
 import WithdrawalTicker from "@/components/WithdrawalTicker";
+import AdSlot from "@/components/AdSlot";
 
 const navItems = [
   { href: "/dashboard", label: "Mine", icon: Pickaxe, matchPaths: ["/dashboard"] },
@@ -136,10 +137,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
+      {/* Top Ad Slot */}
+      <AdSlot zone="top" />
+
       {/* Main Scrollable Content */}
       <main className="flex-1 overflow-y-auto pb-24">
         {children}
       </main>
+
+      {/* Bottom Ad Slot */}
+      <AdSlot zone="bottom" />
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-card border-t border-card-border dark:border-white/10 z-50">
@@ -170,6 +177,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           })}
         </div>
       </nav>
+
+      {/* Floating Ad Slot */}
+      <AdSlot zone="floating" />
 
       {/* Withdrawal Ticker — controlled by admin toggle */}
       {tickerEnabled && <WithdrawalTicker />}

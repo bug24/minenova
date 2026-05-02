@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 export interface AdData {
@@ -20,16 +20,45 @@ interface AdModalProps {
   onComplete: () => void;
 }
 
+function injectAdHtml(container: HTMLElement, providerScript: string, body: string) {
+  container.innerHTML = "";
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = `${providerScript}${body}`;
+
+  const allScripts = Array.from(wrapper.querySelectorAll("script"));
+  for (const oldScript of allScripts) {
+    const newScript = document.createElement("script");
+    Array.from(oldScript.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value));
+    newScript.textContent = oldScript.textContent;
+    oldScript.replaceWith(newScript);
+  }
+
+  Array.from(wrapper.childNodes).forEach(node => container.appendChild(node.cloneNode(true)));
+
+  const liveScripts = Array.from(container.querySelectorAll("script"));
+  for (const s of liveScripts) {
+    const live = document.createElement("script");
+    Array.from(s.attributes).forEach(attr => live.setAttribute(attr.name, attr.value));
+    live.textContent = s.textContent;
+    s.replaceWith(live);
+  }
+}
+
 export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete }: AdModalProps) {
   const [elapsed, setElapsed] = useState(0);
   const [canSkip, setCanSkip] = useState(false);
   const total = Math.max(1, ad.durationSeconds);
-  const srcDoc = useMemo(() => {
-    if (ad.type !== "script") return "";
-    const provider = ad.providerScript ?? "";
-    const body = ad.urlOrCode ?? "";
-    return `<!doctype html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box}</style>${provider}</head><body style="margin:0;padding:8px;display:flex;align-items:center;justify-content:center;min-height:100%;background:#000;color:#fff;">${body}</body></html>`;
-  }, [ad]);
+  const scriptContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (ad.type === "script" && scriptContainerRef.current) {
+      injectAdHtml(
+        scriptContainerRef.current,
+        ad.providerScript ?? "",
+        ad.urlOrCode ?? "",
+      );
+    }
+  }, [ad.id, ad.type, ad.providerScript, ad.urlOrCode, currentAd]);
 
   useEffect(() => {
     setElapsed(0);
@@ -98,13 +127,10 @@ export default function AdModal({ ad, totalAds, currentAd, gradient, onComplete 
             />
           )}
           {ad.type === "script" && (
-            <iframe
-              key={`${ad.id}-${currentAd}`}
-              srcDoc={srcDoc}
-              title={ad.title}
-              sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-              className="w-full"
-              style={{ height: 120, border: "none" }}
+            <div
+              ref={scriptContainerRef}
+              className="w-full flex items-center justify-center p-2"
+              style={{ minHeight: 80 }}
             />
           )}
         </div>

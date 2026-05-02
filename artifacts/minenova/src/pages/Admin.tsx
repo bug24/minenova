@@ -10,7 +10,7 @@ import {
   ShieldOff, Shield, CircleDollarSign, LayoutDashboard, type LucideIcon,
   Sun, Moon, UserCircle, Copy, RotateCcw, Activity, ChevronRight,
   Play, Zap, AlertTriangle, ToggleLeft, ToggleRight, Menu, ChevronLeft,
-  Film, Link, Clock, MonitorPlay, Code, Bell,
+  Film, Link, Clock, MonitorPlay, Code, Bell, Layers, ArrowUp, ArrowDown,
 } from "lucide-react";
 
 function apiFetch(path: string, options?: RequestInit) {
@@ -3038,6 +3038,125 @@ function AdsTab({ secret }: { secret: string }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Page Ad Slots */}
+      <PageAdSlots secret={secret} />
+    </div>
+  );
+}
+
+// ─── Page Ad Slots ────────────────────────────────────────────────────────────
+
+function PageAdSlots({ secret }: { secret: string }) {
+  const { toast } = useToast();
+  const [top, setTop] = useState("");
+  const [bottom, setBottom] = useState("");
+  const [floating, setFloating] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [savingTop, setSavingTop] = useState(false);
+  const [savingBottom, setSavingBottom] = useState(false);
+  const [savingFloating, setSavingFloating] = useState(false);
+
+  const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
+
+  useEffect(() => {
+    apiFetch("/admin/config", { headers: { "x-admin-secret": secret } })
+      .then(r => r.json())
+      .then((cfg: Record<string, string>) => {
+        setTop(cfg["ad_slot_top"] ?? "");
+        setBottom(cfg["ad_slot_bottom"] ?? "");
+        setFloating(cfg["ad_slot_floating"] ?? "");
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [secret]);
+
+  const saveSlot = async (key: string, value: string, setSaving: (v: boolean) => void) => {
+    setSaving(true);
+    try {
+      const res = await apiFetch("/admin/config", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ key, value }),
+      });
+      if (res.ok) toast({ title: "Slot saved!" });
+      else toast({ variant: "destructive", title: "Failed to save" });
+    } catch {
+      toast({ variant: "destructive", title: "Connection error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const taClass = "w-full rounded-xl border border-card-border bg-card text-sm text-foreground font-mono p-3 resize-y focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground min-h-[90px]";
+
+  return (
+    <div className="bg-card border border-card-border rounded-2xl p-5 space-y-5">
+      <div>
+        <h3 className="font-bold text-foreground text-sm flex items-center gap-2">
+          <Layers className="w-4 h-4 text-primary" /> Page Ad Slots
+        </h3>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Paste ad code into any zone. Scripts run in the main page context — no iframe sandbox — so AdSense and other networks load correctly. Zones render at fixed positions in the app layout.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-6 text-muted-foreground text-sm">Loading…</div>
+      ) : (
+        <div className="space-y-4">
+          {/* Top Banner */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+              <ArrowUp className="w-3 h-3" /> Top Banner
+              <span className="font-normal normal-case ml-1 text-muted-foreground/70">— appears above page content</span>
+            </label>
+            <textarea
+              value={top}
+              onChange={e => setTop(e.target.value)}
+              placeholder={`<ins class="adsbygoogle" data-ad-slot="..." ...></ins>`}
+              className={taClass}
+            />
+            <Button size="sm" className="gap-1.5" disabled={savingTop} onClick={() => saveSlot("ad_slot_top", top, setSavingTop)}>
+              <Save className="w-3 h-3" /> {savingTop ? "Saving…" : "Save Top Slot"}
+            </Button>
+          </div>
+
+          {/* Bottom Banner */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+              <ArrowDown className="w-3 h-3" /> Bottom Banner
+              <span className="font-normal normal-case ml-1 text-muted-foreground/70">— appears above bottom navigation</span>
+            </label>
+            <textarea
+              value={bottom}
+              onChange={e => setBottom(e.target.value)}
+              placeholder={`<ins class="adsbygoogle" data-ad-slot="..." ...></ins>`}
+              className={taClass}
+            />
+            <Button size="sm" className="gap-1.5" disabled={savingBottom} onClick={() => saveSlot("ad_slot_bottom", bottom, setSavingBottom)}>
+              <Save className="w-3 h-3" /> {savingBottom ? "Saving…" : "Save Bottom Slot"}
+            </Button>
+          </div>
+
+          {/* Floating / Interstitial */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+              <Layers className="w-3 h-3" /> Floating / Interstitial
+              <span className="font-normal normal-case ml-1 text-muted-foreground/70">— fixed overlay above nav bar</span>
+            </label>
+            <textarea
+              value={floating}
+              onChange={e => setFloating(e.target.value)}
+              placeholder={`<div id="floating-ad">…</div>`}
+              className={taClass}
+            />
+            <Button size="sm" className="gap-1.5" disabled={savingFloating} onClick={() => saveSlot("ad_slot_floating", floating, setSavingFloating)}>
+              <Save className="w-3 h-3" /> {savingFloating ? "Saving…" : "Save Floating Slot"}
+            </Button>
+          </div>
         </div>
       )}
     </div>
