@@ -42,8 +42,10 @@ export function useVoiceChat({ isInitiator, sendSignal, enabled }: UseVoiceChatO
   const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
   const remoteDescSetRef = useRef(false);
   const startedRef = useRef(false);
+  const intentionalStopRef = useRef(false);
 
   const cleanup = useCallback(() => {
+    intentionalStopRef.current = true;
     startedRef.current = false;
     remoteDescSetRef.current = false;
     pendingIceRef.current = [];
@@ -67,6 +69,7 @@ export function useVoiceChat({ isInitiator, sendSignal, enabled }: UseVoiceChatO
     setIsRemoteSpeaking(false);
     setIsMuted(false);
     setStatus("idle");
+    intentionalStopRef.current = false;
   }, []);
 
   useEffect(() => () => { cleanup(); }, [cleanup]);
@@ -125,8 +128,9 @@ export function useVoiceChat({ isInitiator, sendSignal, enabled }: UseVoiceChatO
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
       if (state === "failed" || state === "disconnected" || state === "closed") {
+        const wasIntentional = intentionalStopRef.current;
         cleanup();
-        setStatus("error");
+        if (!wasIntentional) setStatus("error");
       }
     };
 

@@ -633,8 +633,8 @@ export default function LudoGame() {
         />
       )}
 
-      {/* Voice chat — hidden for bot games */}
-      {!isBotOpponent && (
+      {/* Voice chat — hidden for bot games and after game ends */}
+      {!isBotOpponent && game.status === "active" && (
         <VoiceChatButton
           status={voiceChat.status}
           isMuted={voiceChat.isMuted}
