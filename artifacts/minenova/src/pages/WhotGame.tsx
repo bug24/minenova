@@ -23,6 +23,34 @@ function useGameId() {
 // ---------------------------------------------------------------------------
 // Suit picker modal
 // ---------------------------------------------------------------------------
+// Inline SVG suit shape for the suit picker — matches card artwork
+function SuitSvgIcon({ suit }: { suit: WhotSuit }) {
+  const ink = "#7a1212";
+  const star = (cx: number, cy: number, or_: number, ir: number) =>
+    Array.from({ length: 10 }, (_, i) => {
+      const a = (i * Math.PI) / 5 - Math.PI / 2;
+      const r = i % 2 === 0 ? or_ : ir;
+      return `${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`;
+    }).join(" ");
+  const cross = (cx: number, cy: number, aw: number, ar: number) => {
+    const f = (n: number) => n.toFixed(1);
+    return [
+      `M${f(cx - aw)},${f(cy - ar)}`, `h${aw * 2}`, `v${ar - aw}`, `h${ar - aw}`,
+      `v${aw * 2}`, `h${-(ar - aw)}`, `v${ar - aw}`, `h${-aw * 2}`,
+      `v${-(ar - aw)}`, `h${-(ar - aw)}`, `v${-aw * 2}`, `h${ar - aw}`, "z",
+    ].join(" ");
+  };
+  return (
+    <svg viewBox="0 0 40 40" width={32} height={32}>
+      {suit === "Triangle" && <polygon points="20,4 37,34 3,34" fill={ink} />}
+      {suit === "Circle"   && <circle cx="20" cy="20" r="16" fill={ink} />}
+      {suit === "Cross"    && <path d={cross(20, 20, 6.5, 16)} fill={ink} />}
+      {suit === "Square"   && <rect x="3" y="3" width="34" height="34" fill={ink} />}
+      {suit === "Star"     && <polygon points={star(20, 20, 17, 7)} fill={ink} />}
+    </svg>
+  );
+}
+
 function SuitPicker({ onPick }: { onPick: (suit: WhotSuit) => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-6">
@@ -34,11 +62,10 @@ function SuitPicker({ onPick }: { onPick: (suit: WhotSuit) => void }) {
             <button
               key={s}
               onClick={() => onPick(s)}
-              className="flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all active:scale-95 hover:brightness-110"
-              style={{ borderColor: SUIT_COLORS[s], background: `${SUIT_COLORS[s]}22` }}
+              className="flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl border-2 border-[#7a1212]/30 bg-[#faf7f0] transition-all active:scale-95 hover:border-[#7a1212] hover:shadow-md"
             >
-              <span className="text-xl" style={{ color: SUIT_COLORS[s] }}>{SUIT_SYMBOLS[s]}</span>
-              <span className="text-[9px] font-medium" style={{ color: SUIT_COLORS[s] }}>{s}</span>
+              <SuitSvgIcon suit={s} />
+              <span className="text-[9px] font-semibold text-[#7a1212]">{s}</span>
             </button>
           ))}
         </div>
