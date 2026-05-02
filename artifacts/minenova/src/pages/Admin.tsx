@@ -90,6 +90,13 @@ interface Settings {
   session_duration_hours: string;
   referral_disabled: string;
   mining_disabled: string;
+  ludo_platform_fee_pct: string;
+  ludo_win_pct: string;
+  ludo_min_fee: string;
+  ludo_max_fee: string;
+  ludo_solo_fee: string;
+  ludo_solo_enabled: string;
+  ludo_timeout_minutes: string;
 }
 interface ShareMessage { id: number; platform: string; message: string; isActive: boolean; sortOrder: number; }
 interface UserReferral { id: number; referredId: number; referredUsername: string; totalEarned: number; bonusPaid: boolean; createdAt: string; }
@@ -865,6 +872,7 @@ function WithdrawalsTab({ secret }: { secret: string }) {
 // ─── Transactions Tab ────────────────────────────────────────────────────────
 
 function TransactionsTab({ secret }: { secret: string }) {
+  const { toast } = useToast();
   const [items, setItems] = useState<TxRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState("all");
@@ -1920,6 +1928,13 @@ function SettingsTab({ secret }: { secret: string }) {
     session_duration_hours: "12",
     referral_disabled: "false",
     mining_disabled: "false",
+    ludo_platform_fee_pct: "10",
+    ludo_win_pct: "90",
+    ludo_min_fee: "10",
+    ludo_max_fee: "10000",
+    ludo_solo_fee: "100",
+    ludo_solo_enabled: "true",
+    ludo_timeout_minutes: "5",
   };
 
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
@@ -2206,6 +2221,112 @@ function SettingsTab({ secret }: { secret: string }) {
             <SaveBtn k="referral_commission_pct" />
           </div>
           <p className="text-xs text-muted-foreground">Referrer earns this % of their referral's mining coins</p>
+        </div>
+      </div>
+
+      {/* ── Ludo ── */}
+      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+        <h3 className="font-semibold text-sm text-purple-400">Ludo Game</h3>
+
+        {/* Solo mode toggle */}
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Solo vs Bot</p>
+            <p className="text-xs text-muted-foreground">
+              {settings.ludo_solo_enabled === "true" ? "Solo mode is ON — players can challenge the AI bot" : "Solo mode is OFF"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isSaving("ludo_solo_enabled") && <span className="text-xs text-muted-foreground">Saving…</span>}
+            {isSaved("ludo_solo_enabled") && <span className="text-xs text-green-400">Saved ✓</span>}
+            <Toggle
+              on={settings.ludo_solo_enabled === "true"}
+              disabled={isSaving("ludo_solo_enabled")}
+              onChange={v => saveSetting("ludo_solo_enabled", v ? "true" : "false")}
+            />
+          </div>
+        </div>
+
+        {/* Platform fee */}
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Platform fee (%)</label>
+          <div className="flex gap-2">
+            <Input
+              type="number" step="1" min="0" max="99"
+              value={settings.ludo_platform_fee_pct}
+              onChange={e => setSettings(p => ({ ...p, ludo_platform_fee_pct: e.target.value }))}
+            />
+            <SaveBtn k="ludo_platform_fee_pct" />
+          </div>
+          <p className="text-xs text-muted-foreground">Deducted from the pot — winner gets {100 - parseFloat(settings.ludo_platform_fee_pct || "10")}%</p>
+        </div>
+
+        {/* Win pct (derived display only) */}
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Winner payout (%)</label>
+          <div className="flex gap-2">
+            <Input
+              type="number" step="1" min="1" max="100"
+              value={settings.ludo_win_pct}
+              onChange={e => setSettings(p => ({ ...p, ludo_win_pct: e.target.value }))}
+            />
+            <SaveBtn k="ludo_win_pct" />
+          </div>
+          <p className="text-xs text-muted-foreground">Should equal 100 − platform fee</p>
+        </div>
+
+        {/* Min/Max entry fee */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground font-medium">Min entry fee (coins)</label>
+            <div className="flex gap-2">
+              <Input
+                type="number" step="1" min="1"
+                value={settings.ludo_min_fee}
+                onChange={e => setSettings(p => ({ ...p, ludo_min_fee: e.target.value }))}
+              />
+              <SaveBtn k="ludo_min_fee" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground font-medium">Max entry fee (coins)</label>
+            <div className="flex gap-2">
+              <Input
+                type="number" step="100" min="1"
+                value={settings.ludo_max_fee}
+                onChange={e => setSettings(p => ({ ...p, ludo_max_fee: e.target.value }))}
+              />
+              <SaveBtn k="ludo_max_fee" />
+            </div>
+          </div>
+        </div>
+
+        {/* Solo entry fee */}
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Default solo entry fee (coins)</label>
+          <div className="flex gap-2">
+            <Input
+              type="number" step="10" min="1"
+              value={settings.ludo_solo_fee}
+              onChange={e => setSettings(p => ({ ...p, ludo_solo_fee: e.target.value }))}
+            />
+            <SaveBtn k="ludo_solo_fee" />
+          </div>
+          <p className="text-xs text-muted-foreground">Pre-filled amount when starting a solo game</p>
+        </div>
+
+        {/* Timeout */}
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Inactivity timeout (minutes)</label>
+          <div className="flex gap-2">
+            <Input
+              type="number" step="1" min="1"
+              value={settings.ludo_timeout_minutes}
+              onChange={e => setSettings(p => ({ ...p, ludo_timeout_minutes: e.target.value }))}
+            />
+            <SaveBtn k="ludo_timeout_minutes" />
+          </div>
+          <p className="text-xs text-muted-foreground">Games idle longer than this are auto-forfeited</p>
         </div>
       </div>
 

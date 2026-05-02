@@ -40,8 +40,25 @@ export interface LudoGame {
   endedAt: string | null;
 }
 
+export interface LudoSettings {
+  platformFeePct: number;
+  winPct: number;
+  minFee: number;
+  maxFee: number;
+  soloFee: number;
+  soloEnabled: boolean;
+  timeoutMinutes: number;
+}
+
 function getToken(): string {
   return localStorage.getItem("minenova_token") ?? "";
+}
+
+export async function fetchLudoSettings(): Promise<LudoSettings> {
+  const res = await fetch("/api/ludo/settings");
+  const data = await res.json();
+  if (!res.ok) throw new Error((data as { error?: string }).error ?? "Failed to load settings");
+  return data as LudoSettings;
 }
 
 export async function ludoApi<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {

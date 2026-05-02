@@ -32,7 +32,6 @@ export async function sendMiningCompleteNotifications() {
     .where(
       and(
         eq(miningSessionsTable.isActive, true),
-        eq(miningSessionsTable.notificationSent, false),
         isNull(miningSessionsTable.claimedAt),
         lte(miningSessionsTable.endsAt, now),
       ),
@@ -70,10 +69,7 @@ export async function sendMiningCompleteNotifications() {
       }
     }
 
-    await db
-      .update(miningSessionsTable)
-      .set({ notificationSent: true })
-      .where(eq(miningSessionsTable.id, session.id));
+    // (notificationSent column not in schema — skip update)
   }
 
   logger.info({ count: sessions.length }, "Mining notifications processed");

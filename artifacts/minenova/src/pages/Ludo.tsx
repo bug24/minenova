@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ludoApi, type LudoChallenge, type LudoGame } from "@/lib/ludoApi";
-import { Dices, Plus, Trophy, Clock, Coins, Users, RefreshCw, X } from "lucide-react";
+import { ludoApi, fetchLudoSettings, type LudoChallenge, type LudoGame, type LudoSettings } from "@/lib/ludoApi";
+import { Dices, Plus, Trophy, Clock, Coins, Users, RefreshCw, X, Bot, Swords } from "lucide-react";
 
 function CoinIcon({ className }: { className?: string }) {
   return <span className={`inline-block ${className ?? "w-4 h-4"}`}>🪙</span>;
@@ -20,37 +20,50 @@ export default function Ludo() {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
 
-  // UI state
   const [showCreate, setShowCreate] = useState(false);
+  const [showSolo, setShowSolo] = useState(false);
   const [entryFee, setEntryFee] = useState("");
+  const [soloFee, setSoloFee] = useState("");
   const [creating, setCreating] = useState(false);
+  const [creatingSolo, setCreatingSolo] = useState(false);
   const [accepting, setAccepting] = useState<number | null>(null);
 
-  // Waiting state
   const [waitingChallengeId, setWaitingChallengeId] = useState<number | null>(null);
   const [waitingFee, setWaitingFee] = useState<number>(0);
   const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Wallet
   const { data: wallet } = useGetWallet();
 
-  // Open challenges
   const { data: challenges = [], isLoading, refetch } = useQuery<LudoChallenge[]>({
     queryKey: ["/api/ludo/challenges"],
     queryFn: () => ludoApi<LudoChallenge[]>("/ludo/challenges"),
     refetchInterval: 8000,
   });
 
-  // Active game check
   const { data: myGameData } = useQuery<{ game: LudoGame | null }>({
     queryKey: ["/api/ludo/my-game"],
     queryFn: () => ludoApi<{ game: LudoGame | null }>("/ludo/my-game"),
   });
 
+  const { data: ludoSettings } = useQuery<LudoSettings>({
+    queryKey: ["/api/ludo/settings"],
+    queryFn: fetchLudoSettings,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const winPct = ludoSettings?.winPct ?? 90;
+  const platformFeePct = ludoSettings?.platformFeePct ?? 10;
+
+  // Pre-fill solo fee with the default from settings
+  useEffect(() => {
+    if (ludoSettings?.soloFee && !soloFee) {
+      setSoloFee(String(ludoSettings.soloFee));
+    }
+  }, [ludoSettings, soloFee]);
+
   const activeGame = myGameData?.game ?? null;
 
-  // Poll for challenge match when waiting
   useEffect(() => {
     if (!waitingChallengeId) {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -80,7 +93,10 @@ export default function Ludo() {
 
   const handleCreate = async () => {
     const fee = Number(entryFee);
-    if (!fee || fee < 1) { toast({ variant: "destructive", title: "Enter a valid entry fee (min 1 coin)" }); return; }
+    const minFee = ludoSettings?.minFee ?? 1;
+    const maxFee = ludoSettings?.maxFee ?? 10000;
+    if (!fee || fee < minFee) { toast({ variant: "destructive", title: `Min entry fee is ${minFee} coins` }); return; }
+    if (fee > maxFee) { toast({ variant: "destructive", title: `Max entry fee is ${maxFee} coins` }); return; }
     if ((wallet?.withdrawableBalance ?? 0) < fee) { toast({ variant: "destructive", title: "Insufficient coin balance" }); return; }
 
     setCreating(true);
@@ -99,6 +115,29 @@ export default function Ludo() {
       toast({ variant: "destructive", title: (err as Error).message });
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleSoloStart = async () => {
+    const fee = Number(soloFee);
+    const minFee = ludoSettings?.minFee ?? 1;
+    const maxFee = ludoSettings?.maxFee ?? 10000;
+    if (!fee || fee < minFee) { toast({ variant: "destructive", title: `Min entry fee is ${minFee} coins` }); return; }
+    if (fee > maxFee) { toast({ variant: "destructive", title: `Max entry fee is ${maxFee} coins` }); return; }
+    if ((wallet?.withdrawableBalance ?? 0) < fee) { toast({ variant: "destructive", title: "Insufficient coin balance" }); return; }
+
+    setCreatingSolo(true);
+    try {
+      const result = await ludoApi<{ gameId: number }>("/ludo/solo", {
+        method: "POST",
+        body: JSON.stringify({ entryFee: fee }),
+      });
+      queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
+      navigate(`/ludo/game/${result.gameId}`);
+    } catch (err) {
+      toast({ variant: "destructive", title: (err as Error).message });
+    } finally {
+      setCreatingSolo(false);
     }
   };
 
@@ -203,15 +242,27 @@ export default function Ludo() {
         </div>
       )}
 
-      {/* Create challenge button */}
-      <Button
-        className="w-full gap-2"
-        onClick={() => setShowCreate(true)}
-        style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
-      >
-        <Plus className="w-4 h-4" />
-        Create Challenge
-      </Button>
+      {/* Play buttons */}
+      <div className="grid grid-cols-2 gap-3">
+        <Button
+          className="gap-2 h-12"
+          onClick={() => setShowCreate(true)}
+          style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
+        >
+          <Swords className="w-4 h-4" />
+          vs Player
+        </Button>
+        {(ludoSettings?.soloEnabled !== false) && (
+          <Button
+            variant="outline"
+            className="gap-2 h-12 border-amber-500/40 text-amber-500 hover:bg-amber-500/10"
+            onClick={() => setShowSolo(true)}
+          >
+            <Bot className="w-4 h-4" />
+            vs Bot
+          </Button>
+        )}
+      </div>
 
       {/* My open challenges */}
       {myChallenges.length > 0 && (
@@ -259,13 +310,13 @@ export default function Ludo() {
           <div className="text-center py-10">
             <Dices className="w-10 h-10 mx-auto text-muted-foreground/40 mb-2" />
             <p className="text-sm text-muted-foreground">No open challenges yet</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">Create one to get started!</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">Create one or challenge the bot to get started!</p>
           </div>
         )}
 
         {openChallenges.map(ch => {
           const pot = ch.entryFee * 2;
-          const winnings = pot * 0.9;
+          const winnings = pot * (winPct / 100);
           const isAccepting = accepting === ch.id;
           return (
             <div
@@ -304,7 +355,7 @@ export default function Ludo() {
 
       {/* House rules note */}
       <p className="text-center text-[10px] text-muted-foreground/50">
-        10% house fee on winnings · 90% goes to winner
+        {platformFeePct}% house fee · {winPct}% goes to winner
       </p>
 
       {/* Create challenge dialog */}
@@ -312,8 +363,8 @@ export default function Ludo() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Dices className="w-5 h-5 text-primary" />
-              Create a Challenge
+              <Swords className="w-5 h-5 text-primary" />
+              Challenge a Player
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
@@ -321,8 +372,9 @@ export default function Ludo() {
               <label className="text-sm font-medium mb-1.5 block">Entry Fee (coins)</label>
               <Input
                 type="number"
-                min={1}
-                placeholder="e.g. 100"
+                min={ludoSettings?.minFee ?? 1}
+                max={ludoSettings?.maxFee}
+                placeholder={`e.g. ${ludoSettings?.minFee ?? 100}`}
                 value={entryFee}
                 onChange={e => setEntryFee(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && handleCreate()}
@@ -331,7 +383,7 @@ export default function Ludo() {
                 <p className="text-xs text-muted-foreground mt-1.5">
                   Pot: {Number(entryFee) * 2} coins ·{" "}
                   <span className="text-emerald-500">
-                    Win {(Number(entryFee) * 2 * 0.9).toFixed(0)} coins
+                    Win {(Number(entryFee) * 2 * winPct / 100).toFixed(0)} coins
                   </span>
                 </p>
               )}
@@ -348,10 +400,72 @@ export default function Ludo() {
               <Button
                 className="flex-1 gap-2"
                 onClick={handleCreate}
-                disabled={creating || !entryFee || Number(entryFee) < 1}
+                disabled={creating || !entryFee || Number(entryFee) < (ludoSettings?.minFee ?? 1)}
               >
                 {creating ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
                 Create
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Solo game dialog */}
+      <Dialog open={showSolo} onOpenChange={setShowSolo}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bot className="w-5 h-5 text-amber-500" />
+              Play vs Bot
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+              <p className="text-xs text-amber-600 font-medium mb-1">Solo Mode</p>
+              <p className="text-xs text-muted-foreground">
+                You play against an AI bot. If you win, you get{" "}
+                <strong className="text-emerald-500">{winPct}% of the pot</strong>.
+                If the bot wins, the platform keeps your entry fee.
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Entry Fee (coins)</label>
+              <Input
+                type="number"
+                min={ludoSettings?.minFee ?? 1}
+                max={ludoSettings?.maxFee}
+                placeholder={`e.g. ${ludoSettings?.soloFee ?? 100}`}
+                value={soloFee}
+                onChange={e => setSoloFee(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSoloStart()}
+              />
+              {soloFee && Number(soloFee) > 0 && (
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  If you win:{" "}
+                  <span className="text-emerald-500 font-semibold">
+                    +{(Number(soloFee) * 2 * winPct / 100).toFixed(0)} coins
+                  </span>
+                  {" "}· If bot wins: −{soloFee} coins
+                </p>
+              )}
+            </div>
+            <div className="bg-muted/50 rounded-lg p-3">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Your balance: <strong>{wallet?.withdrawableBalance?.toFixed(0) ?? 0}</strong> coins.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowSolo(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 gap-2"
+                onClick={handleSoloStart}
+                disabled={creatingSolo || !soloFee || Number(soloFee) < (ludoSettings?.minFee ?? 1)}
+                style={{ background: "linear-gradient(135deg, #d97706, #ef4444)" }}
+              >
+                {creatingSolo ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Bot className="w-3.5 h-3.5" />}
+                Start
               </Button>
             </div>
           </div>

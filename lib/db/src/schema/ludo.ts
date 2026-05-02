@@ -16,7 +16,7 @@ export const ludoChallengesTable = pgTable("ludo_challenges", {
 
 export const ludoGamesTable = pgTable("ludo_games", {
   id: serial("id").primaryKey(),
-  challengeId: integer("challenge_id").notNull().references(() => ludoChallengesTable.id),
+  challengeId: integer("challenge_id").references(() => ludoChallengesTable.id),
   redPlayerId: integer("red_player_id").notNull().references(() => usersTable.id),
   bluePlayerId: integer("blue_player_id").notNull().references(() => usersTable.id),
   boardState: jsonb("board_state").notNull(),

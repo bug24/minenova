@@ -60,6 +60,13 @@ async function seedAdminConfig() {
     session_duration_hours: "12",
     referral_disabled: "false",
     mining_disabled: "false",
+    ludo_platform_fee_pct: "10",
+    ludo_win_pct: "90",
+    ludo_min_fee: "10",
+    ludo_max_fee: "10000",
+    ludo_solo_fee: "100",
+    ludo_solo_enabled: "true",
+    ludo_timeout_minutes: "5",
   };
   for (const [key, value] of Object.entries(defaults)) {
     const [existing] = await db
@@ -1194,6 +1201,8 @@ router.get("/admin/settings", requireAdmin, async (_req, res): Promise<void> => 
     "min_withdrawal_usdt", "referral_bonus_coins", "referral_commission_pct",
     "maintenance_mode", "global_base_coins_per_hour", "session_duration_hours",
     "referral_disabled", "mining_disabled",
+    "ludo_platform_fee_pct", "ludo_win_pct", "ludo_min_fee", "ludo_max_fee",
+    "ludo_solo_fee", "ludo_solo_enabled", "ludo_timeout_minutes",
   ];
   const rows = await db.select().from(adminConfigTable).where(sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`);
   const settings: Record<string, string> = {};
@@ -1216,6 +1225,13 @@ router.put("/admin/settings", requireAdmin, async (req, res): Promise<void> => {
     session_duration_hours: strictPosInt.optional(),
     referral_disabled: boolStr.optional(),
     mining_disabled: boolStr.optional(),
+    ludo_platform_fee_pct: strictNum(0, 99).optional(),
+    ludo_win_pct: strictNum(1, 100).optional(),
+    ludo_min_fee: strictNum(1).optional(),
+    ludo_max_fee: strictNum(1).optional(),
+    ludo_solo_fee: strictNum(1).optional(),
+    ludo_solo_enabled: boolStr.optional(),
+    ludo_timeout_minutes: strictPosInt.optional(),
   });
   const data = schema.safeParse(req.body);
   if (!data.success) {

@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useLocation } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getGetWalletQueryKey } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import LudoBoard from "@/components/ludo/LudoBoard";
 import DiceFace from "@/components/ludo/DiceFace";
-import { ludoApi, getSSEUrl, getValidMovesClient, type LudoGame, type GameState } from "@/lib/ludoApi";
+import {
+  ludoApi, fetchLudoSettings, getSSEUrl, getValidMovesClient,
+  type LudoGame, type GameState, type LudoSettings,
+} from "@/lib/ludoApi";
 import {
   Dices,
   ArrowLeft,
@@ -16,7 +19,10 @@ import {
   RefreshCw,
   Flag,
   Timer,
+  Bot,
 } from "lucide-react";
+
+const SYSTEM_USERNAME = "__system__";
 
 function useGameId() {
   const params = useParams<{ id: string }>();
@@ -29,13 +35,16 @@ function useGameId() {
 interface ResultModalProps {
   game: LudoGame;
   myUserId: number;
+  isSolo: boolean;
+  settings: LudoSettings | null;
   onGoLobby: () => void;
 }
 
-function ResultModal({ game, myUserId, onGoLobby }: ResultModalProps) {
+function ResultModal({ game, myUserId, isSolo, settings, onGoLobby }: ResultModalProps) {
   const won = game.winnerId === myUserId;
+  const feePct = settings?.platformFeePct ?? 10;
   const pot = game.entryFee * 2;
-  const fee = pot * 0.1;
+  const fee = pot * (feePct / 100);
   const winnings = pot - fee;
 
   return (
@@ -47,10 +56,10 @@ function ResultModal({ game, myUserId, onGoLobby }: ResultModalProps) {
 
         <div>
           <h2 className="text-2xl font-black">
-            {won ? "You Won! 🎉" : "You Lost"}
+            {won ? "You Won! 🎉" : isSolo ? "Bot Won" : "You Lost"}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            {won ? "Congratulations! Coins have been credited." : "Better luck next time!"}
+            {won ? "Congratulations! Coins have been credited." : isSolo ? "Better luck next time!" : "Better luck next time!"}
           </p>
         </div>
 
@@ -61,7 +70,7 @@ function ResultModal({ game, myUserId, onGoLobby }: ResultModalProps) {
               <span className="font-semibold">+{pot.toFixed(0)} coins</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">House fee (10%)</span>
+              <span className="text-muted-foreground">House fee ({feePct}%)</span>
               <span className="text-destructive">−{fee.toFixed(0)} coins</span>
             </div>
             <div className="border-t border-emerald-500/20 pt-1.5 flex justify-between text-sm font-bold">
@@ -75,10 +84,11 @@ function ResultModal({ game, myUserId, onGoLobby }: ResultModalProps) {
               <span className="text-muted-foreground">Entry fee paid</span>
               <span className="font-semibold text-destructive">−{game.entryFee.toFixed(0)} coins</span>
             </div>
-            <div className="border-t border-destructive/20 pt-1.5 flex justify-between text-sm text-xs">
-              <span className="text-muted-foreground">House fee</span>
-              <span className="text-muted-foreground">charged to pot</span>
-            </div>
+            {isSolo && (
+              <div className="border-t border-destructive/20 pt-1.5 text-xs text-muted-foreground text-center">
+                Platform kept your wager
+              </div>
+            )}
           </div>
         )}
 
@@ -108,9 +118,10 @@ interface PlayerPanelProps {
   isMyTurn: boolean;
   isMe: boolean;
   piecesHome: number;
+  isBot?: boolean;
 }
 
-function PlayerPanel({ label, username, color, isMyTurn, isMe, piecesHome }: PlayerPanelProps) {
+function PlayerPanel({ label, username, color, isMyTurn, isMe, piecesHome, isBot }: PlayerPanelProps) {
   const bg = color === "red" ? "bg-red-500/10 border-red-500/30" : "bg-blue-500/10 border-blue-500/30";
   const dot = color === "red" ? "bg-red-500" : "bg-blue-500";
   const text = color === "red" ? "text-red-600" : "text-blue-600";
@@ -118,17 +129,20 @@ function PlayerPanel({ label, username, color, isMyTurn, isMe, piecesHome }: Pla
   return (
     <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${bg} ${isMyTurn ? "ring-2 ring-amber-400" : ""}`}>
       <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${dot}`}>
-        {username[0]?.toUpperCase()}
+        {isBot ? <Bot className="w-3.5 h-3.5" /> : username[0]?.toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
-        <p className={`text-xs font-bold truncate ${text}`}>
-          {isMe ? "You" : username}
+        <p className={`text-xs font-bold truncate ${text} flex items-center gap-1`}>
+          {isMe ? "You" : isBot ? "Bot" : username}
           {isMe && <span className="text-muted-foreground font-normal"> ({label})</span>}
+          {isBot && <span className="text-muted-foreground font-normal text-[10px]"> AI</span>}
         </p>
         <p className="text-[10px] text-muted-foreground">{piecesHome}/4 home</p>
       </div>
       {isMyTurn && (
-        <span className="text-[10px] font-bold text-amber-500 animate-pulse shrink-0">TURN</span>
+        <span className="text-[10px] font-bold text-amber-500 animate-pulse shrink-0">
+          {isBot ? "BOT…" : "TURN"}
+        </span>
       )}
     </div>
   );
@@ -156,7 +170,6 @@ export default function LudoGame() {
 
   const myUserId = user?.id ?? 0;
 
-  // Derive my player index
   const myPlayerIndex: 0 | 1 = game
     ? game.redPlayerId === myUserId ? 0 : 1
     : 0;
@@ -166,187 +179,167 @@ export default function LudoGame() {
   const diceRolled = boardState?.diceRolled ?? false;
   const diceValue = boardState?.diceValue ?? null;
 
+  // Detect solo game
+  const isSolo = !!(game && (
+    game.redPlayerId === myUserId
+      ? game.bluePlayerId !== myUserId
+      : game.redPlayerId !== myUserId
+  ) && (
+    // Check opponent username from boardState
+    boardState?.players[myPlayerIndex === 0 ? 1 : 0]?.userId !== myUserId
+  ));
+
+  // More reliable: check if bluePlayer is bot via a simple flag on the game data
+  // We'll detect based on the username loaded from the game context
+  const [opponentUsername, setOpponentUsername] = useState<string>("Opponent");
+  const isBotOpponent = opponentUsername === SYSTEM_USERNAME || opponentUsername === "bot" || opponentUsername === "__system__";
+
   const validMoves =
     boardState && isMyTurn && diceRolled && diceValue
       ? getValidMovesClient(boardState, myPlayerIndex, diceValue)
       : [];
 
-  // Fetch initial game state
+  // Fetch initial game state + opponent username
   useEffect(() => {
     setLoading(true);
-    ludoApi<LudoGame>(`/ludo/games/${gameId}`)
+    ludoApi<LudoGame & { redUsername?: string; blueUsername?: string }>(`/ludo/games/${gameId}`)
       .then(g => {
         setGame(g);
         prevStateRef.current = g.boardState;
         if (g.status === "completed") setShowResult(true);
+        // Determine opponent username
+        const oppIdx = g.redPlayerId === myUserId ? 1 : 0;
+        const oppUsername = oppIdx === 0
+          ? ((g as unknown as Record<string, unknown>).redUsername as string | undefined) ?? "Opponent"
+          : ((g as unknown as Record<string, unknown>).blueUsername as string | undefined) ?? "Opponent";
+        setOpponentUsername(oppUsername);
       })
       .catch(() => toast({ variant: "destructive", title: "Failed to load game" }))
       .finally(() => setLoading(false));
-  }, [gameId, toast]);
+  }, [gameId, toast, myUserId]);
 
-  // SSE connection
+  // Ludo settings (for dynamic fee display)
+  const { data: ludoSettings = null } = useQuery<LudoSettings>({
+    queryKey: ["/api/ludo/settings"],
+    queryFn: fetchLudoSettings,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // SSE connection with exponential backoff
   useEffect(() => {
     if (!gameId) return;
-    const sseUrl = getSSEUrl(gameId);
-    const es = new EventSource(sseUrl);
-
-    es.onmessage = (e) => {
-      try {
-        const event = JSON.parse(e.data) as {
-          type: string;
-          state?: GameState;
-          captured?: boolean;
-          won?: boolean;
-        };
-
-        if (event.state) {
-          setGame(prev => {
-            if (!prev) return prev;
-            const updated = { ...prev, boardState: event.state!, status: event.state!.status };
-            if (event.state!.winnerId) updated.winnerId = event.state!.winnerId;
-            return updated;
-          });
-
-          // Capture notification
-          if (event.captured && event.type === "moved") {
-            toast({ title: "💥 A piece was captured!" });
-          }
-
-          // Win check
-          if (event.state.status === "completed") {
-            queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
-            setShowResult(true);
-            setGame(prev => prev ? {
-              ...prev,
-              status: "completed",
-              boardState: event.state!,
-              winnerId: event.state!.winnerId,
-            } : prev);
-          }
-
-          // Reaching home celebration
-          const prevState = prevStateRef.current;
-          if (prevState) {
-            const myPlayer = event.state.players[myPlayerIndex];
-            const prevPlayer = prevState.players[myPlayerIndex];
-            myPlayer.pieces.forEach((p, i) => {
-              if (p.progress === 57 && prevPlayer?.pieces[i]?.progress !== 57) {
-                toast({ title: "🏠 Piece reached home!" });
-              }
-            });
-          }
-          prevStateRef.current = event.state;
-        }
-      } catch {
-        // malformed message — ignore
-      }
-    };
-
+    let es: EventSource | null = null;
     let retryDelay = 1000;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let closed = false;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+    let unmounted = false;
 
-    es.onerror = () => {
-      if (closed) return;
-      es.close();
-      retryTimer = setTimeout(() => {
-        if (closed) return;
-        retryDelay = Math.min(retryDelay * 2, 30000);
-        // Re-trigger the effect by toggling a reconnect signal would require
-        // state, so we recreate EventSource manually here via recursion.
-        const reconnect = new EventSource(sseUrl);
-        Object.assign(es, reconnect);
-        reconnect.onmessage = es.onmessage;
-        reconnect.onerror = es.onerror;
-      }, retryDelay);
+    const connect = () => {
+      if (unmounted) return;
+      const sseUrl = getSSEUrl(gameId);
+      es = new EventSource(sseUrl);
+
+      es.onmessage = (e) => {
+        try {
+          const event = JSON.parse(e.data) as {
+            type: string;
+            state?: GameState;
+            captured?: boolean;
+            won?: boolean;
+            diceValue?: number;
+            pieceIndex?: number;
+            winner?: number;
+          };
+          retryDelay = 1000;
+
+          if (event.state) {
+            const prev = prevStateRef.current;
+            prevStateRef.current = event.state;
+            setGame(g => g ? { ...g, boardState: event.state!, status: event.state!.status, winnerId: event.state!.winnerId } : g);
+
+            if (event.type === "rolled" && event.state.currentTurn !== myPlayerIndex) {
+              // Opponent rolled — show a brief dice animation
+              setRolling(true);
+              setTimeout(() => setRolling(false), 600);
+            }
+
+            if ((event.type === "moved" || event.type === "forfeit" || event.type === "timeout" || event.type === "abandoned_timeout") && event.state.status === "completed") {
+              setShowResult(true);
+              queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
+            }
+          }
+        } catch {
+          // ignore malformed events
+        }
+      };
+
+      es.onerror = () => {
+        es?.close();
+        if (!unmounted) {
+          retryTimeout = setTimeout(() => {
+            retryDelay = Math.min(retryDelay * 2, 30000);
+            connect();
+          }, retryDelay);
+        }
+      };
     };
 
+    connect();
     return () => {
-      closed = true;
-      if (retryTimer) clearTimeout(retryTimer);
-      es.close();
+      unmounted = true;
+      es?.close();
+      if (retryTimeout) clearTimeout(retryTimeout);
     };
-  }, [gameId, queryClient, myPlayerIndex, toast]);
+  }, [gameId, myPlayerIndex, queryClient]);
 
   const handleRoll = useCallback(async () => {
-    if (!isMyTurn || diceRolled || rolling) return;
+    if (rolling || !isMyTurn || diceRolled) return;
     setRolling(true);
     try {
-      const result = await ludoApi<{ diceValue: number; state: GameState }>(
-        `/ludo/games/${gameId}/roll`,
-        { method: "POST", body: JSON.stringify({}) },
-      );
-      setGame(prev => prev ? { ...prev, boardState: result.state } : prev);
+      await ludoApi(`/ludo/games/${gameId}/roll`, { method: "POST" });
     } catch (err) {
       toast({ variant: "destructive", title: (err as Error).message });
     } finally {
-      // Keep rolling animation going for visual effect
-      setTimeout(() => setRolling(false), 800);
+      setRolling(false);
     }
-  }, [gameId, isMyTurn, diceRolled, rolling, toast]);
+  }, [rolling, isMyTurn, diceRolled, gameId, toast]);
 
   const handleMove = useCallback(async (pieceIndex: number) => {
-    if (!isMyTurn || !diceRolled || moving) return;
+    if (moving || !isMyTurn || !diceRolled) return;
     setMoving(true);
     try {
-      const result = await ludoApi<{ captured: boolean; won: boolean; state: GameState }>(
-        `/ludo/games/${gameId}/move`,
-        { method: "POST", body: JSON.stringify({ pieceIndex }) },
-      );
-      setGame(prev => prev ? {
-        ...prev,
-        boardState: result.state,
-        status: result.state.status,
-        winnerId: result.state.winnerId,
-      } : prev);
-      if (result.captured) toast({ title: "💥 Opponent's piece captured!" });
-      if (result.won) {
-        queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
-        setShowResult(true);
-      }
+      await ludoApi(`/ludo/games/${gameId}/move`, {
+        method: "POST",
+        body: JSON.stringify({ pieceIndex }),
+      });
     } catch (err) {
       toast({ variant: "destructive", title: (err as Error).message });
     } finally {
       setMoving(false);
     }
-  }, [gameId, isMyTurn, diceRolled, moving, toast, queryClient]);
+  }, [moving, isMyTurn, diceRolled, gameId, toast]);
 
-  const handleForfeit = async () => {
+  const handleForfeit = useCallback(async () => {
     setForfeiting(true);
     try {
-      const result = await ludoApi<{ state: GameState }>(`/ludo/games/${gameId}/forfeit`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-      setGame(prev => prev ? {
-        ...prev,
-        boardState: result.state,
-        status: "completed",
-        winnerId: result.state.winnerId,
-      } : prev);
+      await ludoApi(`/ludo/games/${gameId}/forfeit`, { method: "POST" });
+      setShowForfeitConfirm(false);
       queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
-      setShowResult(true);
     } catch (err) {
       toast({ variant: "destructive", title: (err as Error).message });
     } finally {
       setForfeiting(false);
-      setShowForfeitConfirm(false);
     }
-  };
+  }, [gameId, queryClient, toast]);
 
-  const handleClaimTimeout = async () => {
+  const handleClaimTimeout = useCallback(async () => {
     try {
-      await ludoApi(`/ludo/games/${gameId}/claim-timeout`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
+      await ludoApi(`/ludo/games/${gameId}/claim-timeout`, { method: "POST" });
       queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
     } catch (err) {
       toast({ variant: "destructive", title: (err as Error).message });
     }
-  };
+  }, [gameId, queryClient, toast]);
 
-  // Check for timeout eligibility
   const canClaimTimeout = (() => {
     if (!boardState || isMyTurn || !boardState.lastMoveAt) return false;
     return Date.now() - new Date(boardState.lastMoveAt).getTime() > 3 * 60 * 1000;
@@ -374,18 +367,13 @@ export default function LudoGame() {
     );
   }
 
-  const redPlayer = boardState.players[0];
-  const bluePlayer = boardState.players[1];
-  const redUsername = game.redPlayerId === myUserId ? user?.username ?? "You" : "Opponent";
-  const blueUsername = game.bluePlayerId === myUserId ? user?.username ?? "You" : "Opponent";
-
   const myPlayer = boardState.players[myPlayerIndex];
   const oppPlayer = boardState.players[myPlayerIndex === 0 ? 1 : 0];
   const myPiecesHome = myPlayer.pieces.filter(p => p.progress === 57).length;
   const oppPiecesHome = oppPlayer.pieces.filter(p => p.progress === 57).length;
-  const oppUsername = myPlayerIndex === 0 ? blueUsername : redUsername;
   const oppColor: "red" | "blue" = myPlayerIndex === 0 ? "blue" : "red";
   const myColor: "red" | "blue" = myPlayerIndex === 0 ? "red" : "blue";
+  const isBotTurn = boardState.currentTurn !== myPlayerIndex && isBotOpponent;
 
   return (
     <div className="flex flex-col gap-2 px-3 pb-4 pt-2">
@@ -398,7 +386,14 @@ export default function LudoGame() {
           <ArrowLeft className="w-4 h-4" />
           Lobby
         </button>
-        <span className="text-xs text-muted-foreground">Game #{game.id} · {game.entryFee} coins</span>
+        <span className="text-xs text-muted-foreground flex items-center gap-1">
+          Game #{game.id} · {game.entryFee} coins
+          {isBotOpponent && (
+            <span className="text-amber-500 flex items-center gap-0.5">
+              · <Bot className="w-3 h-3" /> Solo
+            </span>
+          )}
+        </span>
         <button
           onClick={() => setShowForfeitConfirm(true)}
           className="flex items-center gap-1 text-xs text-destructive active:opacity-60"
@@ -411,11 +406,12 @@ export default function LudoGame() {
       {/* Opponent panel */}
       <PlayerPanel
         label={oppColor}
-        username={oppUsername}
+        username={opponentUsername}
         color={oppColor}
         isMyTurn={boardState.currentTurn !== myPlayerIndex}
         isMe={false}
         piecesHome={oppPiecesHome}
+        isBot={isBotOpponent}
       />
 
       {/* Board */}
@@ -478,10 +474,13 @@ export default function LudoGame() {
           ) : (
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-                <RefreshCw className="w-3 h-3 animate-spin" />
-                Opponent's turn…
+                {isBotTurn ? (
+                  <><Bot className="w-3 h-3 text-amber-500" /><span className="text-amber-500">Bot is thinking…</span></>
+                ) : (
+                  <><RefreshCw className="w-3 h-3 animate-spin" />Opponent's turn…</>
+                )}
               </p>
-              {canClaimTimeout && (
+              {!isBotOpponent && canClaimTimeout && (
                 <button
                   onClick={handleClaimTimeout}
                   className="text-xs text-amber-500 flex items-center gap-1 mx-auto"
@@ -512,7 +511,8 @@ export default function LudoGame() {
             <div>
               <h3 className="font-bold">Forfeit the game?</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                You'll lose your {game.entryFee} coin entry fee. Your opponent wins.
+                You'll lose your {game.entryFee} coin entry fee.
+                {isBotOpponent ? " The platform keeps your wager." : " Your opponent wins."}
               </p>
             </div>
             <div className="flex gap-2">
@@ -537,6 +537,8 @@ export default function LudoGame() {
         <ResultModal
           game={game}
           myUserId={myUserId}
+          isSolo={isBotOpponent}
+          settings={ludoSettings}
           onGoLobby={() => navigate("/ludo")}
         />
       )}

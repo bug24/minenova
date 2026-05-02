@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, usersTable, transactionsTable, ludoChallengesTable, ludoGamesTable, ludoMovesTable } from "@workspace/db";
+import { db, usersTable, transactionsTable, ludoChallengesTable, ludoGamesTable, ludoMovesTable, adminConfigTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import {
@@ -14,8 +14,6 @@ import {
 } from "../lib/ludoEngine";
 
 const router: IRouter = Router();
-
-const SYSTEM_FEE_RATE = 0.1;
 
 // ---------------------------------------------------------------------------
 // SSE registry — in-memory, keyed by game ID
@@ -115,14 +113,46 @@ function handleRouteError(err: unknown, res: Response): void {
   res.status(status).json({ error: message });
 }
 
+// ---------------------------------------------------------------------------
+// Ludo settings helper (reads from admin_config)
+// ---------------------------------------------------------------------------
+async function getLudoSettings(): Promise<{
+  platformFeePct: number;
+  winPct: number;
+  minFee: number;
+  maxFee: number;
+  soloFee: number;
+  soloEnabled: boolean;
+  timeoutMinutes: number;
+}> {
+  const keys = [
+    "ludo_platform_fee_pct", "ludo_win_pct", "ludo_min_fee", "ludo_max_fee",
+    "ludo_solo_fee", "ludo_solo_enabled", "ludo_timeout_minutes",
+  ];
+  const rows = await db.select().from(adminConfigTable)
+    .where(sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`);
+  const cfg: Record<string, string> = {};
+  for (const r of rows) cfg[r.key] = r.value;
+  return {
+    platformFeePct: parseFloat(cfg.ludo_platform_fee_pct ?? "10"),
+    winPct: parseFloat(cfg.ludo_win_pct ?? "90"),
+    minFee: parseFloat(cfg.ludo_min_fee ?? "10"),
+    maxFee: parseFloat(cfg.ludo_max_fee ?? "10000"),
+    soloFee: parseFloat(cfg.ludo_solo_fee ?? "100"),
+    soloEnabled: (cfg.ludo_solo_enabled ?? "true") === "true",
+    timeoutMinutes: parseInt(cfg.ludo_timeout_minutes ?? "5"),
+  };
+}
+
 async function payoutWinner(
   tx: DbTx,
   systemUserId: number,
   winnerId: number,
   entryFee: number,
+  feeRate: number,
 ): Promise<void> {
   const pot = entryFee * 2;
-  const systemFee = pot * SYSTEM_FEE_RATE;
+  const systemFee = pot * feeRate;
   const winnings = pot - systemFee;
 
   await tx
@@ -143,11 +173,8 @@ async function payoutWinner(
     type: "ludo_fee",
     amount: systemFee,
     status: "completed",
-    description: `Ludo system fee — 10% of ${pot} coin pot`,
+    description: `Ludo platform fee — ${Math.round(feeRate * 100)}% of ${pot} coin pot`,
   });
-  // No ludo_loss row: loser's coins were already deducted and recorded as
-  // ludo_entry at challenge creation / acceptance. Adding another deduction
-  // here would double-book without a corresponding balance change.
 }
 
 // ---------------------------------------------------------------------------
@@ -463,6 +490,7 @@ router.post("/ludo/games/:id/roll", requireAuth, async (req: Request, res: Respo
 
     let diceValue = 0;
     let newState: GameState | null = null;
+    let botTriggeredByRoll = false;
 
     await db.transaction(async tx => {
       const [game] = await tx
@@ -495,9 +523,13 @@ router.post("/ludo/games/:id/roll", requireAuth, async (req: Request, res: Respo
           lastMoveAt: new Date(now),
         })
         .where(eq(ludoGamesTable.id, gameId));
+
+      // If no valid moves (turn auto-skipped to bot), trigger bot
+      botTriggeredByRoll = !newState.diceRolled && _systemUserId !== null && game.bluePlayerId === _systemUserId && newState.currentTurn === 1;
     });
 
     emitGameUpdate(gameId, { type: "rolled", diceValue, state: newState });
+    if (botTriggeredByRoll) triggerBotMove(gameId);
     res.json({ diceValue, state: newState });
   } catch (err) {
     handleRouteError(err, res);
@@ -520,6 +552,7 @@ router.post("/ludo/games/:id/move", requireAuth, async (req: Request, res: Respo
     }
 
     let moveResult: { newState: GameState; captured: boolean; won: boolean } | null = null;
+    let botTriggered = false;
 
     await db.transaction(async tx => {
       const [game] = await tx
@@ -575,14 +608,17 @@ router.post("/ludo/games/:id/move", requireAuth, async (req: Request, res: Respo
 
       if (won && newState.winnerId) {
         const systemUserId = await getSystemUserId();
-        await payoutWinner(tx, systemUserId, newState.winnerId, game.entryFee);
+        const { platformFeePct } = await getLudoSettings();
+        await payoutWinner(tx, systemUserId, newState.winnerId, game.entryFee, platformFeePct / 100);
       }
 
       moveResult = { newState, captured, won };
+      botTriggered = !won && _systemUserId !== null && game.bluePlayerId === _systemUserId && newState.currentTurn === 1;
     });
 
     const r = moveResult!;
     emitGameUpdate(gameId, { type: "moved", pieceIndex: idx, captured: r.captured, won: r.won, state: r.newState });
+    if (botTriggered) triggerBotMove(gameId);
     res.json({ captured: r.captured, won: r.won, state: r.newState });
   } catch (err) {
     handleRouteError(err, res);
@@ -629,7 +665,8 @@ router.post("/ludo/games/:id/forfeit", requireAuth, async (req: Request, res: Re
 
       if (newState.winnerId) {
         const systemUserId = await getSystemUserId();
-        await payoutWinner(tx, systemUserId, newState.winnerId, game.entryFee);
+        const { platformFeePct } = await getLudoSettings();
+        await payoutWinner(tx, systemUserId, newState.winnerId, game.entryFee, platformFeePct / 100);
       }
     });
 
@@ -689,7 +726,8 @@ router.post("/ludo/games/:id/claim-timeout", requireAuth, async (req: Request, r
         .where(eq(ludoGamesTable.id, gameId));
 
       const systemUserId = await getSystemUserId();
-      await payoutWinner(tx, systemUserId, req.userId!, game.entryFee);
+      const { platformFeePct } = await getLudoSettings();
+      await payoutWinner(tx, systemUserId, req.userId!, game.entryFee, platformFeePct / 100);
     });
 
     emitGameUpdate(gameId, { type: "timeout", winner: req.userId, state: newState });
@@ -698,6 +736,190 @@ router.post("/ludo/games/:id/claim-timeout", requireAuth, async (req: Request, r
     handleRouteError(err, res);
   }
 });
+
+// ---------------------------------------------------------------------------
+// GET /api/ludo/settings — public, returns ludo game settings for display
+// ---------------------------------------------------------------------------
+router.get("/ludo/settings", async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const s = await getLudoSettings();
+    res.json(s);
+  } catch (err) {
+    handleRouteError(err, res);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/ludo/solo — create a solo game vs the AI bot
+// ---------------------------------------------------------------------------
+router.post("/ludo/solo", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { entryFee } = req.body as { entryFee?: unknown };
+    const fee = Number(entryFee);
+
+    const settings = await getLudoSettings();
+    if (!settings.soloEnabled) {
+      res.status(400).json({ error: "Solo mode is currently disabled" }); return;
+    }
+    if (!Number.isFinite(fee) || fee < settings.minFee || fee > settings.maxFee) {
+      res.status(400).json({ error: `Entry fee must be between ${settings.minFee} and ${settings.maxFee} coins` }); return;
+    }
+
+    const systemUserId = await getSystemUserId();
+    let gameId = 0;
+
+    await db.transaction(async tx => {
+      const claimed = await tx
+        .update(usersTable)
+        .set({ coinBalance: sql`coin_balance - ${fee}` })
+        .where(and(eq(usersTable.id, req.userId!), sql`coin_balance >= ${fee}`))
+        .returning({ id: usersTable.id });
+      if (claimed.length === 0) throw Object.assign(new Error("Insufficient coin balance"), { status: 400 });
+
+      await tx.insert(transactionsTable).values({
+        userId: req.userId!,
+        type: "ludo_entry",
+        amount: -fee,
+        status: "completed",
+        description: `Ludo solo entry fee — ${fee} coins`,
+      });
+
+      const initialState = createInitialState(req.userId!, systemUserId);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [game] = await tx.insert(ludoGamesTable).values({
+        redPlayerId: req.userId!,
+        bluePlayerId: systemUserId,
+        boardState: initialState as unknown as Record<string, unknown>,
+        status: "active",
+        entryFee: fee,
+        startedAt: new Date(),
+        lastMoveAt: new Date(),
+      } as any).returning();
+      gameId = game.id;
+    });
+
+    res.status(201).json({ gameId });
+  } catch (err) {
+    handleRouteError(err, res);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Bot AI — fires in background after a human move in a solo game
+// ---------------------------------------------------------------------------
+function triggerBotMove(gameId: number): void {
+  void scheduleBotMove(gameId);
+}
+
+async function scheduleBotMove(gameId: number): Promise<void> {
+  try {
+    const botUserId = await getSystemUserId();
+
+    // Roll dice after 1.5 s delay
+    await new Promise<void>(r => setTimeout(r, 1500));
+
+    let rolledState: GameState | null = null;
+    let rolledDice = 0;
+
+    await db.transaction(async tx => {
+      const [game] = await tx.select().from(ludoGamesTable)
+        .where(eq(ludoGamesTable.id, gameId)).for("update").limit(1);
+      if (!game || game.status !== "active") return;
+
+      const state = parseBoard(game.boardState);
+      const botIndex: 0 | 1 = game.redPlayerId === botUserId ? 0 : 1;
+      if (state.currentTurn !== botIndex || state.diceRolled) return;
+
+      rolledDice = rollDice();
+      const now = new Date().toISOString();
+      rolledState = applyDiceRoll(state, rolledDice, now);
+
+      await tx.update(ludoGamesTable)
+        .set({ boardState: rolledState as unknown as Record<string, unknown>, lastMoveAt: new Date(now) })
+        .where(eq(ludoGamesTable.id, gameId));
+    });
+
+    if (!rolledState) return;
+    emitGameUpdate(gameId, { type: "rolled", diceValue: rolledDice, state: rolledState });
+    if (!(rolledState as GameState).diceRolled) return; // turn auto-skipped, no move needed
+
+    // Move after 0.8 s
+    await new Promise<void>(r => setTimeout(r, 800));
+
+    let moveResult: { newState: GameState; captured: boolean; won: boolean; pieceIdx: number } | null = null;
+
+    await db.transaction(async tx => {
+      const [game] = await tx.select().from(ludoGamesTable)
+        .where(eq(ludoGamesTable.id, gameId)).for("update").limit(1);
+      if (!game || game.status !== "active") return;
+
+      const state = parseBoard(game.boardState);
+      const botIndex: 0 | 1 = game.redPlayerId === botUserId ? 0 : 1;
+      if (state.currentTurn !== botIndex || !state.diceRolled || state.diceValue === null) return;
+
+      const validMoves = getValidMoves(state, botIndex, state.diceValue);
+      if (validMoves.length === 0) return;
+
+      // AI strategy: prefer pieces already on track, then highest progress
+      const sortedMoves = [...validMoves].sort((a, b) => {
+        const pa = state.players[botIndex].pieces[a].progress;
+        const pb = state.players[botIndex].pieces[b].progress;
+        if (pa === -1 && pb !== -1) return 1;
+        if (pb === -1 && pa !== -1) return -1;
+        return pb - pa;
+      });
+      const pieceIdx = sortedMoves[0];
+      const { newState, captured, won, fromProgress, toProgress } = applyMove(
+        state, botIndex, pieceIdx, state.diceValue,
+      );
+
+      await tx.update(ludoGamesTable)
+        .set({
+          boardState: newState as unknown as Record<string, unknown>,
+          status: newState.status,
+          winnerId: newState.winnerId,
+          lastMoveAt: new Date(),
+          endedAt: newState.status === "completed" ? new Date() : undefined,
+        })
+        .where(eq(ludoGamesTable.id, gameId));
+
+      await tx.insert(ludoMovesTable).values({
+        gameId, playerId: botUserId, diceValue: state.diceValue,
+        pieceIndex: pieceIdx, fromProgress, toProgress, captured,
+      });
+
+      if (won) {
+        const systemUserId2 = await getSystemUserId();
+        // Bot won: human's entry fee stays deducted — record as platform income
+        await tx.insert(transactionsTable).values({
+          userId: systemUserId2,
+          type: "ludo_fee",
+          amount: game.entryFee,
+          status: "completed",
+          description: `Ludo solo — bot win, platform retains ${game.entryFee} coins`,
+        });
+      } else if (won === false && newState.winnerId && newState.winnerId !== botUserId) {
+        // Human won
+        const { platformFeePct } = await getLudoSettings();
+        await payoutWinner(tx, botUserId, newState.winnerId, game.entryFee, platformFeePct / 100);
+      }
+
+      moveResult = { newState, captured, won, pieceIdx };
+    });
+
+    if (!moveResult) return;
+    const { newState, captured, won, pieceIdx } = moveResult!;
+    emitGameUpdate(gameId, { type: "moved", pieceIndex: pieceIdx, captured, won, state: newState });
+
+    // If still bot's turn (rolled 6), go again
+    const botIdx: 0 | 1 = 1;
+    if (!won && (newState as GameState).currentTurn === botIdx) {
+      void scheduleBotMove(gameId);
+    }
+  } catch {
+    // Silently ignore bot errors
+  }
+}
 
 // ---------------------------------------------------------------------------
 // GET /api/ludo/games/:id/events — SSE stream
@@ -749,3 +971,75 @@ router.get("/ludo/games/:id/events", async (req: Request, res: Response): Promis
 });
 
 export default router;
+
+// ---------------------------------------------------------------------------
+// Abandoned-game sweep — runs every 2 minutes
+// Forfeits any active game where last_move_at > timeout_minutes old
+// ---------------------------------------------------------------------------
+setInterval(async () => {
+  try {
+    const { timeoutMinutes, platformFeePct } = await getLudoSettings();
+    const cutoff = new Date(Date.now() - timeoutMinutes * 60 * 1000);
+    const timedOutGames = await db
+      .select()
+      .from(ludoGamesTable)
+      .where(and(
+        eq(ludoGamesTable.status, "active"),
+        sql`last_move_at < ${cutoff}`,
+      ))
+      .limit(20);
+
+    if (timedOutGames.length === 0) return;
+    const systemUserId = await getSystemUserId();
+
+    for (const game of timedOutGames) {
+      try {
+        let winnerId: number | null = null;
+
+        await db.transaction(async tx => {
+          const [g] = await tx.select().from(ludoGamesTable)
+            .where(and(eq(ludoGamesTable.id, game.id), eq(ludoGamesTable.status, "active")))
+            .for("update").limit(1);
+          if (!g) return;
+
+          const state = parseBoard(g.boardState);
+          const forfeiterUserId = state.currentTurn === 0 ? g.redPlayerId : g.bluePlayerId;
+          const wId = state.currentTurn === 0 ? g.bluePlayerId : g.redPlayerId;
+          const newState = forfeit(state, forfeiterUserId);
+          winnerId = wId;
+
+          await tx.update(ludoGamesTable)
+            .set({
+              boardState: newState as unknown as Record<string, unknown>,
+              status: "completed",
+              winnerId: wId,
+              endedAt: new Date(),
+            })
+            .where(eq(ludoGamesTable.id, g.id));
+
+          // Only pay out if winner is a real human (not the system bot)
+          if (wId !== systemUserId) {
+            await payoutWinner(tx, systemUserId, wId, g.entryFee, platformFeePct / 100);
+          } else {
+            // Bot won due to human abandoning — record fee income
+            await tx.insert(transactionsTable).values({
+              userId: systemUserId,
+              type: "ludo_fee",
+              amount: g.entryFee,
+              status: "completed",
+              description: `Ludo solo abandoned — platform retains ${g.entryFee} coins`,
+            });
+          }
+        });
+
+        if (winnerId !== null) {
+          emitGameUpdate(game.id, { type: "abandoned_timeout", winner: winnerId });
+        }
+      } catch {
+        // Ignore per-game errors — continue sweep
+      }
+    }
+  } catch {
+    // Ignore sweep errors
+  }
+}, 2 * 60 * 1000);
