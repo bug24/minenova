@@ -272,6 +272,15 @@ export default function Dashboard() {
             <span className="text-xs font-bold text-primary">{status.boostMultiplier}x BOOST ACTIVE</span>
           </div>
         )}
+
+        {/* Auto-miner badge — shown for Auto Miner Pro owners */}
+        {(status?.upgradeTier ?? 0) >= 5 && (
+          <div className="mt-2 flex items-center gap-1.5 bg-cyan-500/10 border border-cyan-500/25 rounded-full px-3 py-1">
+            <span className="text-[10px]">🤖</span>
+            <span className="text-xs font-bold text-cyan-400">AUTO-MINER ACTIVE</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+          </div>
+        )}
       </div>
       {/* Action Buttons */}
       <div className="grid grid-cols-2 gap-3">

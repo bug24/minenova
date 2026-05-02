@@ -106,6 +106,7 @@ interface Settings {
   whot_timeout_minutes: string;
   withdrawal_ticker_enabled: string;
   voice_chat_enabled: string;
+  auto_miner_interval_minutes: string;
 }
 interface ShareMessage { id: number; platform: string; message: string; isActive: boolean; sortOrder: number; }
 interface UserReferral { id: number; referredId: number; referredUsername: string; totalEarned: number; bonusPaid: boolean; createdAt: string; }
@@ -1953,6 +1954,7 @@ function SettingsTab({ secret }: { secret: string }) {
     whot_timeout_minutes: "5",
     withdrawal_ticker_enabled: "true",
     voice_chat_enabled: "true",
+    auto_miner_interval_minutes: "15",
   };
 
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
@@ -2234,6 +2236,23 @@ function SettingsTab({ secret }: { secret: string }) {
             <SaveBtn k="session_duration_hours" />
           </div>
           <p className="text-xs text-muted-foreground">Only applies to new sessions — active sessions are unaffected</p>
+        </div>
+
+        {/* Auto-miner interval */}
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Auto-miner check interval (minutes)</label>
+          <div className="flex gap-2">
+            <Input
+              type="number" step="1" min="1" max="1440"
+              value={settings.auto_miner_interval_minutes}
+              onChange={e => setSettings(p => ({ ...p, auto_miner_interval_minutes: e.target.value }))}
+            />
+            <SaveBtn k="auto_miner_interval_minutes" />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            How often the server checks and auto-restarts sessions for Auto Miner Pro users (1–1440 min).
+            Increase this if the server is under heavy load.
+          </p>
         </div>
       </div>
 

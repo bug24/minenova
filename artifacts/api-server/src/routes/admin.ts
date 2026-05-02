@@ -1214,6 +1214,7 @@ router.get("/admin/settings", requireAdmin, async (_req, res): Promise<void> => 
     "whot_solo_fee", "whot_solo_enabled", "whot_timeout_minutes",
     "withdrawal_ticker_enabled",
     "voice_chat_enabled",
+    "auto_miner_interval_minutes",
   ];
   const rows = await db.select().from(adminConfigTable).where(sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`);
   const settings: Record<string, string> = {};
@@ -1252,6 +1253,7 @@ router.put("/admin/settings", requireAdmin, async (req, res): Promise<void> => {
     whot_timeout_minutes: strictPosInt.optional(),
     withdrawal_ticker_enabled: boolStr.optional(),
     voice_chat_enabled: boolStr.optional(),
+    auto_miner_interval_minutes: z.string().refine(v => /^\d+$/.test(v.trim()) && parseInt(v) >= 1 && parseInt(v) <= 1440, "Must be 1–1440 minutes").optional(),
   });
   const data = schema.safeParse(req.body);
   if (!data.success) {
