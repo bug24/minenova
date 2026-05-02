@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { useGetWallet } from "@workspace/api-client-react";
+import { useGetWallet, getGetWalletQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -90,6 +90,7 @@ export default function Ludo() {
         body: JSON.stringify({ entryFee: fee }),
       });
       queryClient.invalidateQueries({ queryKey: ["/api/ludo/challenges"] });
+      queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
       setShowCreate(false);
       setEntryFee("");
       setWaitingFee(fee);
@@ -108,6 +109,7 @@ export default function Ludo() {
         method: "POST",
         body: JSON.stringify({}),
       });
+      queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
       navigate(`/ludo/game/${result.gameId}`);
     } catch (err) {
       toast({ variant: "destructive", title: (err as Error).message });
@@ -124,6 +126,7 @@ export default function Ludo() {
       await ludoApi(`/ludo/challenges/${waitingChallengeId}`, { method: "DELETE" });
       setWaitingChallengeId(null);
       queryClient.invalidateQueries({ queryKey: ["/api/ludo/challenges"] });
+      queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
     } catch (err) {
       toast({ variant: "destructive", title: (err as Error).message });
     } finally {

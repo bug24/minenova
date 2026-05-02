@@ -176,6 +176,41 @@ router.get("/ludo/challenges", requireAuth, async (req: Request, res: Response):
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/ludo/challenges/:id — get single challenge (used for waiting-screen polling)
+// ---------------------------------------------------------------------------
+router.get("/ludo/challenges/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const challengeId = Number(req.params.id);
+    if (Number.isNaN(challengeId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [challenge] = await db
+      .select({
+        id: ludoChallengesTable.id,
+        creatorId: ludoChallengesTable.creatorId,
+        opponentId: ludoChallengesTable.opponentId,
+        entryFee: ludoChallengesTable.entryFee,
+        status: ludoChallengesTable.status,
+        gameId: ludoChallengesTable.gameId,
+        createdAt: ludoChallengesTable.createdAt,
+      })
+      .from(ludoChallengesTable)
+      .where(eq(ludoChallengesTable.id, challengeId))
+      .limit(1);
+
+    if (!challenge) { res.status(404).json({ error: "Challenge not found" }); return; }
+
+    // Only allow creator or opponent to view
+    if (challenge.creatorId !== req.userId && challenge.opponentId !== req.userId) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
+
+    res.json(challenge);
+  } catch (err) {
+    handleRouteError(err, res);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/ludo/challenges — create a challenge
 // ---------------------------------------------------------------------------
 router.post("/ludo/challenges", requireAuth, async (req: Request, res: Response): Promise<void> => {
