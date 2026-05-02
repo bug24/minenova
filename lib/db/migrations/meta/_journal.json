@@ -15,6 +15,13 @@
       "when": 1777625000000,
       "tag": "0001_upgrades_hash_rate_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777727542173,
+      "tag": "0002_messy_viper",
+      "breakpoints": true
     }
   ]
 }
