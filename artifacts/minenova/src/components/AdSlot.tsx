@@ -15,18 +15,22 @@ function getAdSlots(): Promise<AdSlots> {
   if (cachedSlots) return Promise.resolve(cachedSlots);
   if (fetchPromise) return fetchPromise;
   fetchPromise = fetch("/api/ad-slots")
-    .then(r => r.ok ? r.json() : { top: "", bottom: "", floating: "" })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error("non-ok")))
     .then((data: AdSlots) => {
       cachedSlots = data;
       return data;
     })
-    .catch(() => ({ top: "", bottom: "", floating: "" }));
+    .catch(() => {
+      fetchPromise = null;
+      return { top: "", bottom: "", floating: "" };
+    });
   return fetchPromise;
 }
 
 function injectSlotHtml(container: HTMLElement, html: string) {
   container.innerHTML = "";
   if (!html.trim()) return;
+  html = html.trim();
 
   const wrapper = document.createElement("div");
   wrapper.innerHTML = html;
