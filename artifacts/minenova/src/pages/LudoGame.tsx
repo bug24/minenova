@@ -6,7 +6,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import LudoBoard, { type AnimPiece } from "@/components/ludo/LudoBoard";
-import DiceFace from "@/components/ludo/DiceFace";
 import {
   ludoApi, fetchLudoSettings, getSSEUrl, getValidMovesClient, sendLudoSignal,
   type LudoGame, type GameState, type LudoSettings,
@@ -19,7 +18,6 @@ import {
   playCapture, playPieceHome, playWin, playLose,
 } from "@/lib/sounds";
 import {
-  Dices,
   ArrowLeft,
   Trophy,
   Skull,
@@ -36,23 +34,16 @@ function useGameId() {
   return Number(params.id);
 }
 
-// ---------------------------------------------------------------------------
-// Build progress steps for step animation
-// ---------------------------------------------------------------------------
 function buildProgressSteps(fromProgress: number, toProgress: number): number[] {
   if (toProgress === fromProgress) return [];
-  // Coming out of home base — just one step to entry cell
   if (fromProgress === -1) return [toProgress];
   const steps: number[] = [];
-  for (let p = fromProgress + 1; p <= toProgress; p++) {
-    steps.push(p);
-  }
+  for (let p = fromProgress + 1; p <= toProgress; p++) steps.push(p);
   return steps;
 }
 
-// ---------------------------------------------------------------------------
-// Result modal
-// ---------------------------------------------------------------------------
+// ─── Result Modal ───────────────────────────────────────────────────────────
+
 interface ResultModalProps {
   game: LudoGame;
   myUserId: number;
@@ -71,24 +62,22 @@ function ResultModal({ game, myUserId, isSolo, settings, onGoLobby }: ResultModa
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-6">
       <div className="bg-card border border-card-border rounded-2xl p-6 w-full max-w-sm text-center space-y-4">
-        <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto ${won ? "bg-amber-400/20" : "bg-destructive/20"}`}
-          style={won ? { boxShadow: "0 0 32px rgba(251,191,36,0.35)" } : {}}>
+        <div
+          className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto ${won ? "bg-amber-400/20" : "bg-destructive/20"}`}
+          style={won ? { boxShadow: "0 0 32px rgba(251,191,36,0.35)" } : {}}
+        >
           {won
             ? <Trophy className="w-10 h-10 text-amber-400" />
             : <Skull className="w-10 h-10 text-destructive" />}
         </div>
-
         <div>
           <h2 className="text-2xl font-black">
             {won ? "You Won! 🎉" : isSolo ? "Bot Won" : "You Lost"}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            {won
-              ? "Congratulations! Coins have been credited."
-              : "Better luck next time!"}
+            {won ? "Congratulations! Coins have been credited." : "Better luck next time!"}
           </p>
         </div>
-
         {won ? (
           <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 space-y-1.5">
             <div className="flex justify-between text-sm">
@@ -117,13 +106,11 @@ function ResultModal({ game, myUserId, isSolo, settings, onGoLobby }: ResultModa
             )}
           </div>
         )}
-
         <div className="flex gap-2">
           <Button variant="outline" className="flex-1" onClick={onGoLobby}>Lobby</Button>
           <Button className="flex-1 gap-1" onClick={onGoLobby}
             style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}>
-            <RefreshCw className="w-3.5 h-3.5" />
-            Play Again
+            <RefreshCw className="w-3.5 h-3.5" />Play Again
           </Button>
         </div>
       </div>
@@ -131,11 +118,9 @@ function ResultModal({ game, myUserId, isSolo, settings, onGoLobby }: ResultModa
   );
 }
 
-// ---------------------------------------------------------------------------
-// Player panel
-// ---------------------------------------------------------------------------
-interface PlayerPanelProps {
-  label: string;
+// ─── Player badge strip ──────────────────────────────────────────────────────
+
+interface PlayerBadgeProps {
   username: string;
   color: "red" | "blue";
   isMyTurn: boolean;
@@ -145,50 +130,39 @@ interface PlayerPanelProps {
   isSpeaking?: boolean;
 }
 
-function PlayerPanel({ label, username, color, isMyTurn, isMe, piecesHome, isBot, isSpeaking }: PlayerPanelProps) {
-  const bg   = color === "red" ? "bg-red-500/10 border-red-500/30"   : "bg-blue-500/10 border-blue-500/30";
-  const dot  = color === "red" ? "bg-red-500"   : "bg-blue-500";
-  const text = color === "red" ? "text-red-500"  : "text-blue-500";
-  const speakRing = isSpeaking && !isMe ? "ring-2 ring-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.35)]" : "";
-
+function PlayerBadge({ username, color, isMyTurn, isMe, piecesHome, isBot, isSpeaking }: PlayerBadgeProps) {
+  const dot   = color === "red" ? "bg-red-500"  : "bg-blue-500";
+  const text  = color === "red" ? "text-red-400" : "text-blue-400";
+  const ring  = isSpeaking && !isMe ? "ring-2 ring-emerald-400" : "";
   return (
-    <div
-      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all duration-300 ${bg} ${isMyTurn ? "ring-2 ring-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.3)]" : ""} ${speakRing}`}
-    >
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white ${dot} shadow-sm`}>
-        {isBot ? <Bot className="w-4 h-4" /> : username[0]?.toUpperCase()}
+    <div className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-card border border-card-border transition-all ${isMyTurn ? "ring-2 ring-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.25)]" : ""} ${ring}`}>
+      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${dot}`}>
+        {isBot ? <Bot className="w-3.5 h-3.5" /> : username[0]?.toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
-        <p className={`text-xs font-bold truncate ${text} flex items-center gap-1`}>
+        <p className={`text-xs font-bold truncate ${text}`}>
           {isMe ? "You" : isBot ? "Bot" : username}
-          {isMe && <span className="text-muted-foreground font-normal">({label})</span>}
-          {isBot && <span className="text-muted-foreground font-normal text-[10px]">AI</span>}
+          {isMe && <span className="text-muted-foreground font-normal ml-1">(me)</span>}
         </p>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <div className="flex gap-0.5">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div
-                key={i}
-                className={`w-2 h-2 rounded-full transition-all duration-300 ${i < piecesHome ? (color === "red" ? "bg-red-500" : "bg-blue-500") : "bg-muted"}`}
-              />
-            ))}
-          </div>
-          <span className="text-[10px] text-muted-foreground">{piecesHome}/4 home</span>
+        <div className="flex items-center gap-1 mt-0.5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className={`w-1.5 h-1.5 rounded-full ${i < piecesHome ? dot : "bg-muted"}`} />
+          ))}
+          <span className="text-[10px] text-muted-foreground ml-1">{piecesHome}/4</span>
         </div>
       </div>
       {isMyTurn && (
-        <span className={`text-[11px] font-black shrink-0 ${isBot ? "text-amber-500" : "text-amber-400"}`}
+        <span className={`text-[10px] font-black shrink-0 ${isBot ? "text-amber-500" : "text-amber-400"}`}
           style={{ animation: "pulse 1s infinite" }}>
-          {isBot ? "THINKING…" : "YOUR TURN"}
+          {isBot ? "THINKING…" : isMe ? "YOUR TURN" : "THEIR TURN"}
         </span>
       )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main game component
-// ---------------------------------------------------------------------------
+// ─── Main component ──────────────────────────────────────────────────────────
+
 export default function LudoGame() {
   const gameId = useGameId();
   const { user } = useAuth();
@@ -229,7 +203,6 @@ export default function LudoGame() {
   }, [gameId]);
 
   const { voiceChatEnabled } = useAppSettings();
-
   const voiceChat = useVoiceChat({
     isInitiator: isVoiceInitiator,
     sendSignal,
@@ -273,13 +246,12 @@ export default function LudoGame() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Animation done handler
   const handleAnimDone = useCallback(() => {
     setAnimPiece(null);
     setAnimating(false);
   }, []);
 
-  // SSE connection
+  // SSE
   useEffect(() => {
     if (!gameId) return;
     let es: EventSource | null = null;
@@ -290,7 +262,6 @@ export default function LudoGame() {
     const connect = () => {
       if (unmounted) return;
       es = new EventSource(getSSEUrl(gameId));
-
       es.onmessage = (e) => {
         try {
           const event = JSON.parse(e.data) as {
@@ -315,24 +286,18 @@ export default function LudoGame() {
           if (event.state) {
             const prevState = prevStateRef.current;
             prevStateRef.current = event.state;
+            setGame(g => g ? { ...g, boardState: event.state!, status: event.state!.status, winnerId: event.state!.winnerId } : g);
 
-            setGame(g =>
-              g ? { ...g, boardState: event.state!, status: event.state!.status, winnerId: event.state!.winnerId } : g
-            );
-
-            // Dice roll sound + animation for opponent's roll
             if (event.type === "rolled" && event.state.currentTurn !== myPlayerIndex) {
               playDiceRoll();
               setRolling(true);
               setTimeout(() => setRolling(false), 650);
             }
 
-            // Piece movement sounds
             if (event.type === "moved") {
               if (event.captured) {
                 playCapture();
               } else {
-                // Detect if any piece reached home (progress 57)
                 let reachedHome = false;
                 if (prevState) {
                   for (let pi = 0; pi < 2; pi++) {
@@ -348,21 +313,16 @@ export default function LudoGame() {
               }
             }
 
-            // Step-by-step piece movement animation
             if (event.type === "moved" && prevState) {
               for (let pi = 0; pi < 2; pi++) {
                 for (let idx = 0; idx < 4; idx++) {
                   const prevProgress = prevState.players[pi]?.pieces[idx]?.progress;
                   const currProgress = event.state.players[pi]?.pieces[idx]?.progress;
-                  if (
-                    prevProgress !== undefined &&
-                    currProgress !== undefined &&
-                    currProgress !== prevProgress &&
-                    currProgress !== -1 // captures are handled as flash, not step anim
-                  ) {
+                  if (prevProgress !== undefined && currProgress !== undefined &&
+                      currProgress !== prevProgress && currProgress !== -1) {
                     const steps = buildProgressSteps(prevProgress, currProgress);
                     if (steps.length > 0) {
-                      setAnimPiece({ playerIndex: pi as 0 | 1, pieceIdx: idx, steps });
+                      setAnimPiece({ playerIndex: pi as 0|1, pieceIdx: idx, steps });
                       setAnimating(true);
                     }
                   }
@@ -370,7 +330,6 @@ export default function LudoGame() {
               }
             }
 
-            // Game over
             if (
               (event.type === "moved" || event.type === "forfeit" || event.type === "timeout" || event.type === "abandoned_timeout") &&
               event.state.status === "completed"
@@ -381,18 +340,12 @@ export default function LudoGame() {
               queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
             }
           }
-        } catch {
-          // ignore malformed events
-        }
+        } catch { /* ignore */ }
       };
-
       es.onerror = () => {
         es?.close();
         if (!unmounted) {
-          retryTimeout = setTimeout(() => {
-            retryDelay = Math.min(retryDelay * 2, 30000);
-            connect();
-          }, retryDelay);
+          retryTimeout = setTimeout(() => { retryDelay = Math.min(retryDelay * 2, 30000); connect(); }, retryDelay);
         }
       };
     };
@@ -424,10 +377,7 @@ export default function LudoGame() {
     playPieceTap();
     setMoving(true);
     try {
-      await ludoApi(`/ludo/games/${gameId}/move`, {
-        method: "POST",
-        body: JSON.stringify({ pieceIndex }),
-      });
+      await ludoApi(`/ludo/games/${gameId}/move`, { method: "POST", body: JSON.stringify({ pieceIndex }) });
     } catch (err) {
       toast({ variant: "destructive", title: (err as Error).message });
     } finally {
@@ -462,48 +412,47 @@ export default function LudoGame() {
     return Date.now() - new Date(boardState.lastMoveAt).getTime() > 3 * 60 * 1000;
   })();
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Loading game…</p>
-        </div>
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="text-center">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-sm text-muted-foreground">Loading game…</p>
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (!game || !boardState) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <p className="text-sm text-muted-foreground">Game not found.</p>
-          <Button variant="outline" className="mt-4" onClick={() => navigate("/ludo")}>
-            Back to Lobby
-          </Button>
-        </div>
+  if (!game || !boardState) return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="text-center">
+        <p className="text-sm text-muted-foreground">Game not found.</p>
+        <Button variant="outline" className="mt-4" onClick={() => navigate("/ludo")}>Back to Lobby</Button>
       </div>
-    );
-  }
+    </div>
+  );
 
-  const myPlayer    = boardState.players[myPlayerIndex];
-  const oppPlayer   = boardState.players[myPlayerIndex === 0 ? 1 : 0];
+  const myPlayer      = boardState.players[myPlayerIndex];
+  const oppPlayer     = boardState.players[myPlayerIndex === 0 ? 1 : 0];
   const myPiecesHome  = myPlayer.pieces.filter(p => p.progress === 57).length;
   const oppPiecesHome = oppPlayer.pieces.filter(p => p.progress === 57).length;
   const oppColor: "red" | "blue" = myPlayerIndex === 0 ? "blue" : "red";
   const myColor:  "red" | "blue" = myPlayerIndex === 0 ? "red"  : "blue";
   const isBotTurn = boardState.currentTurn !== myPlayerIndex && isBotOpponent;
+  const canRoll = isMyTurn && !diceRolled && game.status === "active" && !rolling;
+
+  const myDisplayName  = user?.username ?? "You";
+  const oppDisplayName = isBotOpponent ? "Bot" : opponentUsername;
+
+  const playerNames: [string, string] = myPlayerIndex === 0
+    ? [myDisplayName, oppDisplayName]
+    : [oppDisplayName, myDisplayName];
 
   return (
     <div className="flex flex-col gap-2 px-3 pb-4 pt-2">
       {/* Top bar */}
       <div className="flex items-center justify-between">
-        <button
-          onClick={() => navigate("/ludo")}
-          className="flex items-center gap-1 text-xs text-muted-foreground active:opacity-60"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Lobby
+        <button onClick={() => navigate("/ludo")}
+          className="flex items-center gap-1 text-xs text-muted-foreground active:opacity-60">
+          <ArrowLeft className="w-4 h-4" />Lobby
         </button>
         <span className="text-xs text-muted-foreground flex items-center gap-1">
           Game #{game.id} · {game.entryFee} coins
@@ -513,19 +462,15 @@ export default function LudoGame() {
             </span>
           )}
         </span>
-        <button
-          onClick={() => setShowForfeitConfirm(true)}
-          className="flex items-center gap-1 text-xs text-destructive active:opacity-60"
-        >
-          <Flag className="w-3.5 h-3.5" />
-          Forfeit
+        <button onClick={() => setShowForfeitConfirm(true)}
+          className="flex items-center gap-1 text-xs text-destructive active:opacity-60">
+          <Flag className="w-3.5 h-3.5" />Forfeit
         </button>
       </div>
 
-      {/* Opponent panel */}
-      <PlayerPanel
-        label={oppColor}
-        username={opponentUsername}
+      {/* Opponent badge */}
+      <PlayerBadge
+        username={oppDisplayName}
         color={oppColor}
         isMyTurn={boardState.currentTurn !== myPlayerIndex}
         isMe={false}
@@ -534,29 +479,18 @@ export default function LudoGame() {
         isSpeaking={voiceChat.isRemoteSpeaking}
       />
 
-      {/* ── Opponent dice strip (shown below opponent panel, above board) ── */}
-      <div className="flex items-center justify-end gap-2 px-2 min-h-[30px]">
-        {!isMyTurn && game.status === "active" && (
-          diceRolled && diceValue ? (
-            <>
-              <span className="text-[10px] text-muted-foreground">Opponent rolled</span>
-              <DiceFace value={diceValue} rolling={false} size={32} />
-              <span className="text-lg font-black tabular-nums leading-none">{diceValue}</span>
-            </>
-          ) : (
-            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-              {isBotTurn
-                ? <><Bot className="w-2.5 h-2.5 text-amber-500" /><span className="text-amber-500">Thinking…</span></>
-                : <><RefreshCw className="w-2.5 h-2.5 animate-spin" />Waiting for opponent…</>}
-            </span>
-          )
-        )}
-      </div>
+      {/* Opponent thinking indicator */}
+      {isBotTurn && (
+        <div className="flex items-center gap-1.5 justify-center py-0.5">
+          <Bot className="w-3 h-3 text-amber-500" />
+          <span className="text-xs text-amber-500 font-semibold">Bot is thinking…</span>
+        </div>
+      )}
 
-      {/* Board */}
+      {/* ── BOARD (dice is embedded inside) ── */}
       <div className="flex justify-center">
         <div className="w-full max-w-sm rounded-2xl overflow-hidden"
-          style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.2)" }}>
+          style={{ boxShadow: "0 10px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)" }}>
           <LudoBoard
             gameState={boardState}
             myPlayerIndex={myPlayerIndex}
@@ -564,79 +498,55 @@ export default function LudoGame() {
             onPieceClick={handleMove}
             animPiece={animPiece}
             onAnimDone={handleAnimDone}
+            rolling={rolling}
+            diceValue={diceValue}
+            canRoll={canRoll}
+            onDiceRoll={handleRoll}
+            playerNames={playerNames}
+            isBot={isBotOpponent}
           />
         </div>
       </div>
 
-      {/* My panel */}
-      <PlayerPanel
-        label={myColor}
-        username={user?.username ?? "You"}
+      {/* Status / instruction strip */}
+      {game.status === "active" && (
+        <div className="flex items-center justify-center min-h-[28px]">
+          {isMyTurn && diceRolled && validMoves.length > 0 && (
+            <p className="text-sm font-black text-amber-400 animate-pulse tracking-wide">
+              ↑ TAP A HIGHLIGHTED PIECE
+            </p>
+          )}
+          {isMyTurn && diceRolled && validMoves.length === 0 && (
+            <p className="text-xs text-muted-foreground">No valid moves — turn passing…</p>
+          )}
+          {!isMyTurn && !isBotTurn && (
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+              Waiting for opponent…
+            </p>
+          )}
+          {canClaimTimeout && (
+            <button onClick={handleClaimTimeout}
+              className="text-xs text-amber-500 flex items-center gap-1">
+              <Timer className="w-3 h-3" />Claim timeout win
+            </button>
+          )}
+        </div>
+      )}
+      {game.status === "completed" && (
+        <p className="text-center text-sm font-semibold text-primary">Game Over</p>
+      )}
+
+      {/* My badge */}
+      <PlayerBadge
+        username={myDisplayName}
         color={myColor}
         isMyTurn={isMyTurn}
         isMe={true}
         piecesHome={myPiecesHome}
       />
 
-      {/* ── My dice + controls (shown below my panel) ────────────────── */}
-      <div className="flex items-center gap-3 px-3 py-3 bg-card border border-card-border rounded-2xl"
-        style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.1)" }}>
-
-        {/* Dice face — only meaningful on my turn */}
-        {isMyTurn && (
-          <div className="flex items-center gap-2 shrink-0">
-            <DiceFace value={diceValue} rolling={rolling} size={52} />
-            {diceValue && !rolling && (
-              <span className="text-2xl font-black tabular-nums">{diceValue}</span>
-            )}
-            {!diceValue && !rolling && (
-              <span className="text-sm text-muted-foreground">—</span>
-            )}
-          </div>
-        )}
-
-        {/* Status / action */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-1">
-          {game.status === "completed" ? (
-            <span className="text-sm font-semibold text-primary">Game Over</span>
-          ) : isMyTurn ? (
-            !diceRolled ? (
-              <Button
-                onClick={handleRoll}
-                disabled={rolling}
-                size="sm"
-                className="gap-2 px-5 font-bold"
-                style={{ background: "linear-gradient(135deg, #7c3aed, #ec4899)" }}
-              >
-                {rolling
-                  ? <RefreshCw className="w-4 h-4 animate-spin" />
-                  : <Dices className="w-4 h-4" />}
-                {rolling ? "Rolling…" : "Roll Dice"}
-              </Button>
-            ) : validMoves.length > 0 ? (
-              <p className="text-sm font-black text-amber-400 animate-pulse tracking-wide">
-                ↑ TAP A PIECE
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">No valid moves…</p>
-            )
-          ) : (
-            <div className="space-y-1 text-center">
-              {!isBotOpponent && canClaimTimeout && (
-                <button
-                  onClick={handleClaimTimeout}
-                  className="text-xs text-amber-500 flex items-center gap-1 mx-auto"
-                >
-                  <Timer className="w-3 h-3" />
-                  Claim timeout win
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Voice chat — right below dice row */}
+      {/* Voice chat */}
       {!isBotOpponent && game.status === "active" && voiceChatEnabled && (
         <VoiceChatButton
           inline
@@ -649,7 +559,7 @@ export default function LudoGame() {
         />
       )}
 
-      {/* Forfeit confirm overlay */}
+      {/* Forfeit confirm */}
       {showForfeitConfirm && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-6">
           <div className="bg-card border border-card-border rounded-2xl p-6 w-full max-w-xs text-center space-y-4">
@@ -662,9 +572,7 @@ export default function LudoGame() {
               </p>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setShowForfeitConfirm(false)}>
-                Keep Playing
-              </Button>
+              <Button variant="outline" className="flex-1" onClick={() => setShowForfeitConfirm(false)}>Keep Playing</Button>
               <Button variant="destructive" className="flex-1" onClick={handleForfeit} disabled={forfeiting}>
                 {forfeiting ? <RefreshCw className="w-3 h-3 animate-spin" /> : "Forfeit"}
               </Button>
