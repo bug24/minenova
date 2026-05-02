@@ -10,3 +10,4 @@ export * from "./referral_earnings";
 export * from "./admin_config";
 export * from "./ads";
 export * from "./push_subscriptions";
+export * from "./ludo";
