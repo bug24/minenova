@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import type { GameState } from "@/lib/ludoApi";
-import DiceFace from "./DiceFace";
 
 const CELL = 46;
 
