@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getGetWalletQueryKey } from "@workspace/api-client-react";
@@ -7,10 +7,12 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import WhotCard from "@/components/whot/WhotCard";
 import {
-  whotApi, fetchWhotSettings, getWhotSSEUrl, isCardPlayable, topCard, effectiveSuit,
+  whotApi, fetchWhotSettings, getWhotSSEUrl, isCardPlayable, topCard, effectiveSuit, sendWhotSignal,
   SUIT_SYMBOLS, SUIT_COLORS,
   type WhotGame, type WhotGameState, type WhotSettings, type WhotCard as WhotCardType, type WhotSuit,
 } from "@/lib/whotApi";
+import { useVoiceChat } from "@/hooks/useVoiceChat";
+import VoiceChatButton from "@/components/VoiceChatButton";
 import { ArrowLeft, Trophy, Skull, RefreshCw, Flag, Bot, Timer, Layers } from "lucide-react";
 
 const SUITS: WhotSuit[] = ["Circle", "Triangle", "Cross", "Square", "Star"];
@@ -232,6 +234,27 @@ export default function WhotGame() {
 
   const isBotOpponent = opponentUsername === "__system__";
 
+  const opponentUserId = game ? (myIndex === 0 ? game.player1Id : game.player0Id) : 0;
+  const isVoiceInitiator = myUserId < opponentUserId;
+
+  const sendSignal = useCallback(async (type: string, payload: unknown) => {
+    try { await sendWhotSignal(gameId, type, payload); } catch { /* non-fatal */ }
+  }, [gameId]);
+
+  const voiceChat = useVoiceChat({
+    isInitiator: isVoiceInitiator,
+    sendSignal,
+    enabled: !isBotOpponent && game?.status === "active",
+  });
+
+  const handleRemoteSignalRef = useRef(voiceChat.handleRemoteSignal);
+  handleRemoteSignalRef.current = voiceChat.handleRemoteSignal;
+
+  useEffect(() => {
+    if (game?.status === "completed") voiceChat.stop();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game?.status]);
+
   const playableIndices = gameState && isMyTurn
     ? myHand.map((_, i) => isCardPlayable(myHand[i], gameState) ? i : -1).filter(i => i >= 0)
     : [];
@@ -273,8 +296,20 @@ export default function WhotGame() {
       es = new EventSource(getWhotSSEUrl(gameId));
       es.onmessage = (e) => {
         try {
-          const event = JSON.parse(e.data) as { type: string; state?: WhotGameState };
+          const event = JSON.parse(e.data) as {
+            type: string;
+            state?: WhotGameState;
+            signalType?: string;
+            from?: number;
+            payload?: unknown;
+          };
           retryDelay = 1000;
+
+          if (event.type === "signal" && event.from !== myUserId && event.signalType) {
+            handleRemoteSignalRef.current(event.signalType, event.payload);
+            return;
+          }
+
           if (event.state) {
             setGame(g => g
               ? { ...g, gameState: event.state!, status: event.state!.status, winnerId: event.state!.winnerId }
@@ -593,6 +628,18 @@ export default function WhotGame() {
           )}
         </div>
       </div>
+
+      {/* Voice chat — hidden for bot games */}
+      {!isBotOpponent && (
+        <VoiceChatButton
+          status={voiceChat.status}
+          isMuted={voiceChat.isMuted}
+          isRemoteSpeaking={voiceChat.isRemoteSpeaking}
+          onStart={voiceChat.start}
+          onStop={voiceChat.stop}
+          onToggleMute={voiceChat.toggleMute}
+        />
+      )}
     </div>
   );
 }

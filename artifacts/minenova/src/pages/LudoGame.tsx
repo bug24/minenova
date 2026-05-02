@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/button";
 import LudoBoard, { type AnimPiece } from "@/components/ludo/LudoBoard";
 import DiceFace from "@/components/ludo/DiceFace";
 import {
-  ludoApi, fetchLudoSettings, getSSEUrl, getValidMovesClient,
+  ludoApi, fetchLudoSettings, getSSEUrl, getValidMovesClient, sendLudoSignal,
   type LudoGame, type GameState, type LudoSettings,
 } from "@/lib/ludoApi";
+import { useVoiceChat } from "@/hooks/useVoiceChat";
+import VoiceChatButton from "@/components/VoiceChatButton";
 import {
   Dices,
   ArrowLeft,
@@ -212,6 +214,27 @@ export default function LudoGame() {
   const [opponentUsername, setOpponentUsername] = useState<string>("Opponent");
   const isBotOpponent = opponentUsername === SYSTEM_USERNAME || opponentUsername === "__system__";
 
+  const opponentUserId = game ? (myPlayerIndex === 0 ? game.bluePlayerId : game.redPlayerId) : 0;
+  const isVoiceInitiator = myUserId < opponentUserId;
+
+  const sendSignal = useCallback(async (type: string, payload: unknown) => {
+    try { await sendLudoSignal(gameId, type, payload); } catch { /* non-fatal */ }
+  }, [gameId]);
+
+  const voiceChat = useVoiceChat({
+    isInitiator: isVoiceInitiator,
+    sendSignal,
+    enabled: !isBotOpponent && game?.status === "active",
+  });
+
+  const handleRemoteSignalRef = useRef(voiceChat.handleRemoteSignal);
+  handleRemoteSignalRef.current = voiceChat.handleRemoteSignal;
+
+  useEffect(() => {
+    if (game?.status === "completed") voiceChat.stop();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game?.status]);
+
   const validMoves =
     boardState && isMyTurn && diceRolled && diceValue && !animating
       ? getValidMovesClient(boardState, myPlayerIndex, diceValue)
@@ -269,8 +292,16 @@ export default function LudoGame() {
             diceValue?: number;
             pieceIndex?: number;
             winner?: number;
+            signalType?: string;
+            from?: number;
+            payload?: unknown;
           };
           retryDelay = 1000;
+
+          if (event.type === "signal" && event.from !== myUserId && event.signalType) {
+            handleRemoteSignalRef.current(event.signalType, event.payload);
+            return;
+          }
 
           if (event.state) {
             const prevState = prevStateRef.current;
@@ -596,6 +627,18 @@ export default function LudoGame() {
           isSolo={isBotOpponent}
           settings={ludoSettings}
           onGoLobby={() => navigate("/ludo")}
+        />
+      )}
+
+      {/* Voice chat — hidden for bot games */}
+      {!isBotOpponent && (
+        <VoiceChatButton
+          status={voiceChat.status}
+          isMuted={voiceChat.isMuted}
+          isRemoteSpeaking={voiceChat.isRemoteSpeaking}
+          onStart={voiceChat.start}
+          onStop={voiceChat.stop}
+          onToggleMute={voiceChat.toggleMute}
         />
       )}
     </div>

@@ -59,6 +59,13 @@ function emitGameUpdate(
   });
 }
 
+function emitSignalToAll(gameId: number, payload: object): void {
+  const byUser = sseListeners.get(gameId);
+  if (!byUser || byUser.size === 0) return;
+  const msg = JSON.stringify(payload);
+  byUser.forEach(listeners => listeners.forEach(fn => fn(msg)));
+}
+
 function addSseListener(gameId: number, userId: number, fn: Listener): () => void {
   if (!sseListeners.has(gameId)) sseListeners.set(gameId, new Map());
   const byUser = sseListeners.get(gameId)!;
@@ -1092,5 +1099,37 @@ setInterval(async () => {
     // non-fatal sweep error
   }
 }, 60_000);
+
+// ---------------------------------------------------------------------------
+// POST /api/whot/games/:id/signal — relay WebRTC signalling via SSE
+// ---------------------------------------------------------------------------
+router.post("/whot/games/:id/signal", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const gameId = Number(req.params.id);
+    if (Number.isNaN(gameId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const { type, payload } = req.body as { type?: string; payload?: unknown };
+    if (!type || !["offer", "answer", "ice-candidate"].includes(type)) {
+      res.status(400).json({ error: "Invalid signal type" }); return;
+    }
+
+    const [game] = await db
+      .select({ player0Id: whotGamesTable.player0Id, player1Id: whotGamesTable.player1Id, status: whotGamesTable.status })
+      .from(whotGamesTable)
+      .where(eq(whotGamesTable.id, gameId))
+      .limit(1);
+
+    if (!game) { res.status(404).json({ error: "Game not found" }); return; }
+    if (game.player0Id !== req.userId && game.player1Id !== req.userId) {
+      res.status(403).json({ error: "Not a participant" }); return;
+    }
+    if (game.status !== "active") { res.status(409).json({ error: "Game is not active" }); return; }
+
+    emitSignalToAll(gameId, { type: "signal", signalType: type, from: req.userId, payload });
+    res.json({ ok: true });
+  } catch (err) {
+    handleRouteError(err, res);
+  }
+});
 
 export default router;

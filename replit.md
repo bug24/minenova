@@ -81,10 +81,28 @@ A full-stack gamified crypto mining engagement web app.
   - Forfeit with confirmation overlay
   - Win/lose modal with payout breakdown (10% house fee, 90% to winner)
   - Wallet balance auto-refreshes after game ends
+  - **Live voice chat** (WebRTC P2P audio) via floating mic button — hidden for bot games; signalling via `POST /api/ludo/games/:id/signal` relayed through SSE
 - **Board layout**: TRACK_CELLS[52] defines the clockwise 15×15 path; RED_HOME_COL/BLUE_HOME_COL define progress 52-57 home column cells
 - **Entry points**: Red=0 (row 6, col 1), Blue=26 (row 8, col 13); SAFE_SQUARES={0,8,13,21,26,34,39,47}
 - **API**: plain fetch (not OpenAPI-generated) via `src/lib/ludoApi.ts`
 - **SSE auth fix**: `ludo.ts` SSE route promotes `?token=` query param to `Authorization` header before inline auth
+
+### WHOT Game
+
+- **Lobby** (`/whot`) — same challenge/lobby pattern as Ludo
+- **Game screen** (`/whot/game/:id`) — 2-player WHOT card game
+  - Real-time updates via per-user sanitized SSE (each player only sees their own hand)
+  - **Live voice chat** (WebRTC P2P audio) via floating mic button — hidden for bot games; signalling via `POST /api/whot/games/:id/signal`
+
+### Voice Chat Architecture
+
+- **Hook**: `artifacts/minenova/src/hooks/useVoiceChat.ts` — manages `RTCPeerConnection`, `getUserMedia`, offer/answer/ICE flow
+- **UI**: `artifacts/minenova/src/components/VoiceChatButton.tsx` — floating fixed button (bottom-right, above nav)
+- **Signal relay**: SSE carries `{ type:"signal", signalType, from:userId, payload }` events; frontend filters by `from !== myUserId`
+- **Initiator rule**: player with lower userId always sends the offer (deterministic, avoids race conditions)
+- **States**: idle → incoming → requesting → connecting → connected | denied | error
+- **Remote speaking indicator**: `AudioContext` AnalyserNode samples remote stream level via rAF loop; renders pulsing dot when voice detected
+- STUN: `stun:stun.l.google.com:19302`; no TURN server (works on same LAN or most public networks)
 
 ### Database Schema Key Tables
 - `users` — emailVerified, verificationToken, verificationTokenExpiry added

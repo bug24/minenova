@@ -80,6 +80,13 @@ export async function whotApi<T = unknown>(path: string, options: RequestInit = 
   return data as T;
 }
 
+export async function sendWhotSignal(gameId: number, type: string, payload: unknown): Promise<void> {
+  await whotApi(`/whot/games/${gameId}/signal`, {
+    method: "POST",
+    body: JSON.stringify({ type, payload }),
+  });
+}
+
 export function getWhotSSEUrl(gameId: number): string {
   const token = getToken();
   return `/api/whot/games/${gameId}/events?token=${encodeURIComponent(token)}`;

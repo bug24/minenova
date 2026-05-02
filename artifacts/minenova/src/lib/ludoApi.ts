@@ -90,6 +90,13 @@ export function getValidMovesClient(
   return valid;
 }
 
+export async function sendLudoSignal(gameId: number, type: string, payload: unknown): Promise<void> {
+  await ludoApi(`/ludo/games/${gameId}/signal`, {
+    method: "POST",
+    body: JSON.stringify({ type, payload }),
+  });
+}
+
 export function getSSEUrl(gameId: number): string {
   const token = getToken();
   return `/api/ludo/games/${gameId}/events?token=${encodeURIComponent(token)}`;
