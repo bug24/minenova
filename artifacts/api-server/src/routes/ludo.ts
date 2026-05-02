@@ -42,6 +42,35 @@ function addSseListener(gameId: number, fn: Listener): () => void {
 }
 
 // ---------------------------------------------------------------------------
+// System user — dedicated ledger identity for capturing house fee revenue
+// ---------------------------------------------------------------------------
+let _systemUserId: number | null = null;
+
+async function getSystemUserId(): Promise<number> {
+  if (_systemUserId !== null) return _systemUserId;
+
+  // Insert if not present (idempotent — safe to call on every startup)
+  await db
+    .insert(usersTable)
+    .values({
+      username: "__system__",
+      email: "__system__@minenova.internal",
+      passwordHash: "__no_login__",
+      referralCode: "__SYSTEM__",
+    })
+    .onConflictDoNothing();
+
+  const [row] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.username, "__system__"))
+    .limit(1);
+
+  _systemUserId = row.id;
+  return _systemUserId;
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 function parseBoard(raw: unknown): GameState {
@@ -52,6 +81,7 @@ type DbTx = Parameters<Parameters<(typeof db)["transaction"]>[0]>[0];
 
 async function payoutWinner(
   tx: DbTx,
+  systemUserId: number,
   winnerId: number,
   loserId: number,
   entryFee: number,
@@ -74,11 +104,11 @@ async function payoutWinner(
   });
 
   await tx.insert(transactionsTable).values({
-    userId: winnerId,
+    userId: systemUserId,
     type: "ludo_fee",
-    amount: -systemFee,
+    amount: systemFee,
     status: "completed",
-    description: `Ludo system fee (10% of ${pot} coin pot)`,
+    description: `Ludo system fee — 10% of ${pot} coin pot`,
   });
 
   await tx.insert(transactionsTable).values({
@@ -122,12 +152,6 @@ router.post("/ludo/challenges", requireAuth, async (req: Request, res: Response)
     return;
   }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
-  if (user.coinBalance < fee) {
-    res.status(400).json({ error: "Insufficient coin balance" });
-    return;
-  }
-
   let challengeId = 0;
 
   await db.transaction(async tx => {
@@ -137,7 +161,7 @@ router.post("/ludo/challenges", requireAuth, async (req: Request, res: Response)
       .where(and(eq(usersTable.id, req.userId!), sql`coin_balance >= ${fee}`))
       .returning({ id: usersTable.id });
 
-    if (claimed.length === 0) throw new Error("Insufficient balance");
+    if (claimed.length === 0) throw Object.assign(new Error("Insufficient balance"), { status: 400 });
 
     await tx.insert(transactionsTable).values({
       userId: req.userId!,
@@ -165,7 +189,7 @@ router.post("/ludo/challenges/:id/accept", requireAuth, async (req: Request, res
   const challengeId = Number(req.params.id);
   if (Number.isNaN(challengeId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  // Pre-flight: verify challenge exists and caller is eligible (outside tx for fast rejection)
+  // Pre-flight: fast rejection for obvious non-starters (outside tx)
   const [challenge] = await db
     .select()
     .from(ludoChallengesTable)
@@ -179,7 +203,7 @@ router.post("/ludo/challenges/:id/accept", requireAuth, async (req: Request, res
   let gameId = 0;
 
   await db.transaction(async tx => {
-    // Atomically claim the challenge — only succeeds if it is still 'open'
+    // Atomically claim the challenge — only succeeds if status is still 'open'
     const claimed = await tx
       .update(ludoChallengesTable)
       .set({ status: "matched", opponentId: req.userId })
@@ -190,7 +214,6 @@ router.post("/ludo/challenges/:id/accept", requireAuth, async (req: Request, res
 
     const { entryFee, creatorId } = claimed[0];
 
-    // Deduct accepter's entry fee (with balance guard)
     const deducted = await tx
       .update(usersTable)
       .set({ coinBalance: sql`coin_balance - ${entryFee}` })
@@ -239,31 +262,39 @@ router.delete("/ludo/challenges/:id", requireAuth, async (req: Request, res: Res
   const challengeId = Number(req.params.id);
   if (Number.isNaN(challengeId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const [challenge] = await db
-    .select()
-    .from(ludoChallengesTable)
-    .where(eq(ludoChallengesTable.id, challengeId))
-    .limit(1);
-
-  if (!challenge) { res.status(404).json({ error: "Challenge not found" }); return; }
-  if (challenge.creatorId !== req.userId) { res.status(403).json({ error: "Not your challenge" }); return; }
-  if (challenge.status !== "open") { res.status(409).json({ error: "Challenge cannot be cancelled" }); return; }
+  let refundFee = 0;
 
   await db.transaction(async tx => {
-    await tx
+    const cancelled = await tx
       .update(ludoChallengesTable)
       .set({ status: "cancelled" })
-      .where(eq(ludoChallengesTable.id, challengeId));
+      .where(and(
+        eq(ludoChallengesTable.id, challengeId),
+        eq(ludoChallengesTable.creatorId, req.userId!),
+        eq(ludoChallengesTable.status, "open"),
+      ))
+      .returning({ entryFee: ludoChallengesTable.entryFee });
+
+    if (cancelled.length === 0) {
+      // Distinguish between not found / not owner / already matched
+      const [ch] = await tx.select({ creatorId: ludoChallengesTable.creatorId, status: ludoChallengesTable.status })
+        .from(ludoChallengesTable).where(eq(ludoChallengesTable.id, challengeId)).limit(1);
+      if (!ch) throw Object.assign(new Error("Challenge not found"), { status: 404 });
+      if (ch.creatorId !== req.userId) throw Object.assign(new Error("Not your challenge"), { status: 403 });
+      throw Object.assign(new Error("Challenge cannot be cancelled"), { status: 409 });
+    }
+
+    refundFee = cancelled[0].entryFee;
 
     await tx
       .update(usersTable)
-      .set({ coinBalance: sql`coin_balance + ${challenge.entryFee}` })
+      .set({ coinBalance: sql`coin_balance + ${refundFee}` })
       .where(eq(usersTable.id, req.userId!));
 
     await tx.insert(transactionsTable).values({
       userId: req.userId!,
       type: "ludo_refund",
-      amount: challenge.entryFee,
+      amount: refundFee,
       status: "completed",
       description: `Ludo challenge cancelled — entry fee refunded`,
     });
@@ -343,47 +374,55 @@ router.get("/ludo/games/:id", requireAuth, async (req: Request, res: Response): 
 
 // ---------------------------------------------------------------------------
 // POST /api/ludo/games/:id/roll — roll dice
+// Wrapped in a transaction with SELECT FOR UPDATE to prevent duplicate rolls.
 // ---------------------------------------------------------------------------
 router.post("/ludo/games/:id/roll", requireAuth, async (req: Request, res: Response): Promise<void> => {
   const gameId = Number(req.params.id);
   if (Number.isNaN(gameId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const [game] = await db.select().from(ludoGamesTable).where(eq(ludoGamesTable.id, gameId)).limit(1);
-  if (!game) { res.status(404).json({ error: "Game not found" }); return; }
-  if (game.status !== "active") { res.status(409).json({ error: "Game is not active" }); return; }
-  if (game.redPlayerId !== req.userId && game.bluePlayerId !== req.userId) {
-    res.status(403).json({ error: "Not a participant" }); return;
-  }
+  let diceValue = 0;
+  let newState: GameState | null = null;
 
-  const state = parseBoard(game.boardState);
-  const myIndex: 0 | 1 = game.redPlayerId === req.userId ? 0 : 1;
+  await db.transaction(async tx => {
+    const [game] = await tx
+      .select()
+      .from(ludoGamesTable)
+      .where(eq(ludoGamesTable.id, gameId))
+      .for("update")
+      .limit(1);
 
-  if (state.currentTurn !== myIndex) {
-    res.status(409).json({ error: "Not your turn" }); return;
-  }
-  if (state.diceRolled) {
-    res.status(409).json({ error: "Dice already rolled — make your move" }); return;
-  }
+    if (!game) throw Object.assign(new Error("Game not found"), { status: 404 });
+    if (game.status !== "active") throw Object.assign(new Error("Game is not active"), { status: 409 });
+    if (game.redPlayerId !== req.userId && game.bluePlayerId !== req.userId) {
+      throw Object.assign(new Error("Not a participant"), { status: 403 });
+    }
 
-  const diceValue = rollDice();
-  const now = new Date().toISOString();
-  const newState = applyDiceRoll(state, diceValue, now);
+    const state = parseBoard(game.boardState);
+    const myIndex: 0 | 1 = game.redPlayerId === req.userId ? 0 : 1;
 
-  await db
-    .update(ludoGamesTable)
-    .set({
-      boardState: newState as unknown as Record<string, unknown>,
-      lastMoveAt: new Date(now),
-    })
-    .where(eq(ludoGamesTable.id, gameId));
+    if (state.currentTurn !== myIndex) throw Object.assign(new Error("Not your turn"), { status: 409 });
+    if (state.diceRolled) throw Object.assign(new Error("Dice already rolled — make your move"), { status: 409 });
+
+    diceValue = rollDice();
+    const now = new Date().toISOString();
+    newState = applyDiceRoll(state, diceValue, now);
+
+    await tx
+      .update(ludoGamesTable)
+      .set({
+        boardState: newState as unknown as Record<string, unknown>,
+        lastMoveAt: new Date(now),
+      })
+      .where(eq(ludoGamesTable.id, gameId));
+  });
 
   emitGameUpdate(gameId, { type: "rolled", diceValue, state: newState });
-
   res.json({ diceValue, state: newState });
 });
 
 // ---------------------------------------------------------------------------
 // POST /api/ludo/games/:id/move — move a piece
+// Wrapped in a transaction with SELECT FOR UPDATE to prevent duplicate moves.
 // ---------------------------------------------------------------------------
 router.post("/ludo/games/:id/move", requireAuth, async (req: Request, res: Response): Promise<void> => {
   const gameId = Number(req.params.id);
@@ -395,33 +434,39 @@ router.post("/ludo/games/:id/move", requireAuth, async (req: Request, res: Respo
     res.status(400).json({ error: "pieceIndex must be 0-3" }); return;
   }
 
-  const [game] = await db.select().from(ludoGamesTable).where(eq(ludoGamesTable.id, gameId)).limit(1);
-  if (!game) { res.status(404).json({ error: "Game not found" }); return; }
-  if (game.status !== "active") { res.status(409).json({ error: "Game is not active" }); return; }
-  if (game.redPlayerId !== req.userId && game.bluePlayerId !== req.userId) {
-    res.status(403).json({ error: "Not a participant" }); return;
-  }
-
-  const state = parseBoard(game.boardState);
-  const myIndex: 0 | 1 = game.redPlayerId === req.userId ? 0 : 1;
-
-  if (state.currentTurn !== myIndex) {
-    res.status(409).json({ error: "Not your turn" }); return;
-  }
-  if (!state.diceRolled || state.diceValue === null) {
-    res.status(409).json({ error: "Roll the dice first" }); return;
-  }
-
-  const validMoves = getValidMoves(state, myIndex, state.diceValue);
-  if (!validMoves.includes(idx)) {
-    res.status(400).json({ error: "Invalid move for this piece" }); return;
-  }
-
-  const { newState, captured, won, fromProgress, toProgress } = applyMove(
-    state, myIndex, idx, state.diceValue,
-  );
+  let moveResult: { newState: GameState; captured: boolean; won: boolean } | null = null;
 
   await db.transaction(async tx => {
+    const [game] = await tx
+      .select()
+      .from(ludoGamesTable)
+      .where(eq(ludoGamesTable.id, gameId))
+      .for("update")
+      .limit(1);
+
+    if (!game) throw Object.assign(new Error("Game not found"), { status: 404 });
+    if (game.status !== "active") throw Object.assign(new Error("Game is not active"), { status: 409 });
+    if (game.redPlayerId !== req.userId && game.bluePlayerId !== req.userId) {
+      throw Object.assign(new Error("Not a participant"), { status: 403 });
+    }
+
+    const state = parseBoard(game.boardState);
+    const myIndex: 0 | 1 = game.redPlayerId === req.userId ? 0 : 1;
+
+    if (state.currentTurn !== myIndex) throw Object.assign(new Error("Not your turn"), { status: 409 });
+    if (!state.diceRolled || state.diceValue === null) {
+      throw Object.assign(new Error("Roll the dice first"), { status: 409 });
+    }
+
+    const validMoves = getValidMoves(state, myIndex, state.diceValue);
+    if (!validMoves.includes(idx)) {
+      throw Object.assign(new Error("Invalid move for this piece"), { status: 400 });
+    }
+
+    const { newState, captured, won, fromProgress, toProgress } = applyMove(
+      state, myIndex, idx, state.diceValue,
+    );
+
     await tx
       .update(ludoGamesTable)
       .set({
@@ -444,34 +489,46 @@ router.post("/ludo/games/:id/move", requireAuth, async (req: Request, res: Respo
     });
 
     if (won && newState.winnerId) {
+      const systemUserId = await getSystemUserId();
       const loserId = newState.winnerId === game.redPlayerId ? game.bluePlayerId : game.redPlayerId;
-      await payoutWinner(tx, newState.winnerId, loserId, game.entryFee);
+      await payoutWinner(tx, systemUserId, newState.winnerId, loserId, game.entryFee);
     }
+
+    moveResult = { newState, captured, won };
   });
 
-  emitGameUpdate(gameId, { type: "moved", pieceIndex: idx, captured, won, state: newState });
-
-  res.json({ captured, won, state: newState });
+  const r = moveResult!;
+  emitGameUpdate(gameId, { type: "moved", pieceIndex: idx, captured: r.captured, won: r.won, state: r.newState });
+  res.json({ captured: r.captured, won: r.won, state: r.newState });
 });
 
 // ---------------------------------------------------------------------------
 // POST /api/ludo/games/:id/forfeit — concede the game
+// Wrapped in a transaction with SELECT FOR UPDATE to prevent double payouts.
 // ---------------------------------------------------------------------------
 router.post("/ludo/games/:id/forfeit", requireAuth, async (req: Request, res: Response): Promise<void> => {
   const gameId = Number(req.params.id);
   if (Number.isNaN(gameId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const [game] = await db.select().from(ludoGamesTable).where(eq(ludoGamesTable.id, gameId)).limit(1);
-  if (!game) { res.status(404).json({ error: "Game not found" }); return; }
-  if (game.status !== "active") { res.status(409).json({ error: "Game is not active" }); return; }
-  if (game.redPlayerId !== req.userId && game.bluePlayerId !== req.userId) {
-    res.status(403).json({ error: "Not a participant" }); return;
-  }
-
-  const state = parseBoard(game.boardState);
-  const newState = forfeit(state, req.userId!);
+  let newState: GameState | null = null;
 
   await db.transaction(async tx => {
+    const [game] = await tx
+      .select()
+      .from(ludoGamesTable)
+      .where(eq(ludoGamesTable.id, gameId))
+      .for("update")
+      .limit(1);
+
+    if (!game) throw Object.assign(new Error("Game not found"), { status: 404 });
+    if (game.status !== "active") throw Object.assign(new Error("Game is not active"), { status: 409 });
+    if (game.redPlayerId !== req.userId && game.bluePlayerId !== req.userId) {
+      throw Object.assign(new Error("Not a participant"), { status: 403 });
+    }
+
+    const state = parseBoard(game.boardState);
+    newState = forfeit(state, req.userId!);
+
     await tx
       .update(ludoGamesTable)
       .set({
@@ -483,44 +540,52 @@ router.post("/ludo/games/:id/forfeit", requireAuth, async (req: Request, res: Re
       .where(eq(ludoGamesTable.id, gameId));
 
     if (newState.winnerId) {
-      await payoutWinner(tx, newState.winnerId, req.userId!, game.entryFee);
+      const systemUserId = await getSystemUserId();
+      await payoutWinner(tx, systemUserId, newState.winnerId, req.userId!, game.entryFee);
     }
   });
 
   emitGameUpdate(gameId, { type: "forfeit", forfeiter: req.userId, state: newState });
-
   res.json({ message: "Forfeited", state: newState });
 });
 
 // ---------------------------------------------------------------------------
 // POST /api/ludo/games/:id/claim-timeout — win if opponent timed out
+// Wrapped in a transaction with SELECT FOR UPDATE to prevent double payouts.
 // ---------------------------------------------------------------------------
 router.post("/ludo/games/:id/claim-timeout", requireAuth, async (req: Request, res: Response): Promise<void> => {
   const gameId = Number(req.params.id);
   if (Number.isNaN(gameId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const [game] = await db.select().from(ludoGamesTable).where(eq(ludoGamesTable.id, gameId)).limit(1);
-  if (!game) { res.status(404).json({ error: "Game not found" }); return; }
-  if (game.status !== "active") { res.status(409).json({ error: "Game is not active" }); return; }
-  if (game.redPlayerId !== req.userId && game.bluePlayerId !== req.userId) {
-    res.status(403).json({ error: "Not a participant" }); return;
-  }
-
-  const state = parseBoard(game.boardState);
-  const myIndex: 0 | 1 = game.redPlayerId === req.userId ? 0 : 1;
-
-  if (state.currentTurn === myIndex) {
-    res.status(400).json({ error: "It is your turn — opponent has not timed out" }); return;
-  }
-
-  if (!isTimedOut(state)) {
-    res.status(400).json({ error: "Opponent has not timed out yet (3 minutes required)" }); return;
-  }
-
-  const opponentId = myIndex === 0 ? game.bluePlayerId : game.redPlayerId;
-  const newState = forfeit(state, opponentId);
+  let newState: GameState | null = null;
 
   await db.transaction(async tx => {
+    const [game] = await tx
+      .select()
+      .from(ludoGamesTable)
+      .where(eq(ludoGamesTable.id, gameId))
+      .for("update")
+      .limit(1);
+
+    if (!game) throw Object.assign(new Error("Game not found"), { status: 404 });
+    if (game.status !== "active") throw Object.assign(new Error("Game is not active"), { status: 409 });
+    if (game.redPlayerId !== req.userId && game.bluePlayerId !== req.userId) {
+      throw Object.assign(new Error("Not a participant"), { status: 403 });
+    }
+
+    const state = parseBoard(game.boardState);
+    const myIndex: 0 | 1 = game.redPlayerId === req.userId ? 0 : 1;
+
+    if (state.currentTurn === myIndex) {
+      throw Object.assign(new Error("It is your turn — opponent has not timed out"), { status: 400 });
+    }
+    if (!isTimedOut(state)) {
+      throw Object.assign(new Error("Opponent has not timed out yet (3 minutes required)"), { status: 400 });
+    }
+
+    const opponentId = myIndex === 0 ? game.bluePlayerId : game.redPlayerId;
+    newState = forfeit(state, opponentId);
+
     await tx
       .update(ludoGamesTable)
       .set({
@@ -531,11 +596,11 @@ router.post("/ludo/games/:id/claim-timeout", requireAuth, async (req: Request, r
       })
       .where(eq(ludoGamesTable.id, gameId));
 
-    await payoutWinner(tx, req.userId!, opponentId, game.entryFee);
+    const systemUserId = await getSystemUserId();
+    await payoutWinner(tx, systemUserId, req.userId!, opponentId, game.entryFee);
   });
 
   emitGameUpdate(gameId, { type: "timeout", winner: req.userId, state: newState });
-
   res.json({ message: "Won by timeout", state: newState });
 });
 

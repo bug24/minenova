@@ -118,6 +118,9 @@ export function applyMove(
   if (won) {
     newState.status = "completed";
     newState.winnerId = newState.players[playerIndex].userId;
+  } else if (diceValue === 6) {
+    // Standard Ludo rule: rolling a 6 grants an extra turn
+    // currentTurn stays with the same player
   } else {
     newState.currentTurn = opponentIndex;
   }
