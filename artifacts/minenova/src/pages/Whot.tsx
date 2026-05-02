@@ -11,7 +11,7 @@ import {
   whotApi, fetchWhotSettings,
   type WhotChallenge, type WhotGame, type WhotSettings,
 } from "@/lib/whotApi";
-import { Layers, Plus, Trophy, Clock, Users, RefreshCw, X, Bot, Swords, Coins } from "lucide-react";
+import { Layers, Plus, Trophy, Clock, Users, RefreshCw, X, Bot, Swords, Coins, ChevronLeft } from "lucide-react";
 
 function CoinIcon({ className }: { className?: string }) {
   return <span className={`inline-block ${className ?? "w-4 h-4"}`}>🪙</span>;
@@ -206,6 +206,13 @@ export default function Whot() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
+          <button
+            onClick={() => navigate("/games")}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-1 -ml-0.5"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            Games
+          </button>
           <h1 className="text-xl font-black flex items-center gap-2">
             <Layers className="w-6 h-6 text-primary" />
             WHOT

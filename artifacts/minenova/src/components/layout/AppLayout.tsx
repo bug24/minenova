@@ -17,20 +17,18 @@ import {
   Moon,
   MailWarning,
   X,
-  Dices,
-  Layers,
+  Gamepad2,
 } from "lucide-react";
 import WithdrawalTicker from "@/components/WithdrawalTicker";
 
 const navItems = [
-  { href: "/dashboard", label: "Mine", icon: Pickaxe },
-  { href: "/tasks", label: "Tasks", icon: CheckSquare },
-  { href: "/boost", label: "Boost", icon: Zap },
-  { href: "/wallet", label: "Wallet", icon: Wallet },
-  { href: "/ludo", label: "Ludo", icon: Dices },
-  { href: "/whot", label: "WHOT", icon: Layers },
-  { href: "/referrals", label: "Refer", icon: Users },
-  { href: "/profile", label: "Profile", icon: User },
+  { href: "/dashboard", label: "Mine", icon: Pickaxe, matchPaths: ["/dashboard"] },
+  { href: "/tasks", label: "Tasks", icon: CheckSquare, matchPaths: ["/tasks"] },
+  { href: "/boost", label: "Boost", icon: Zap, matchPaths: ["/boost"] },
+  { href: "/wallet", label: "Wallet", icon: Wallet, matchPaths: ["/wallet"] },
+  { href: "/games", label: "Games", icon: Gamepad2, matchPaths: ["/games", "/ludo", "/whot"] },
+  { href: "/referrals", label: "Refer", icon: Users, matchPaths: ["/referrals"] },
+  { href: "/profile", label: "Profile", icon: User, matchPaths: ["/profile"] },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -135,8 +133,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-card border-t border-card-border dark:border-white/10 z-50">
         <div className="flex items-center justify-around px-2 py-2">
-          {navItems.map(({ href, label, icon: Icon }) => {
-            const isActive = location === href;
+          {navItems.map(({ href, label, icon: Icon, matchPaths }) => {
+            const isActive = matchPaths
+              ? matchPaths.some(p => location === p || location.startsWith(p + "/"))
+              : location === href;
             return (
               <Link key={href} href={href}>
                 <div

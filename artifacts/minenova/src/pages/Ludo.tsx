@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { ludoApi, fetchLudoSettings, type LudoChallenge, type LudoGame, type LudoSettings } from "@/lib/ludoApi";
-import { Dices, Plus, Trophy, Clock, Coins, Users, RefreshCw, X, Bot, Swords } from "lucide-react";
+import { Dices, Plus, Trophy, Clock, Coins, Users, RefreshCw, X, Bot, Swords, ChevronLeft } from "lucide-react";
 
 function CoinIcon({ className }: { className?: string }) {
   return <span className={`inline-block ${className ?? "w-4 h-4"}`}>🪙</span>;
@@ -209,6 +209,13 @@ export default function Ludo() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
+          <button
+            onClick={() => navigate("/games")}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-1 -ml-0.5"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            Games
+          </button>
           <h1 className="text-xl font-black flex items-center gap-2">
             <Dices className="w-6 h-6 text-primary" />
             Ludo
