@@ -20,11 +20,14 @@ export interface PlayerState {
 export interface GameState {
   players: [PlayerState, PlayerState];
   currentTurn: 0 | 1;
-  diceValue: number | null;              // active die value (= diceQueue[0])
-  diceValues: [number, number] | null;   // both rolled dice (for display)
-  diceQueue: number[];                   // ordered die values remaining (includes 6-bonuses)
-  movesLeft: number;                     // = diceQueue.length (UI convenience)
-  activeDieIndex: 0 | 1 | null;          // which visual die is highlighted (0, 1, or null for bonus)
+  diceValue: number | null;                // active die value (= diceQueue[0])
+  diceValues: [number, number] | null;     // both rolled dice (for display)
+  diceQueue: number[];                     // ordered: [d1?, d2?, bonus6...] primaries first
+  dieIndexQueue: Array<0 | 1 | null>;     // parallel: which visual die each slot is (null = bonus)
+  movesLeft: number;                       // = diceQueue.length (UI convenience)
+  activeDieIndex: 0 | 1 | null;            // = dieIndexQueue[0], which die face is highlighted
+  primaryMoveNumber: number;               // 1 = first primary, 2 = second primary, 0 = bonus phase
+  primaryMovesTotal: number;               // how many primary dice had valid moves (0, 1, or 2)
   diceRolled: boolean;
   status: string;
   winnerId: number | null;

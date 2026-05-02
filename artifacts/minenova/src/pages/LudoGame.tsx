@@ -191,9 +191,11 @@ export default function LudoGame() {
   const isMyTurn    = boardState?.currentTurn === myPlayerIndex;
   const diceRolled  = boardState?.diceRolled ?? false;
   const diceValue   = boardState?.diceValue ?? null;
-  const diceValues       = boardState?.diceValues ?? null;
-  const movesLeft        = boardState?.movesLeft ?? 0;
-  const activeDieIndex   = boardState?.activeDieIndex ?? null;
+  const diceValues         = boardState?.diceValues ?? null;
+  const movesLeft          = boardState?.movesLeft ?? 0;
+  const activeDieIndex     = boardState?.activeDieIndex ?? null;
+  const primaryMoveNumber  = boardState?.primaryMoveNumber ?? 0;
+  const primaryMovesTotal  = boardState?.primaryMovesTotal ?? 0;
 
   const [opponentUsername, setOpponentUsername] = useState<string>("Opponent");
   const isBotOpponent = opponentUsername === SYSTEM_USERNAME || opponentUsername === "__system__";
@@ -523,7 +525,9 @@ export default function LudoGame() {
               ↑ TAP A HIGHLIGHTED PIECE
               {movesLeft > 0 && (
                 <span className="ml-2 text-xs font-semibold text-amber-300 normal-case">
-                  (move {3 - movesLeft} of 2)
+                  {activeDieIndex !== null
+                    ? `(move ${primaryMoveNumber} of ${primaryMovesTotal})`
+                    : "(bonus)"}
                 </span>
               )}
             </p>

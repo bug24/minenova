@@ -14,11 +14,14 @@ export interface PlayerState {
 export interface GameState {
   players: [PlayerState, PlayerState];
   currentTurn: 0 | 1;
-  diceValue: number | null;              // active die value (= diceQueue[0] or null)
-  diceValues: [number, number] | null;   // both rolled dice (for display)
-  diceQueue: number[];                   // ordered die values remaining this turn (includes 6-bonuses)
-  movesLeft: number;                     // = diceQueue.length (kept for UI convenience)
-  activeDieIndex: 0 | 1 | null;          // which visual die is currently active (0, 1, or null for bonus)
+  diceValue: number | null;                // active die value (= diceQueue[0] or null)
+  diceValues: [number, number] | null;     // both rolled dice (for display)
+  diceQueue: number[];                     // ordered die values: [d1?, d2?, bonus6...] primaries first
+  dieIndexQueue: Array<0 | 1 | null>;     // parallel to diceQueue: which visual die each slot is (null = bonus)
+  movesLeft: number;                       // = diceQueue.length (kept for UI convenience)
+  activeDieIndex: 0 | 1 | null;            // = dieIndexQueue[0], which die face is highlighted
+  primaryMoveNumber: number;               // 1 = on first primary, 2 = on second primary, 0 = bonus phase
+  primaryMovesTotal: number;               // how many primary dice had valid moves (0, 1, or 2)
   diceRolled: boolean;
   status: GameStatus;
   winnerId: number | null;
@@ -48,8 +51,11 @@ export function createInitialState(redUserId: number, blueUserId: number): GameS
     diceValue: null,
     diceValues: null,
     diceQueue: [],
+    dieIndexQueue: [],
     movesLeft: 0,
     activeDieIndex: null,
+    primaryMoveNumber: 0,
+    primaryMovesTotal: 0,
     diceRolled: false,
     status: "active",
     winnerId: null,
@@ -85,33 +91,34 @@ export function getValidMoves(state: GameState, playerIndex: 0 | 1, diceValue: n
 
 /**
  * Build the ordered queue of die values for a turn, including 6-bonuses.
- * A die is only added to the queue if it has at least one valid move.
- * If a die shows 6 AND has valid moves, an extra 6 is appended after it.
+ * Order: primary dice first ([d1?, d2?]), then bonus 6s appended at the end.
+ * A die is only included if it has at least one valid move.
+ * Each queue slot gets a dieIndexQueue entry (0|1|null) so the UI knows which face to highlight.
  */
 function buildDiceQueue(
   state: GameState,
   playerIndex: 0 | 1,
   d1: number,
   d2: number,
-): { queue: number[]; activeDieIndex: 0 | 1 | null } {
+): { queue: number[]; dieIndexQueue: Array<0 | 1 | null>; activeDieIndex: 0 | 1 | null; primaryMovesTotal: number } {
   const queue: number[] = [];
-  let activeDieIndex: 0 | 1 | null = null;
+  const dieIndexQueue: Array<0 | 1 | null> = [];
 
-  const valid1 = getValidMoves(state, playerIndex, d1);
-  const valid2 = getValidMoves(state, playerIndex, d2);
+  const has1 = getValidMoves(state, playerIndex, d1).length > 0;
+  const has2 = getValidMoves(state, playerIndex, d2).length > 0;
 
-  if (valid1.length > 0) {
-    if (activeDieIndex === null) activeDieIndex = 0;
-    queue.push(d1);
-    if (d1 === 6) queue.push(6); // bonus move for rolling 6 on die 1
-  }
-  if (valid2.length > 0) {
-    if (activeDieIndex === null) activeDieIndex = 1;
-    queue.push(d2);
-    if (d2 === 6) queue.push(6); // bonus move for rolling 6 on die 2
-  }
+  // Primary dice first, in roll order
+  if (has1) { queue.push(d1); dieIndexQueue.push(0); }
+  if (has2) { queue.push(d2); dieIndexQueue.push(1); }
 
-  return { queue, activeDieIndex };
+  // Bonus 6s appended after all primaries
+  if (has1 && d1 === 6) { queue.push(6); dieIndexQueue.push(null); }
+  if (has2 && d2 === 6) { queue.push(6); dieIndexQueue.push(null); }
+
+  const primaryMovesTotal = (has1 ? 1 : 0) + (has2 ? 1 : 0);
+  const activeDieIndex: 0 | 1 | null = dieIndexQueue.length > 0 ? (dieIndexQueue[0] ?? null) : null;
+
+  return { queue, dieIndexQueue, activeDieIndex, primaryMovesTotal };
 }
 
 export function applyMove(
@@ -164,52 +171,59 @@ export function applyMove(
     newState.diceRolled = false;
     newState.diceValue = null;
     newState.diceQueue = [];
+    newState.dieIndexQueue = [];
     newState.movesLeft = 0;
     newState.activeDieIndex = null;
+    newState.primaryMoveNumber = 0;
   } else {
-    // Remove the consumed die from the front of the queue
-    // (compat: if diceQueue missing in old persisted state, treat as empty → end turn)
+    // Remove the consumed die from the front of both parallel queues
+    // (compat: if dieIndexQueue missing in old persisted state, fill with nulls)
     const prevQueue = newState.diceQueue ?? [];
-    const remainingQueue = prevQueue.length > 0 ? prevQueue.slice(1) : [];
+    const prevDieIndexQueue: Array<0 | 1 | null> = newState.dieIndexQueue ?? prevQueue.map(() => null);
+    const consumedDieIndex: 0 | 1 | null = prevDieIndexQueue[0] ?? null;
+    const remainingQueue = prevQueue.slice(1);
+    const remainingDieIndexQueue = prevDieIndexQueue.slice(1);
 
-    // Skip any remaining dice that have no valid moves after this move
-    let validRemainder: number[] = [];
-    let nextActiveDieIndex: 0 | 1 | null = null;
-
+    // Skip any remaining entries that have no valid moves after this move
+    let validStartIdx = -1;
     for (let k = 0; k < remainingQueue.length; k++) {
-      const queueVal = remainingQueue[k];
-      const nextValid = getValidMoves(newState, playerIndex, queueVal);
-      if (nextValid.length > 0) {
-        validRemainder = remainingQueue.slice(k);
-        // Determine which visual die the next value corresponds to
-        // The second original die (index 1) is at position [0 or 1] in the original two-die part
-        // If current activeDieIndex was 0 (die 1), next is die 2 (index 1) if k=0
-        if (newState.activeDieIndex === 0 && k === 0) {
-          nextActiveDieIndex = 1;
-        } else if (newState.activeDieIndex === 1 && k === 0) {
-          // Came from die 2, next is a bonus (no specific visual die)
-          nextActiveDieIndex = null;
-        } else {
-          nextActiveDieIndex = null; // bonus move
-        }
+      if (getValidMoves(newState, playerIndex, remainingQueue[k]).length > 0) {
+        validStartIdx = k;
         break;
       }
     }
 
-    if (validRemainder.length > 0) {
-      newState.diceQueue = validRemainder;
-      newState.movesLeft = validRemainder.length;
-      newState.diceValue = validRemainder[0];
-      newState.activeDieIndex = nextActiveDieIndex;
+    if (validStartIdx >= 0) {
+      const nextQueue = remainingQueue.slice(validStartIdx);
+      const nextDieIndexQueue = remainingDieIndexQueue.slice(validStartIdx);
+      const nextDieIndex: 0 | 1 | null = nextDieIndexQueue[0] ?? null;
+
+      // Advance primaryMoveNumber: consumed a primary → if next is also primary, increment
+      let nextPrimaryMoveNumber: number;
+      if (consumedDieIndex !== null) {
+        // consumed a primary die
+        nextPrimaryMoveNumber = nextDieIndex !== null ? newState.primaryMoveNumber + 1 : 0;
+      } else {
+        // consumed a bonus — primary phase is already done
+        nextPrimaryMoveNumber = 0;
+      }
+
+      newState.diceQueue = nextQueue;
+      newState.dieIndexQueue = nextDieIndexQueue;
+      newState.movesLeft = nextQueue.length;
+      newState.diceValue = nextQueue[0];
+      newState.activeDieIndex = nextDieIndex;
+      newState.primaryMoveNumber = nextPrimaryMoveNumber;
       // diceRolled stays true — still same player's turn
     } else {
       // All moves consumed or no valid moves left — end turn
-      // No diceValue===6 check: 6 bonuses were already baked into the queue at roll time
       newState.diceQueue = [];
+      newState.dieIndexQueue = [];
       newState.movesLeft = 0;
       newState.diceRolled = false;
       newState.diceValue = null;
       newState.activeDieIndex = null;
+      newState.primaryMoveNumber = 0;
       newState.currentTurn = opponentIndex;
     }
   }
@@ -223,7 +237,7 @@ export function applyDiceRoll(state: GameState, diceValues: [number, number], no
   newState.diceValues = diceValues;
   newState.lastMoveAt = now;
 
-  const { queue, activeDieIndex } = buildDiceQueue(newState, newState.currentTurn, d1, d2);
+  const { queue, dieIndexQueue, activeDieIndex, primaryMovesTotal } = buildDiceQueue(newState, newState.currentTurn, d1, d2);
 
   if (queue.length === 0) {
     // No valid moves with either die — skip turn
@@ -232,15 +246,21 @@ export function applyDiceRoll(state: GameState, diceValues: [number, number], no
     newState.diceValues = null;
     newState.diceValue = null;
     newState.diceQueue = [];
+    newState.dieIndexQueue = [];
     newState.movesLeft = 0;
     newState.activeDieIndex = null;
+    newState.primaryMoveNumber = 0;
+    newState.primaryMovesTotal = 0;
     return newState;
   }
 
   newState.diceQueue = queue;
+  newState.dieIndexQueue = dieIndexQueue;
   newState.movesLeft = queue.length;
   newState.diceValue = queue[0];
   newState.activeDieIndex = activeDieIndex;
+  newState.primaryMoveNumber = 1;
+  newState.primaryMovesTotal = primaryMovesTotal;
   newState.diceRolled = true;
   return newState;
 }
