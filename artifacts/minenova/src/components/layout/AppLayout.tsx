@@ -18,16 +18,17 @@ import {
   MailWarning,
   X,
   Dices,
+  Layers,
 } from "lucide-react";
 import WithdrawalTicker from "@/components/WithdrawalTicker";
 
 const navItems = [
   { href: "/dashboard", label: "Mine", icon: Pickaxe },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
-  { href: "/boost", label: "Boost", icon: Zap },
-  { href: "/referrals", label: "Refer", icon: Users },
   { href: "/wallet", label: "Wallet", icon: Wallet },
   { href: "/ludo", label: "Ludo", icon: Dices },
+  { href: "/whot", label: "WHOT", icon: Layers },
+  { href: "/referrals", label: "Refer", icon: Users },
   { href: "/profile", label: "Profile", icon: User },
 ];
 

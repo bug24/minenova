@@ -11,6 +11,7 @@ import adminRouter from "./admin";
 import adsRouter from "./ads";
 import notificationsRouter from "./notifications";
 import ludoRouter from "./ludo";
+import whotRouter from "./whot";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(adminRouter);
 router.use(adsRouter);
 router.use(notificationsRouter);
 router.use(ludoRouter);
+router.use(whotRouter);
 
 export default router;

@@ -67,6 +67,13 @@ async function seedAdminConfig() {
     ludo_solo_fee: "100",
     ludo_solo_enabled: "true",
     ludo_timeout_minutes: "5",
+    whot_platform_fee_pct: "10",
+    whot_win_pct: "90",
+    whot_min_fee: "10",
+    whot_max_fee: "10000",
+    whot_solo_fee: "100",
+    whot_solo_enabled: "true",
+    whot_timeout_minutes: "5",
   };
   for (const [key, value] of Object.entries(defaults)) {
     const [existing] = await db
