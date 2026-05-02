@@ -21,7 +21,7 @@ export interface GameState {
   lastMoveAt: string | null;
 }
 
-const ENTRY_POINTS: [number, number] = [0, 26];
+const ENTRY_POINTS: [number, number] = [0, 13];
 const SAFE_SQUARES = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
 const TRACK_SIZE = 52;
 const FINISHED_PROGRESS = 57;

@@ -534,6 +534,25 @@ export default function LudoGame() {
         isSpeaking={voiceChat.isRemoteSpeaking}
       />
 
+      {/* ── Opponent dice strip (shown below opponent panel, above board) ── */}
+      <div className="flex items-center justify-end gap-2 px-2 min-h-[30px]">
+        {!isMyTurn && game.status === "active" && (
+          diceRolled && diceValue ? (
+            <>
+              <span className="text-[10px] text-muted-foreground">Opponent rolled</span>
+              <DiceFace value={diceValue} rolling={false} size={32} />
+              <span className="text-lg font-black tabular-nums leading-none">{diceValue}</span>
+            </>
+          ) : (
+            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+              {isBotTurn
+                ? <><Bot className="w-2.5 h-2.5 text-amber-500" /><span className="text-amber-500">Thinking…</span></>
+                : <><RefreshCw className="w-2.5 h-2.5 animate-spin" />Waiting for opponent…</>}
+            </span>
+          )
+        )}
+      </div>
+
       {/* Board */}
       <div className="flex justify-center">
         <div className="w-full max-w-sm rounded-2xl overflow-hidden"
@@ -559,20 +578,22 @@ export default function LudoGame() {
         piecesHome={myPiecesHome}
       />
 
-      {/* ── Dice + controls ────────────────────────────────────── */}
+      {/* ── My dice + controls (shown below my panel) ────────────────── */}
       <div className="flex items-center gap-3 px-3 py-3 bg-card border border-card-border rounded-2xl"
         style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.1)" }}>
 
-        {/* Dice */}
-        <div className="flex items-center gap-2 shrink-0">
-          <DiceFace value={diceValue} rolling={rolling} size={56} />
-          {diceValue && !rolling && (
-            <span className="text-2xl font-black tabular-nums">{diceValue}</span>
-          )}
-          {!diceValue && !rolling && (
-            <span className="text-sm text-muted-foreground">—</span>
-          )}
-        </div>
+        {/* Dice face — only meaningful on my turn */}
+        {isMyTurn && (
+          <div className="flex items-center gap-2 shrink-0">
+            <DiceFace value={diceValue} rolling={rolling} size={52} />
+            {diceValue && !rolling && (
+              <span className="text-2xl font-black tabular-nums">{diceValue}</span>
+            )}
+            {!diceValue && !rolling && (
+              <span className="text-sm text-muted-foreground">—</span>
+            )}
+          </div>
+        )}
 
         {/* Status / action */}
         <div className="flex-1 flex flex-col items-center justify-center gap-1">
@@ -601,14 +622,6 @@ export default function LudoGame() {
             )
           ) : (
             <div className="space-y-1 text-center">
-              <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-                {isBotTurn ? (
-                  <><Bot className="w-3 h-3 text-amber-500" />
-                  <span className="text-amber-500 font-semibold">Bot is thinking…</span></>
-                ) : (
-                  <><RefreshCw className="w-3 h-3 animate-spin" />Opponent's turn…</>
-                )}
-              </p>
               {!isBotOpponent && canClaimTimeout && (
                 <button
                   onClick={handleClaimTimeout}
@@ -621,15 +634,6 @@ export default function LudoGame() {
             </div>
           )}
         </div>
-
-        {/* Opponent's rolled dice (mini) */}
-        {!isMyTurn && diceRolled && diceValue && (
-          <div className="flex items-center gap-1 shrink-0">
-            <span className="text-[10px] text-muted-foreground">Rolled</span>
-            <DiceFace value={diceValue} rolling={false} size={38} />
-          </div>
-        )}
-        {(isMyTurn || !diceValue || !diceRolled) && <div className="w-10 shrink-0" />}
       </div>
 
       {/* Voice chat — right below dice row */}

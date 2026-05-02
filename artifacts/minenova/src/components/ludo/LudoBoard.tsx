@@ -20,8 +20,15 @@ const TRACK_CELLS: [number, number][] = [
 
 const SAFE_SET = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
 
-const RED_HOME_COL:  [number, number][] = [[7,1],[7,2],[7,3],[7,4],[7,5],[7,6]];
-const BLUE_HOME_COL: [number, number][] = [[7,13],[7,12],[7,11],[7,10],[7,9],[7,8]];
+// Home-run corridors — each leads from the player's side into the centre
+// Red   : left horizontal  (row 7, cols 1→6)
+// Blue  : top  vertical    (col 7, rows 1→6)  ← Blue home is top-right
+// Green : bottom vertical  (col 7, rows 13→8) ← decorative
+// Yellow: right horizontal (row 7, cols 13→8) ← decorative
+const RED_HOME_COL:    [number, number][] = [[7,1],[7,2],[7,3],[7,4],[7,5],[7,6]];
+const BLUE_HOME_COL:   [number, number][] = [[1,7],[2,7],[3,7],[4,7],[5,7],[6,7]];
+const GREEN_HOME_COL:  [number, number][] = [[13,7],[12,7],[11,7],[10,7],[9,7],[8,7]];
+const YELLOW_HOME_COL: [number, number][] = [[7,13],[7,12],[7,11],[7,10],[7,9],[7,8]];
 
 const RED_STARTS:    [number, number][] = [[1.4,1.4],[1.4,3.8],[3.8,1.4],[3.8,3.8]];
 const BLUE_STARTS:   [number, number][] = [[1.4,10.4],[1.4,12.8],[3.8,10.4],[3.8,12.8]];
@@ -48,7 +55,7 @@ function getPieceXY(playerIndex: 0 | 1, progress: number, pieceSubIdx: number): 
     const [dx, dy] = PIECE_OFFSETS[pieceSubIdx % 4];
     return { x: (c + 0.5) * CELL + dx * 0.5, y: (r + 0.5) * CELL + dy * 0.5 };
   }
-  const entryPoint = playerIndex === 0 ? 0 : 26;
+  const entryPoint = playerIndex === 0 ? 0 : 13;
   const absPos = (entryPoint + progress) % 52;
   const [r, c] = TRACK_CELLS[absPos];
   const [dx, dy] = PIECE_OFFSETS[pieceSubIdx % 4];
@@ -223,7 +230,7 @@ export default function LudoBoard({
       {TRACK_CELLS.map(([row, col], i) => {
         const isSafe = SAFE_SET.has(i);
         const isRedEntry = i === 0;
-        const isBlueEntry = i === 26;
+        const isBlueEntry = i === 13;
         let fill = "#f5efe0";
         if (isRedEntry) fill = "#fca5a5";
         else if (isBlueEntry) fill = "#93c5fd";
@@ -255,7 +262,7 @@ export default function LudoBoard({
         );
       })}
 
-      {/* ── Red home column (row 7, cols 1-6) ─────────────── */}
+      {/* ── Red home column — left horizontal (row 7, cols 1→6) ─────── */}
       {RED_HOME_COL.map(([row, col], i) => (
         <rect key={`rhc-${i}`}
           x={col * CELL + 0.5} y={row * CELL + 0.5}
@@ -265,12 +272,32 @@ export default function LudoBoard({
         />
       ))}
 
-      {/* ── Blue home column (row 7, cols 13-8) ───────────── */}
+      {/* ── Blue home column — top vertical (col 7, rows 1→6) ────────── */}
       {BLUE_HOME_COL.map(([row, col], i) => (
         <rect key={`bhc-${i}`}
           x={col * CELL + 0.5} y={row * CELL + 0.5}
           width={CELL - 1} height={CELL - 1}
           fill={i === 5 ? "#1d4ed8" : i >= 3 ? "#93c5fd" : "#bfdbfe"}
+          stroke="#b8a898" strokeWidth={0.8} rx={1}
+        />
+      ))}
+
+      {/* ── Green home column — bottom vertical (col 7, rows 13→8) ───── */}
+      {GREEN_HOME_COL.map(([row, col], i) => (
+        <rect key={`ghc-${i}`}
+          x={col * CELL + 0.5} y={row * CELL + 0.5}
+          width={CELL - 1} height={CELL - 1}
+          fill={i === 5 ? "#15803d" : i >= 3 ? "#86efac" : "#bbf7d0"}
+          stroke="#b8a898" strokeWidth={0.8} rx={1}
+        />
+      ))}
+
+      {/* ── Yellow home column — right horizontal (row 7, cols 13→8) ─── */}
+      {YELLOW_HOME_COL.map(([row, col], i) => (
+        <rect key={`yhc-${i}`}
+          x={col * CELL + 0.5} y={row * CELL + 0.5}
+          width={CELL - 1} height={CELL - 1}
+          fill={i === 5 ? "#b45309" : i >= 3 ? "#fcd34d" : "#fef08a"}
           stroke="#b8a898" strokeWidth={0.8} rx={1}
         />
       ))}
@@ -284,13 +311,15 @@ export default function LudoBoard({
         />
       ))}
 
-      {/* ── Center: 4-triangle design ─────────────────────── */}
+      {/* ── Centre: 4-triangle design (colour matches each side's home corridor) ── */}
+      {/* Left  → Red corridor;  Top  → Blue corridor                              */}
+      {/* Right → Yellow corridor; Bottom → Green corridor                          */}
       <rect x={6*CELL} y={6*CELL} width={3*CELL} height={3*CELL} fill="#f5efe0" stroke="#b8a898" strokeWidth={0.5} />
-      <polygon points={`${6*CELL},${6*CELL} ${9*CELL},${6*CELL} ${7.5*CELL},${7.5*CELL}`} fill="#fca5a5" opacity="0.9" />
-      <polygon points={`${9*CELL},${9*CELL} ${6*CELL},${9*CELL} ${7.5*CELL},${7.5*CELL}`} fill="#93c5fd" opacity="0.9" />
-      <polygon points={`${6*CELL},${9*CELL} ${6*CELL},${6*CELL} ${7.5*CELL},${7.5*CELL}`} fill="#bbf7d0" opacity="0.9" />
+      <polygon points={`${6*CELL},${6*CELL} ${9*CELL},${6*CELL} ${7.5*CELL},${7.5*CELL}`} fill="#93c5fd" opacity="0.9" />
+      <polygon points={`${9*CELL},${9*CELL} ${6*CELL},${9*CELL} ${7.5*CELL},${7.5*CELL}`} fill="#bbf7d0" opacity="0.9" />
+      <polygon points={`${6*CELL},${9*CELL} ${6*CELL},${6*CELL} ${7.5*CELL},${7.5*CELL}`} fill="#fca5a5" opacity="0.9" />
       <polygon points={`${9*CELL},${6*CELL} ${9*CELL},${9*CELL} ${7.5*CELL},${7.5*CELL}`} fill="#fde68a" opacity="0.9" />
-      {/* Center circle */}
+      {/* Centre circle */}
       <circle cx={7.5*CELL} cy={7.5*CELL} r={CELL*0.46} fill="white" stroke="#b8a898" strokeWidth={1.2} />
       <circle cx={7.5*CELL} cy={7.5*CELL} r={CELL*0.3} fill="#f1f5f9" stroke="#94a3b8" strokeWidth={0.8} />
 
