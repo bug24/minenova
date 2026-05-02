@@ -220,15 +220,14 @@ export default function Boost() {
       setAdQueue(ads);
       setAdIndex(0);
     } catch {
-      const fallbackAds = Array.from({ length: tier.adCount }, (_, i) => createFallbackAd(tier, i));
-      if (fallbackAds.length > 0) {
-        setAdQueue(fallbackAds);
-        setAdIndex(0);
-      } else {
-        // Nothing to show — reset so the button isn't stuck disabled.
-        setActivatingTier(null);
-        setPendingTier(null);
-      }
+      // Catastrophic failure — reset state unconditionally so the button
+      // is never permanently stuck in "Setting up…". The inner try-catch
+      // already handles individual fetch errors with createFallbackAd, so
+      // this outer catch only fires if something truly unexpected occurs.
+      setActivatingTier(null);
+      setPendingTier(null);
+      setAdQueue([]);
+      setAdIndex(0);
     }
   };
 

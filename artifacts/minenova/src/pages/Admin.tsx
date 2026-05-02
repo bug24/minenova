@@ -2594,7 +2594,7 @@ function AdsTab({ secret }: { secret: string }) {
       {/* Info banner */}
       <div className="bg-primary/10 border border-primary/20 rounded-xl p-3 text-xs text-primary flex items-start gap-2">
         <MonitorPlay className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-        <span>Ads are shown to users before a boost is applied. Assign each ad to a specific boost tier (2x, 3x, or 5x). If no active ads exist for a tier, the boost activates immediately.</span>
+        <span>Ads are shown to users in a countdown modal before a boost is applied. Assign each ad to a specific boost tier using the Placement dropdown. If no active ad is found for a tier, a built-in MineNova promo is shown as a fallback so boosts always require the countdown.</span>
       </div>
 
       {/* Create / Edit form */}
