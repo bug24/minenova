@@ -49,23 +49,38 @@ let _systemUserId: number | null = null;
 async function getSystemUserId(): Promise<number> {
   if (_systemUserId !== null) return _systemUserId;
 
-  await db
-    .insert(usersTable)
-    .values({
-      username: "__system__",
-      email: "__system__@minenova.internal",
-      passwordHash: "__no_login__",
-      referralCode: "__SYSTEM__",
-    })
-    .onConflictDoNothing();
+  // Attempt insert; ignore conflicts (row may already exist from a previous boot).
+  // We catch ALL errors here, not just unique violations — a non-username conflict
+  // (e.g. duplicate referral_code) would otherwise bypass onConflictDoNothing and
+  // leave us with no system row to select below.
+  try {
+    await db
+      .insert(usersTable)
+      .values({
+        username: "__system__",
+        email: "__system__@minenova.internal",
+        passwordHash: "__no_login__",
+        referralCode: "__SYSTEM__",
+      })
+      .onConflictDoNothing();
+  } catch {
+    // Swallow — the select below will either find the row or throw explicitly.
+  }
 
-  const [row] = await db
+  const rows = await db
     .select({ id: usersTable.id })
     .from(usersTable)
     .where(eq(usersTable.username, "__system__"))
     .limit(1);
 
-  _systemUserId = row.id;
+  if (rows.length === 0) {
+    throw new Error(
+      "System accounting user (__system__) could not be created or found. " +
+        "Check for a conflicting referral code in the users table.",
+    );
+  }
+
+  _systemUserId = rows[0].id;
   return _systemUserId;
 }
 
@@ -73,6 +88,19 @@ async function getSystemUserId(): Promise<number> {
 // Helpers
 // ---------------------------------------------------------------------------
 function parseBoard(raw: unknown): GameState {
+  if (!raw || typeof raw !== "object") {
+    throw Object.assign(new Error("Corrupted game state: not an object"), { status: 500 });
+  }
+  const s = raw as Record<string, unknown>;
+  if (
+    typeof s.currentTurn !== "number" ||
+    typeof s.diceRolled !== "boolean" ||
+    typeof s.status !== "string" ||
+    !Array.isArray(s.players) ||
+    s.players.length !== 2
+  ) {
+    throw Object.assign(new Error("Corrupted game state: missing required fields"), { status: 500 });
+  }
   return raw as GameState;
 }
 

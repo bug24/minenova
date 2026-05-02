@@ -1,13 +1,14 @@
 import { pgTable, text, serial, timestamp, integer, real, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { usersTable } from "./users";
 
 export const ludoChallengesTable = pgTable("ludo_challenges", {
   id: serial("id").primaryKey(),
-  creatorId: integer("creator_id").notNull(),
+  creatorId: integer("creator_id").notNull().references(() => usersTable.id),
   entryFee: real("entry_fee").notNull(),
   status: text("status").notNull().default("open"),
-  opponentId: integer("opponent_id"),
+  opponentId: integer("opponent_id").references(() => usersTable.id),
   gameId: integer("game_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
@@ -15,12 +16,12 @@ export const ludoChallengesTable = pgTable("ludo_challenges", {
 
 export const ludoGamesTable = pgTable("ludo_games", {
   id: serial("id").primaryKey(),
-  challengeId: integer("challenge_id").notNull(),
-  redPlayerId: integer("red_player_id").notNull(),
-  bluePlayerId: integer("blue_player_id").notNull(),
+  challengeId: integer("challenge_id").notNull().references(() => ludoChallengesTable.id),
+  redPlayerId: integer("red_player_id").notNull().references(() => usersTable.id),
+  bluePlayerId: integer("blue_player_id").notNull().references(() => usersTable.id),
   boardState: jsonb("board_state").notNull(),
   status: text("status").notNull().default("active"),
-  winnerId: integer("winner_id"),
+  winnerId: integer("winner_id").references(() => usersTable.id),
   entryFee: real("entry_fee").notNull(),
   lastMoveAt: timestamp("last_move_at", { withTimezone: true }),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
@@ -29,8 +30,8 @@ export const ludoGamesTable = pgTable("ludo_games", {
 
 export const ludoMovesTable = pgTable("ludo_moves", {
   id: serial("id").primaryKey(),
-  gameId: integer("game_id").notNull(),
-  playerId: integer("player_id").notNull(),
+  gameId: integer("game_id").notNull().references(() => ludoGamesTable.id),
+  playerId: integer("player_id").notNull().references(() => usersTable.id),
   diceValue: integer("dice_value").notNull(),
   pieceIndex: integer("piece_index"),
   fromProgress: integer("from_progress"),
