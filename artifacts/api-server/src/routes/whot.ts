@@ -836,8 +836,14 @@ router.post("/whot/games/:id/draw", requireAuth, async (req: Request, res: Respo
 router.post("/whot/games/:id/call-suit", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const gameId = Number(req.params.id);
+    const VALID_SUITS = ["Circle", "Triangle", "Cross", "Square", "Star"] as const;
+    type ValidSuit = typeof VALID_SUITS[number];
     const { suit } = req.body as { suit?: unknown };
-    if (!suit || typeof suit !== "string") { res.status(400).json({ error: "suit required" }); return; }
+    if (!suit || typeof suit !== "string" || !(VALID_SUITS as readonly string[]).includes(suit)) {
+      res.status(400).json({ error: "suit must be one of: Circle, Triangle, Cross, Square, Star" });
+      return;
+    }
+    const validatedSuit = suit as ValidSuit;
 
     let newState: GameState | null = null;
     let p0Id = 0, p1Id = 0;
@@ -859,12 +865,12 @@ router.post("/whot/games/:id/call-suit", requireAuth, async (req: Request, res: 
       const top = state.discardPile[state.discardPile.length - 1];
       if (top.suit !== "WHOT" || state.calledSuit) throw Object.assign(new Error("No suit call needed"), { status: 409 });
 
-      newState = { ...state, calledSuit: suit as Suit };
+      newState = { ...state, calledSuit: validatedSuit as Suit };
       await tx.update(whotGamesTable).set({ gameState: newState as unknown as Record<string, unknown> }).where(eq(whotGamesTable.id, gameId));
     });
 
-    emitGameUpdate(gameId, "suit_called", newState!, p0Id, p1Id, { suit });
-    res.json({ state: newState });
+    emitGameUpdate(gameId, "suit_called", newState!, p0Id, p1Id, { suit: validatedSuit });
+    res.json({ state: sanitiseState(newState!, req.userId!, p0Id) });
   } catch (err) {
     handleRouteError(err, res);
   }

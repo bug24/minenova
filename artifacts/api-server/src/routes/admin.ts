@@ -1210,6 +1210,8 @@ router.get("/admin/settings", requireAdmin, async (_req, res): Promise<void> => 
     "referral_disabled", "mining_disabled",
     "ludo_platform_fee_pct", "ludo_win_pct", "ludo_min_fee", "ludo_max_fee",
     "ludo_solo_fee", "ludo_solo_enabled", "ludo_timeout_minutes",
+    "whot_platform_fee_pct", "whot_win_pct", "whot_min_fee", "whot_max_fee",
+    "whot_solo_fee", "whot_solo_enabled", "whot_timeout_minutes",
   ];
   const rows = await db.select().from(adminConfigTable).where(sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`);
   const settings: Record<string, string> = {};
@@ -1239,6 +1241,13 @@ router.put("/admin/settings", requireAdmin, async (req, res): Promise<void> => {
     ludo_solo_fee: strictNum(1).optional(),
     ludo_solo_enabled: boolStr.optional(),
     ludo_timeout_minutes: strictPosInt.optional(),
+    whot_platform_fee_pct: strictNum(0, 99).optional(),
+    whot_win_pct: strictNum(1, 100).optional(),
+    whot_min_fee: strictNum(1).optional(),
+    whot_max_fee: strictNum(1).optional(),
+    whot_solo_fee: strictNum(1).optional(),
+    whot_solo_enabled: boolStr.optional(),
+    whot_timeout_minutes: strictPosInt.optional(),
   });
   const data = schema.safeParse(req.body);
   if (!data.success) {
