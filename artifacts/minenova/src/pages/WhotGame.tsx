@@ -342,7 +342,7 @@ export default function WhotGame() {
       es?.close();
       if (retryTimeout) clearTimeout(retryTimeout);
     };
-  }, [gameId, queryClient]);
+  }, [gameId, myUserId, queryClient]);
 
   const handleCardClick = (idx: number) => {
     if (!isMyTurn || !gameState) return;
@@ -498,7 +498,7 @@ export default function WhotGame() {
       </div>
 
       {/* Opponent section */}
-      <div className={`rounded-xl border p-3 transition-all ${!isMyTurn ? "border-amber-400/40 bg-amber-400/5" : "border-card-border bg-card"}`}>
+      <div className={`rounded-xl border p-3 transition-all ${!isMyTurn ? "border-amber-400/40 bg-amber-400/5" : "border-card-border bg-card"} ${voiceChat.isRemoteSpeaking ? "ring-2 ring-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.3)]" : ""}`}>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <div

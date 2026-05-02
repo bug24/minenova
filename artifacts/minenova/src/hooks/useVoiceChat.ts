@@ -2,7 +2,6 @@ import { useState, useRef, useCallback, useEffect } from "react";
 
 export type VoiceChatStatus =
   | "idle"
-  | "incoming"
   | "requesting"
   | "connecting"
   | "connected"
@@ -40,7 +39,6 @@ export function useVoiceChat({ isInitiator, sendSignal, enabled }: UseVoiceChatO
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number | null>(null);
-  const pendingOfferRef = useRef<RTCSessionDescriptionInit | null>(null);
   const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
   const remoteDescSetRef = useRef(false);
   const startedRef = useRef(false);
@@ -48,7 +46,6 @@ export function useVoiceChat({ isInitiator, sendSignal, enabled }: UseVoiceChatO
   const cleanup = useCallback(() => {
     startedRef.current = false;
     remoteDescSetRef.current = false;
-    pendingOfferRef.current = null;
     pendingIceRef.current = [];
 
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
@@ -75,9 +72,7 @@ export function useVoiceChat({ isInitiator, sendSignal, enabled }: UseVoiceChatO
   useEffect(() => () => { cleanup(); }, [cleanup]);
 
   useEffect(() => {
-    if (!enabled && startedRef.current) {
-      cleanup();
-    }
+    if (!enabled && startedRef.current) cleanup();
   }, [enabled, cleanup]);
 
   const trackRemoteLevel = useCallback((stream: MediaStream) => {
@@ -136,7 +131,7 @@ export function useVoiceChat({ isInitiator, sendSignal, enabled }: UseVoiceChatO
     };
 
     return pc;
-  }, [sendSignal, trackRemoteLevel]);
+  }, [sendSignal, trackRemoteLevel, cleanup]);
 
   const acquireMic = useCallback(async (): Promise<MediaStream | null> => {
     if (!navigator.mediaDevices?.getUserMedia) { setStatus("unsupported"); return null; }
@@ -168,32 +163,44 @@ export function useVoiceChat({ isInitiator, sendSignal, enabled }: UseVoiceChatO
         await pc.setLocalDescription(offer);
         await sendSignal("offer", offer);
       } catch { setStatus("error"); }
-    } else if (pendingOfferRef.current) {
-      try {
-        await pc.setRemoteDescription(new RTCSessionDescription(pendingOfferRef.current));
-        remoteDescSetRef.current = true;
-        await drainIce(pc);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await sendSignal("answer", answer);
-        pendingOfferRef.current = null;
-      } catch { setStatus("error"); }
     }
-  }, [enabled, isInitiator, acquireMic, buildPC, sendSignal, drainIce]);
+    // Non-initiator: connected state arrived from auto-answer in handleRemoteSignal
+  }, [enabled, isInitiator, acquireMic, buildPC, sendSignal]);
 
   const handleRemoteSignal = useCallback(async (signalType: string, payload: unknown) => {
     if (!enabled) return;
 
     if (signalType === "offer") {
+      const offer = payload as RTCSessionDescriptionInit;
+
       if (!startedRef.current) {
-        pendingOfferRef.current = payload as RTCSessionDescriptionInit;
-        setStatus("incoming");
+        // Auto-answer: acquire mic and respond without requiring a manual button tap
+        startedRef.current = true;
+        const stream = await acquireMic();
+        if (!stream) { startedRef.current = false; return; }
+        localStreamRef.current = stream;
+
+        const pc = buildPC();
+        pcRef.current = pc;
+        stream.getTracks().forEach(t => pc.addTrack(t, stream));
+        setStatus("connecting");
+
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(offer));
+          remoteDescSetRef.current = true;
+          await drainIce(pc);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          await sendSignal("answer", answer);
+        } catch { setStatus("error"); }
         return;
       }
+
+      // Already started (non-initiator tapped first, then offer arrived)
       const pc = pcRef.current;
       if (!pc) return;
       try {
-        await pc.setRemoteDescription(new RTCSessionDescription(payload as RTCSessionDescriptionInit));
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
         remoteDescSetRef.current = true;
         await drainIce(pc);
         const answer = await pc.createAnswer();
@@ -218,7 +225,7 @@ export function useVoiceChat({ isInitiator, sendSignal, enabled }: UseVoiceChatO
       }
       try { await pc.addIceCandidate(new RTCIceCandidate(payload as RTCIceCandidateInit)); } catch { /* non-fatal */ }
     }
-  }, [enabled, sendSignal, drainIce]);
+  }, [enabled, acquireMic, buildPC, sendSignal, drainIce]);
 
   const stop = useCallback(() => { cleanup(); }, [cleanup]);
 

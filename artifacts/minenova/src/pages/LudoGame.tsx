@@ -137,16 +137,18 @@ interface PlayerPanelProps {
   isMe: boolean;
   piecesHome: number;
   isBot?: boolean;
+  isSpeaking?: boolean;
 }
 
-function PlayerPanel({ label, username, color, isMyTurn, isMe, piecesHome, isBot }: PlayerPanelProps) {
+function PlayerPanel({ label, username, color, isMyTurn, isMe, piecesHome, isBot, isSpeaking }: PlayerPanelProps) {
   const bg   = color === "red" ? "bg-red-500/10 border-red-500/30"   : "bg-blue-500/10 border-blue-500/30";
   const dot  = color === "red" ? "bg-red-500"   : "bg-blue-500";
   const text = color === "red" ? "text-red-500"  : "text-blue-500";
+  const speakRing = isSpeaking && !isMe ? "ring-2 ring-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.35)]" : "";
 
   return (
     <div
-      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all duration-300 ${bg} ${isMyTurn ? "ring-2 ring-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.3)]" : ""}`}
+      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all duration-300 ${bg} ${isMyTurn ? "ring-2 ring-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.3)]" : ""} ${speakRing}`}
     >
       <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white ${dot} shadow-sm`}>
         {isBot ? <Bot className="w-4 h-4" /> : username[0]?.toUpperCase()}
@@ -370,7 +372,7 @@ export default function LudoGame() {
       es?.close();
       if (retryTimeout) clearTimeout(retryTimeout);
     };
-  }, [gameId, myPlayerIndex, queryClient]);
+  }, [gameId, myPlayerIndex, myUserId, queryClient]);
 
   const handleRoll = useCallback(async () => {
     if (rolling || !isMyTurn || diceRolled) return;
@@ -495,6 +497,7 @@ export default function LudoGame() {
         isMe={false}
         piecesHome={oppPiecesHome}
         isBot={isBotOpponent}
+        isSpeaking={voiceChat.isRemoteSpeaking}
       />
 
       {/* Board */}

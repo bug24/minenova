@@ -31,7 +31,6 @@ export default function VoiceChatButton({
   const btnColor =
     status === "connected" && !isMuted ? "bg-emerald-500 text-white shadow-emerald-500/40" :
     status === "connected" && isMuted   ? "bg-red-500 text-white shadow-red-500/40" :
-    status === "incoming"               ? "bg-amber-500 text-white shadow-amber-500/40 animate-pulse" :
     isBusy                              ? "bg-primary/20 text-primary shadow-primary/20" :
     status === "denied" || status === "error"
                                         ? "bg-destructive/20 text-destructive shadow-none" :
@@ -39,7 +38,6 @@ export default function VoiceChatButton({
 
   const label =
     status === "idle"       ? "Voice" :
-    status === "incoming"   ? "Answer" :
     status === "requesting" ? "Allow mic" :
     status === "connecting" ? "Connecting" :
     status === "connected"  ? (isMuted ? "Muted" : "Live") :
