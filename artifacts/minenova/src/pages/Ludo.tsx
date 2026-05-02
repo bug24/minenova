@@ -94,8 +94,8 @@ export default function Ludo() {
 
   const handleCreate = async () => {
     const fee = Number(entryFee);
-    const minFee = ludoSettings?.minFee ?? 1;
-    const maxFee = ludoSettings?.maxFee ?? 10000;
+    const minFee = ludoSettings?.pvpMinFee ?? ludoSettings?.minFee ?? 1;
+    const maxFee = ludoSettings?.pvpMaxFee ?? ludoSettings?.maxFee ?? 10000;
     if (!fee || fee < minFee) { toast({ variant: "destructive", title: `Min entry fee is ${minFee} coins` }); return; }
     if (fee > maxFee) { toast({ variant: "destructive", title: `Max entry fee is ${maxFee} coins` }); return; }
     if ((wallet?.withdrawableBalance ?? 0) < fee) { toast({ variant: "destructive", title: "Insufficient coin balance" }); return; }

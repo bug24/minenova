@@ -318,6 +318,11 @@ router.post("/ludo/challenges/:id/accept", requireAuth, async (req: Request, res
     if (challenge.status !== "open") { res.status(409).json({ error: "Challenge is no longer open" }); return; }
     if (challenge.creatorId === req.userId) { res.status(400).json({ error: "Cannot accept your own challenge" }); return; }
 
+    const settings = await getLudoSettings();
+    if (!settings.pvpEnabled) {
+      res.status(403).json({ error: "PvP challenges are currently disabled" }); return;
+    }
+
     let gameId = 0;
 
     await db.transaction(async tx => {

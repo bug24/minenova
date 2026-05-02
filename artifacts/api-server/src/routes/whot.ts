@@ -508,6 +508,9 @@ router.post("/whot/challenges/:id/accept", requireAuth, async (req: Request, res
       if (ch.status !== "open") throw Object.assign(new Error("Challenge no longer available"), { status: 409 });
       if (ch.creatorId === req.userId) throw Object.assign(new Error("Cannot accept your own challenge"), { status: 400 });
 
+      const settings = await getWhotSettings();
+      if (!settings.pvpEnabled) throw Object.assign(new Error("PvP challenges are currently disabled"), { status: 403 });
+
       const fee = ch.entryFee;
 
       const claimed = await tx
