@@ -191,8 +191,9 @@ export default function LudoGame() {
   const isMyTurn    = boardState?.currentTurn === myPlayerIndex;
   const diceRolled  = boardState?.diceRolled ?? false;
   const diceValue   = boardState?.diceValue ?? null;
-  const diceValues  = boardState?.diceValues ?? null;
-  const movesLeft   = boardState?.movesLeft ?? 0;
+  const diceValues       = boardState?.diceValues ?? null;
+  const movesLeft        = boardState?.movesLeft ?? 0;
+  const activeDieIndex   = boardState?.activeDieIndex ?? null;
 
   const [opponentUsername, setOpponentUsername] = useState<string>("Opponent");
   const isBotOpponent = opponentUsername === SYSTEM_USERNAME || opponentUsername === "__system__";
@@ -270,6 +271,7 @@ export default function LudoGame() {
             type: string;
             state?: GameState;
             captured?: boolean;
+            captureWin?: boolean;
             won?: boolean;
             diceValue?: number;
             pieceIndex?: number;
@@ -504,6 +506,7 @@ export default function LudoGame() {
             diceValue={diceValue}
             diceValues={diceValues}
             movesLeft={movesLeft}
+            activeDieIndex={activeDieIndex}
             canRoll={canRoll}
             onDiceRoll={handleRoll}
             playerNames={playerNames}

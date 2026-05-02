@@ -553,7 +553,7 @@ router.post("/ludo/games/:id/move", requireAuth, async (req: Request, res: Respo
       res.status(400).json({ error: "pieceIndex must be 0-3" }); return;
     }
 
-    let moveResult: { newState: GameState; captured: boolean; won: boolean } | null = null;
+    let moveResult: { newState: GameState; captured: boolean; captureWin: boolean; won: boolean } | null = null;
     let botTriggered = false;
 
     await db.transaction(async tx => {
@@ -583,7 +583,7 @@ router.post("/ludo/games/:id/move", requireAuth, async (req: Request, res: Respo
         throw Object.assign(new Error("Invalid move for this piece"), { status: 400 });
       }
 
-      const { newState, captured, won, fromProgress, toProgress } = applyMove(
+      const { newState, captured, captureWin, won, fromProgress, toProgress } = applyMove(
         state, myIndex, idx, state.diceValue,
       );
 
@@ -614,14 +614,14 @@ router.post("/ludo/games/:id/move", requireAuth, async (req: Request, res: Respo
         await payoutWinner(tx, systemUserId, newState.winnerId, game.entryFee, platformFeePct / 100);
       }
 
-      moveResult = { newState, captured, won };
+      moveResult = { newState, captured, captureWin, won };
       botTriggered = !won && _systemUserId !== null && game.bluePlayerId === _systemUserId && newState.currentTurn === 1;
     });
 
     const r = moveResult!;
-    emitGameUpdate(gameId, { type: "moved", pieceIndex: idx, captured: r.captured, won: r.won, state: r.newState });
+    emitGameUpdate(gameId, { type: "moved", pieceIndex: idx, captured: r.captured, captureWin: r.captureWin, won: r.won, state: r.newState });
     if (botTriggered) triggerBotMove(gameId);
-    res.json({ captured: r.captured, won: r.won, state: r.newState });
+    res.json({ captured: r.captured, captureWin: r.captureWin, won: r.won, state: r.newState });
   } catch (err) {
     handleRouteError(err, res);
   }
@@ -855,7 +855,7 @@ async function scheduleBotMove(gameId: number): Promise<void> {
       // Wait before each move
       await new Promise<void>(r => setTimeout(r, 800));
 
-      let moveResult: { newState: GameState; captured: boolean; won: boolean; pieceIdx: number } | null = null;
+      let moveResult: { newState: GameState; captured: boolean; captureWin: boolean; won: boolean; pieceIdx: number } | null = null;
 
       await db.transaction(async tx => {
         const [game] = await tx.select().from(ludoGamesTable)
@@ -877,7 +877,7 @@ async function scheduleBotMove(gameId: number): Promise<void> {
           return pb - pa;
         });
         const pieceIdx = sortedMoves[0];
-        const { newState, captured, won, fromProgress, toProgress } = applyMove(
+        const { newState, captured, captureWin, won, fromProgress, toProgress } = applyMove(
           state, botIndex, pieceIdx, state.diceValue,
         );
 
@@ -910,12 +910,12 @@ async function scheduleBotMove(gameId: number): Promise<void> {
           await payoutWinner(tx, botUserId, newState.winnerId, game.entryFee, platformFeePct / 100);
         }
 
-        moveResult = { newState, captured, won, pieceIdx };
+        moveResult = { newState, captured, captureWin, won, pieceIdx };
       });
 
       if (!moveResult) break;
-      const { newState, captured, won, pieceIdx } = moveResult!;
-      emitGameUpdate(gameId, { type: "moved", pieceIndex: pieceIdx, captured, won, state: newState });
+      const { newState, captured, captureWin, won, pieceIdx } = moveResult!;
+      emitGameUpdate(gameId, { type: "moved", pieceIndex: pieceIdx, captured, captureWin, won, state: newState });
       currentState = newState;
 
       if (won) break;

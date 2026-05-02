@@ -20,9 +20,11 @@ export interface PlayerState {
 export interface GameState {
   players: [PlayerState, PlayerState];
   currentTurn: 0 | 1;
-  diceValue: number | null;              // active die value for the current move
-  diceValues: [number, number] | null;   // both rolled dice
-  movesLeft: number;                     // moves remaining this turn (0, 1, or 2)
+  diceValue: number | null;              // active die value (= diceQueue[0])
+  diceValues: [number, number] | null;   // both rolled dice (for display)
+  diceQueue: number[];                   // ordered die values remaining (includes 6-bonuses)
+  movesLeft: number;                     // = diceQueue.length (UI convenience)
+  activeDieIndex: 0 | 1 | null;          // which visual die is highlighted (0, 1, or null for bonus)
   diceRolled: boolean;
   status: string;
   winnerId: number | null;

@@ -69,6 +69,7 @@ interface LudoBoardProps {
   diceValue: number | null;
   diceValues: [number, number] | null;
   movesLeft: number;
+  activeDieIndex: 0 | 1 | null;
   canRoll: boolean;
   onDiceRoll: () => void;
   playerNames: [string, string];
@@ -90,6 +91,7 @@ export default function LudoBoard({
   diceValue,
   diceValues,
   movesLeft,
+  activeDieIndex,
   canRoll,
   onDiceRoll,
   playerNames,
@@ -526,45 +528,49 @@ export default function LudoBoard({
         }}
       >
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {/* Die 1 — active when movesLeft === 2 (or dice not yet used) */}
-          <div style={{
-            borderRadius: 8,
-            outline: diceValues !== null && !rolling && movesLeft === 2
-              ? "2.5px solid #fbbf24"
-              : "none",
-            boxShadow: diceValues !== null && !rolling && movesLeft === 2
-              ? "0 0 8px rgba(251,191,36,0.7)"
-              : "none",
-            transition: "all 0.2s ease",
-            opacity: diceValues !== null && !rolling && movesLeft === 1 ? 0.45 : 1,
-          }}>
-            <DiceFace
-              value={diceValues ? diceValues[0] : (diceValue ?? null)}
-              rolling={rolling}
-              size={44}
-              onRoll={onDiceRoll}
-              canRoll={canRoll}
-            />
-          </div>
+          {/* Die 1 — highlighted when it's the active die (activeDieIndex === 0) */}
+          {(() => {
+            const die1Active = diceValues !== null && !rolling && activeDieIndex === 0;
+            const die1Dimmed = diceValues !== null && !rolling && activeDieIndex === 1;
+            return (
+              <div style={{
+                borderRadius: 8,
+                outline: die1Active ? "2.5px solid #fbbf24" : "none",
+                boxShadow: die1Active ? "0 0 8px rgba(251,191,36,0.7)" : "none",
+                transition: "all 0.2s ease",
+                opacity: die1Dimmed ? 0.4 : 1,
+              }}>
+                <DiceFace
+                  value={diceValues ? diceValues[0] : (diceValue ?? null)}
+                  rolling={rolling}
+                  size={44}
+                  onRoll={onDiceRoll}
+                  canRoll={canRoll}
+                />
+              </div>
+            );
+          })()}
 
-          {/* Die 2 — active when movesLeft === 1 */}
-          <div style={{
-            borderRadius: 8,
-            outline: diceValues !== null && !rolling && movesLeft === 1
-              ? "2.5px solid #fbbf24"
-              : "none",
-            boxShadow: diceValues !== null && !rolling && movesLeft === 1
-              ? "0 0 8px rgba(251,191,36,0.7)"
-              : "none",
-            transition: "all 0.2s ease",
-            opacity: diceValues !== null && !rolling && movesLeft === 2 ? 0.45 : 1,
-          }}>
-            <DiceFace
-              value={diceValues ? diceValues[1] : null}
-              rolling={rolling}
-              size={44}
-            />
-          </div>
+          {/* Die 2 — highlighted when it's the active die (activeDieIndex === 1) */}
+          {(() => {
+            const die2Active = diceValues !== null && !rolling && activeDieIndex === 1;
+            const die2Dimmed = diceValues !== null && !rolling && activeDieIndex === 0;
+            return (
+              <div style={{
+                borderRadius: 8,
+                outline: die2Active ? "2.5px solid #fbbf24" : "none",
+                boxShadow: die2Active ? "0 0 8px rgba(251,191,36,0.7)" : "none",
+                transition: "all 0.2s ease",
+                opacity: die2Dimmed ? 0.4 : 1,
+              }}>
+                <DiceFace
+                  value={diceValues ? diceValues[1] : null}
+                  rolling={rolling}
+                  size={44}
+                />
+              </div>
+            );
+          })()}
         </div>
 
         {canRoll && !rolling && (
