@@ -12,7 +12,15 @@ async function injectBodyScripts() {
     if (!scripts.trim()) return;
 
     const container = document.createElement("div");
-    container.innerHTML = String(DOMPurify.sanitize(scripts, { FORCE_BODY: true, ADD_TAGS: ["script"] }));
+    container.innerHTML = String(DOMPurify.sanitize(scripts, {
+      FORCE_BODY: true,
+      ADD_TAGS: ["script", "iframe"] as string[],
+      ADD_ATTR: [
+        "type", "src", "async", "defer", "id", "nonce", "crossorigin", "integrity", "charset",
+        "width", "height", "frameborder", "scrolling", "allowtransparency", "allow",
+        "sandbox", "loading", "name", "title", "data-aa", "style",
+      ] as string[],
+    }));
 
     const scriptEls = Array.from(container.querySelectorAll("script"));
     for (const oldScript of scriptEls) {

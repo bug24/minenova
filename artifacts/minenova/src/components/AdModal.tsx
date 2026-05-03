@@ -4,8 +4,12 @@ import { ExternalLink, MonitorPlay } from "lucide-react";
 
 const AD_PURIFY_CONFIG = {
   FORCE_BODY: true as const,
-  ADD_TAGS: ["script"] as string[],
-  ADD_ATTR: ["type", "src", "async", "defer", "id", "nonce", "crossorigin", "integrity", "charset"] as string[],
+  ADD_TAGS: ["script", "iframe"] as string[],
+  ADD_ATTR: [
+    "type", "src", "async", "defer", "id", "nonce", "crossorigin", "integrity", "charset",
+    "width", "height", "frameborder", "scrolling", "allowtransparency", "allow",
+    "sandbox", "loading", "name", "title", "data-aa", "style",
+  ] as string[],
 };
 
 export interface AdData {
