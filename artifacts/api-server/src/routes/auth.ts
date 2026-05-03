@@ -14,7 +14,7 @@ function generateVerificationToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-function getAppOrigin(req: any): string {
+function getAppOrigin(): string {
   const replitDomains = process.env.REPLIT_DOMAINS;
   if (replitDomains) {
     const primary = replitDomains.split(",")[0]?.trim();
@@ -22,14 +22,11 @@ function getAppOrigin(req: any): string {
   }
   const appUrl = process.env.APP_URL;
   if (appUrl) return appUrl.replace(/\/$/, "");
-  const basePath = (req.headers["x-replit-base-path"] as string | undefined) ?? "";
-  const proto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0]?.trim() || req.protocol || "https";
-  const host = (req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0]?.trim() || (req.headers.host as string) || "localhost";
-  return `${proto}://${host}${basePath}`;
+  throw new Error("APP_URL or REPLIT_DOMAINS must be set to build auth links");
 }
 
-function buildVerificationUrl(req: any, token: string): string {
-  return `${getAppOrigin(req)}/api/auth/verify-email?token=${token}`;
+function buildVerificationUrl(_req: any, token: string): string {
+  return `${getAppOrigin()}/api/auth/verify-email?token=${token}`;
 }
 
 router.post("/auth/register", async (req, res): Promise<void> => {
@@ -323,7 +320,7 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
 
     await db.insert(passwordResetTokensTable).values({ userId: user.id, tokenHash, expiresAt });
 
-    const resetUrl = `${getAppOrigin(req)}/reset-password?token=${token}`;
+    const resetUrl = `${getAppOrigin()}/reset-password?token=${token}`;
 
     try {
       await sendPasswordResetEmail(user.email, user.username, resetUrl);

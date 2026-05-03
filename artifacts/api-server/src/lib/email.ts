@@ -424,7 +424,7 @@ export async function sendAdminMessageEmail(
   body: string,
 ): Promise<void> {
   const t = await createTransport();
-  if (!t) return;
+  if (!t) throw new Error("SMTP is not configured. Set SMTP settings in Admin → Settings before sending emails.");
 
   const paragraphs = body
     .split(/\n+/)

@@ -921,10 +921,24 @@ router.put("/admin/mining-config", requireAdmin, async (req, res): Promise<void>
 });
 
 router.put("/admin/users/:id/mining-rate", requireAdmin, async (req, res): Promise<void> => {
-  const userId = parseInt(req.params.id as string);
-  const schema = z.object({ rate: z.number().positive().nullable() });
+  const schema = z.object({
+    rate: z.number().positive().nullable(),
+    username: z.string().min(1).optional(),
+  });
   const data = schema.safeParse(req.body);
   if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
+
+  let userId: number;
+  if (data.data.username) {
+    const [user] = await db.select({ id: usersTable.id }).from(usersTable)
+      .where(eq(usersTable.username, data.data.username)).limit(1);
+    if (!user) { res.status(404).json({ error: `User "${data.data.username}" not found` }); return; }
+    userId = user.id;
+  } else {
+    userId = parseInt(req.params.id as string);
+    if (isNaN(userId) || userId <= 0) { res.status(400).json({ error: "Valid user ID or username required" }); return; }
+  }
+
   if (data.data.rate === null) {
     await db.delete(adminConfigTable).where(eq(adminConfigTable.key, `user_rate_override_${userId}`));
   } else {
