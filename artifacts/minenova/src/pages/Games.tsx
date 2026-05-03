@@ -28,7 +28,7 @@ const games = [
     tagline: "Crypto-Style Risk Game",
     description: "Pick tiles to uncover gems and grow your multiplier. Cash out before you hit a mine or lose it all.",
     icon: Bomb,
-    gradient: "from-red-600 to-orange-600",
+    gradient: "from-emerald-500 to-teal-600",
     badge: "Solo",
     testId: "game-card-mines",
   },
@@ -55,13 +55,19 @@ export default function Games() {
               className="group relative overflow-hidden rounded-2xl cursor-pointer active:scale-[0.98] transition-transform select-none"
             >
               {/* Gradient background */}
-              <div className={`bg-gradient-to-br ${gradient} p-5`}>
+              <div className={`bg-gradient-to-br ${gradient} p-3.5`}>
                 {/* Top row */}
-                <div className="flex items-start justify-between mb-3">
-                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-sm">
-                    <Icon className="w-6 h-6 text-white" />
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center backdrop-blur-sm shrink-0">
+                      <Icon className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-white leading-tight">{name}</h2>
+                      <p className="text-[11px] font-semibold text-white/70">{tagline}</p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <span className="text-[10px] font-bold text-white/80 bg-white/15 px-2 py-0.5 rounded-full">
                       {badge}
                     </span>
@@ -69,12 +75,8 @@ export default function Games() {
                   </div>
                 </div>
 
-                {/* Text */}
-                <div>
-                  <h2 className="text-lg font-black text-white leading-tight">{name}</h2>
-                  <p className="text-xs font-semibold text-white/70 mb-1.5">{tagline}</p>
-                  <p className="text-xs text-white/60 leading-relaxed">{description}</p>
-                </div>
+                {/* Description */}
+                <p className="text-xs text-white/60 leading-relaxed">{description}</p>
 
                 {/* Decorative circles */}
                 <div className="absolute -bottom-6 -right-6 w-24 h-24 rounded-full bg-white/5" />
