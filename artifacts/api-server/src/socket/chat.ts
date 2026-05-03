@@ -61,6 +61,17 @@ export function getChatIO(): SocketIOServer | null {
   return _io;
 }
 
+/** Update socket.data avatarUrl for all live sockets of a given user */
+export function updateUserAvatarOnSockets(userId: number, avatarUrl: string): void {
+  if (!_io) return;
+  const socketIds = connectedUsers.get(userId);
+  if (!socketIds) return;
+  for (const sid of socketIds) {
+    const s = _io.sockets.sockets.get(sid);
+    if (s) s.data["avatarUrl"] = avatarUrl;
+  }
+}
+
 /** Called by admin when chat is toggled off: notify + disconnect all clients */
 export function broadcastChatDisabled(): void {
   if (!_io) return;

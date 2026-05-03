@@ -8,6 +8,7 @@ import { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail } from 
 import crypto from "crypto";
 import { z } from "zod";
 import { verifyUploadOwnership, consumeUpload } from "../lib/avatarUploadRegistry";
+import { updateUserAvatarOnSockets } from "../socket/chat";
 
 /** Extract the real client IP, preferring the first address in X-Forwarded-For. */
 function getClientIp(req: any): string | null {
@@ -185,6 +186,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       totalEarned: user.totalEarned,
       createdAt: user.createdAt.toISOString(),
       emailVerified: user.emailVerified,
+      avatarUrl: user.avatarUrl ?? null,
     },
     token,
     verificationUrl: process.env.NODE_ENV !== "production" ? verificationUrl : undefined,
@@ -227,6 +229,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       totalEarned: user.totalEarned,
       createdAt: user.createdAt.toISOString(),
       emailVerified: user.emailVerified,
+      avatarUrl: user.avatarUrl ?? null,
     },
     token,
   });
@@ -442,6 +445,7 @@ router.patch("/users/me/avatar", requireAuth, async (req, res): Promise<void> =>
   consumeUpload(objectPath);
   const avatarUrl = `/api/storage${objectPath}`;
   await db.update(usersTable).set({ avatarUrl }).where(eq(usersTable.id, req.userId!));
+  updateUserAvatarOnSockets(req.userId!, avatarUrl);
   res.json({ success: true });
 });
 

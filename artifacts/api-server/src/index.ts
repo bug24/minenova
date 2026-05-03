@@ -24,6 +24,9 @@ attachChatSocket(server);
 
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
+  if (!process.env["PRIVATE_OBJECT_DIR"] || !process.env["DEFAULT_OBJECT_STORAGE_BUCKET_ID"]) {
+    logger.warn("Object Storage env vars not set — avatar uploads will fail. Provision a bucket via the Object Storage tool.");
+  }
   startNotificationJob();
   startAutoMiner();
 });
