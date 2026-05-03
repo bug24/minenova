@@ -256,6 +256,7 @@ router.get("/auth/me", requireAuth, async (req, res): Promise<void> => {
     totalEarned: user.totalEarned,
     createdAt: user.createdAt.toISOString(),
     emailVerified: user.emailVerified,
+    avatarUrl: user.avatarUrl ?? null,
   }));
 });
 
@@ -416,6 +417,23 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
   await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, row.userId));
   await db.delete(passwordResetTokensTable).where(eq(passwordResetTokensTable.userId, row.userId));
 
+  res.json({ success: true });
+});
+
+router.patch("/users/me/avatar", requireAuth, async (req, res): Promise<void> => {
+  const schema = z.object({ objectPath: z.string().min(1) });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "objectPath is required" });
+    return;
+  }
+  const { objectPath } = parsed.data;
+  if (!objectPath.startsWith("/objects/")) {
+    res.status(400).json({ error: "Invalid objectPath" });
+    return;
+  }
+  const avatarUrl = `/api/storage${objectPath}`;
+  await db.update(usersTable).set({ avatarUrl }).where(eq(usersTable.id, req.userId!));
   res.json({ success: true });
 });
 

@@ -37,6 +37,8 @@ export interface User {
   totalEarned: number;
   createdAt: string;
   emailVerified: boolean;
+  /** @nullable */
+  avatarUrl?: string | null;
 }
 
 export interface AuthResponse {
@@ -276,4 +278,26 @@ export interface AdminUpgradePayment {
 
 export interface AdminUpgradeDecisionBody {
   note?: string;
+}
+
+export interface RequestUploadUrlBody {
+  name: string;
+  size: number;
+  contentType: string;
+}
+
+export type RequestUploadUrlResponseMetadata = {
+  name: string;
+  size: number;
+  contentType: string;
+};
+
+export interface RequestUploadUrlResponse {
+  uploadURL: string;
+  objectPath: string;
+  metadata: RequestUploadUrlResponseMetadata;
+}
+
+export interface UpdateAvatarBody {
+  objectPath: string;
 }

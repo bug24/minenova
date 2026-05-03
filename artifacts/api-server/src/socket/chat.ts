@@ -38,11 +38,13 @@ async function getHistory() {
       username: chatMessagesTable.username,
       message: chatMessagesTable.message,
       createdAt: chatMessagesTable.createdAt,
+      avatarUrl: usersTable.avatarUrl,
     })
     .from(chatMessagesTable)
+    .leftJoin(usersTable, eq(chatMessagesTable.userId, usersTable.id))
     .orderBy(desc(chatMessagesTable.id))
     .limit(HISTORY_COUNT);
-  return rows.reverse();
+  return rows.map(r => ({ ...r, avatarUrl: r.avatarUrl ?? null })).reverse();
 }
 
 // Track connected socket count per userId for presence
@@ -97,7 +99,7 @@ export function attachChatSocket(httpServer: HttpServer): SocketIOServer {
     if (!userId) return next(new Error("Invalid token"));
 
     const [user] = await db
-      .select({ id: usersTable.id, username: usersTable.username, isSuspended: usersTable.isSuspended })
+      .select({ id: usersTable.id, username: usersTable.username, isSuspended: usersTable.isSuspended, avatarUrl: usersTable.avatarUrl })
       .from(usersTable)
       .where(eq(usersTable.id, userId))
       .limit(1);
@@ -105,12 +107,14 @@ export function attachChatSocket(httpServer: HttpServer): SocketIOServer {
 
     socket.data["userId"] = user.id;
     socket.data["username"] = user.username;
+    socket.data["avatarUrl"] = user.avatarUrl ?? null;
     next();
   });
 
   io.on("connection", async (socket) => {
     const userId: number = socket.data["userId"];
     const username: string = socket.data["username"];
+    const avatarUrl: string | null = socket.data["avatarUrl"] ?? null;
 
     // Presence tracking
     if (!connectedUsers.has(userId)) connectedUsers.set(userId, new Set());
@@ -182,6 +186,7 @@ export function attachChatSocket(httpServer: HttpServer): SocketIOServer {
         id: saved.id,
         userId,
         username,
+        avatarUrl,
         message: clean,
         createdAt: saved.createdAt,
       });

@@ -43,6 +43,7 @@ export const LoginResponse = zod.object({
     totalEarned: zod.number(),
     createdAt: zod.string(),
     emailVerified: zod.boolean(),
+    avatarUrl: zod.string().nullish(),
   }),
   token: zod.string(),
 });
@@ -59,6 +60,7 @@ export const GetMeResponse = zod.object({
   totalEarned: zod.number(),
   createdAt: zod.string(),
   emailVerified: zod.boolean(),
+  avatarUrl: zod.string().nullish(),
 });
 
 /**
@@ -425,6 +427,37 @@ export const RejectUpgradePaymentBody = zod.object({
 });
 
 export const RejectUpgradePaymentResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string(),
+});
+
+/**
+ * @summary Request a presigned upload URL
+ */
+export const RequestUploadUrlBody = zod.object({
+  name: zod.string(),
+  size: zod.number(),
+  contentType: zod.string(),
+});
+
+export const RequestUploadUrlResponse = zod.object({
+  uploadURL: zod.string(),
+  objectPath: zod.string(),
+  metadata: zod.object({
+    name: zod.string(),
+    size: zod.number(),
+    contentType: zod.string(),
+  }),
+});
+
+/**
+ * @summary Update current user avatar
+ */
+export const UpdateAvatarBody = zod.object({
+  objectPath: zod.string(),
+});
+
+export const UpdateAvatarResponse = zod.object({
   success: zod.boolean(),
   message: zod.string(),
 });

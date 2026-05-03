@@ -137,6 +137,17 @@ A full-stack gamified crypto mining engagement web app.
 - **Frontend component**: `SubAdminsTab` in `artifacts/minenova/src/pages/Admin.tsx` — list, create, edit (isActive + password + permissions), delete with confirmation modal
 - **PermissionMatrix**: all modules × read/write checkboxes, select-all row per type
 
+### Profile Picture Upload
+
+- **Object storage**: Replit App Storage (GCS-backed) provisioned via `setupObjectStorage()`
+- **Upload flow**: POST `/api/storage/uploads/request-url` (JWT required, JPEG/PNG only, max 5 MB) → PUT presigned GCS URL → PATCH `/api/users/me/avatar` (stores `/api/storage/objects/<uuid>`)
+- **Server files**: `artifacts/api-server/src/lib/objectStorage.ts`, `objectAcl.ts`, `routes/storage.ts`
+- **Client lib**: `lib/object-storage-web` — `useUpload` hook and `ObjectUploader` component (Uppy v5-based)
+- **DB column**: `avatar_url text` (nullable) on `users` table
+- **Profile page**: `/profile` — hover over avatar box to reveal camera icon overlay; click triggers file picker
+- **Email privacy**: email address is no longer shown on the profile page
+- **AuthContext**: `avatarUrl` added to `AuthUser` interface; `updateUser()` helper for partial in-place updates
+
 ### Global Chat
 
 - **Socket.IO** — real-time bidirectional chat via `socket.io` on the server and `socket.io-client` in the frontend
@@ -146,14 +157,14 @@ A full-stack gamified crypto mining engagement web app.
 - **Online count**: `online_users_count` event broadcast on every connect/disconnect
 - **DB tables**: `chat_messages` (id, userId, username, message, createdAt), `chat_banned_words` (id, phrase, createdAt)
 - **Chat toggle**: `chat_enabled` key in `admin_config` — when false, server emits `chat_disabled` and disconnects the socket
-- **Frontend**: `Chat.tsx` — floating FAB button (bottom-right, above nav bar); slide-up panel with message bubbles, input, online count badge
+- **Frontend**: `Chat.tsx` — floating FAB button (bottom-right, above nav bar); slide-up panel with message bubbles, input, online count badge; each message shows circular avatar (photo or letter initial) beside the bubble
 - **Admin controls**: Settings tab → Global Chat section — enable/disable toggle + banned phrases CRUD (`/api/admin/chat/banned-words`)
 - **Socket handler**: `artifacts/api-server/src/socket/chat.ts`
 - **Admin routes**: `GET/POST/DELETE /api/admin/chat/banned-words`, `GET/DELETE /api/admin/chat/messages`
 - **Message pruning**: DB keeps latest 200 messages (pruned async after each insert)
 
 ### Database Schema Key Tables
-- `users` — emailVerified, verificationToken, verificationTokenExpiry added
+- `users` — emailVerified, verificationToken, verificationTokenExpiry, avatarUrl added
 - `admin_config` — key/value store for settings, scripts, SMTP, TOTP secret
 - `mining_sessions` — active and historical sessions
 - `referrals`, `referral_transactions` — multi-tier referral tracking

@@ -22,6 +22,7 @@ export const usersTable = pgTable("users", {
   verificationTokenExpiry: timestamp("verification_token_expiry", { withTimezone: true }),
   registrationIp: text("registration_ip"),
   deviceFingerprint: text("device_fingerprint"),
+  avatarUrl: text("avatar_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -503,6 +503,56 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [storage]
+      summary: Request a presigned upload URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestUploadUrlBody"
+      responses:
+        "200":
+          description: Presigned URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestUploadUrlResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users/me/avatar:
+    patch:
+      operationId: updateAvatar
+      tags: [auth]
+      summary: Update current user avatar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAvatarBody"
+      responses:
+        "200":
+          description: Avatar updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /leaderboard:
     get:
       operationId: getLeaderboard
@@ -612,6 +662,8 @@ components:
           type: string
         emailVerified:
           type: boolean
+        avatarUrl:
+          type: ["string", "null"]
       required:
         - id
         - username
@@ -1141,3 +1193,50 @@ components:
         note:
           type: string
       required: []
+
+    RequestUploadUrlBody:
+      type: object
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+        contentType:
+          type: string
+      required:
+        - name
+        - size
+        - contentType
+
+    RequestUploadUrlResponse:
+      type: object
+      properties:
+        uploadURL:
+          type: string
+        objectPath:
+          type: string
+        metadata:
+          type: object
+          properties:
+            name:
+              type: string
+            size:
+              type: integer
+            contentType:
+              type: string
+          required:
+            - name
+            - size
+            - contentType
+      required:
+        - uploadURL
+        - objectPath
+        - metadata
+
+    UpdateAvatarBody:
+      type: object
+      properties:
+        objectPath:
+          type: string
+      required:
+        - objectPath

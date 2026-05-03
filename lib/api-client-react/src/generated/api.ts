@@ -35,10 +35,13 @@ import type {
   ReferralInfo,
   ReferralStats,
   RegisterBody,
+  RequestUploadUrlBody,
+  RequestUploadUrlResponse,
   SuccessResponse,
   Task,
   TaskCompletionResult,
   Transaction,
+  UpdateAvatarBody,
   Upgrade,
   User,
   Wallet,
@@ -1957,6 +1960,178 @@ export const useRejectUpgradePayment = <
   TContext
 > => {
   return useMutation(getRejectUpgradePaymentMutationOptions(options));
+};
+
+/**
+ * @summary Request a presigned upload URL
+ */
+export const getRequestUploadUrlUrl = () => {
+  return `/api/storage/uploads/request-url`;
+};
+
+export const requestUploadUrl = async (
+  requestUploadUrlBody: RequestUploadUrlBody,
+  options?: RequestInit,
+): Promise<RequestUploadUrlResponse> => {
+  return customFetch<RequestUploadUrlResponse>(getRequestUploadUrlUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(requestUploadUrlBody),
+  });
+};
+
+export const getRequestUploadUrlMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof requestUploadUrl>>,
+    TError,
+    { data: BodyType<RequestUploadUrlBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof requestUploadUrl>>,
+  TError,
+  { data: BodyType<RequestUploadUrlBody> },
+  TContext
+> => {
+  const mutationKey = ["requestUploadUrl"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof requestUploadUrl>>,
+    { data: BodyType<RequestUploadUrlBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return requestUploadUrl(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RequestUploadUrlMutationResult = NonNullable<
+  Awaited<ReturnType<typeof requestUploadUrl>>
+>;
+export type RequestUploadUrlMutationBody = BodyType<RequestUploadUrlBody>;
+export type RequestUploadUrlMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Request a presigned upload URL
+ */
+export const useRequestUploadUrl = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof requestUploadUrl>>,
+    TError,
+    { data: BodyType<RequestUploadUrlBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof requestUploadUrl>>,
+  TError,
+  { data: BodyType<RequestUploadUrlBody> },
+  TContext
+> => {
+  return useMutation(getRequestUploadUrlMutationOptions(options));
+};
+
+/**
+ * @summary Update current user avatar
+ */
+export const getUpdateAvatarUrl = () => {
+  return `/api/users/me/avatar`;
+};
+
+export const updateAvatar = async (
+  updateAvatarBody: UpdateAvatarBody,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getUpdateAvatarUrl(), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateAvatarBody),
+  });
+};
+
+export const getUpdateAvatarMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAvatar>>,
+    TError,
+    { data: BodyType<UpdateAvatarBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAvatar>>,
+  TError,
+  { data: BodyType<UpdateAvatarBody> },
+  TContext
+> => {
+  const mutationKey = ["updateAvatar"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAvatar>>,
+    { data: BodyType<UpdateAvatarBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateAvatar(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAvatarMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAvatar>>
+>;
+export type UpdateAvatarMutationBody = BodyType<UpdateAvatarBody>;
+export type UpdateAvatarMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Update current user avatar
+ */
+export const useUpdateAvatar = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAvatar>>,
+    TError,
+    { data: BodyType<UpdateAvatarBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateAvatar>>,
+  TError,
+  { data: BodyType<UpdateAvatarBody> },
+  TContext
+> => {
+  return useMutation(getUpdateAvatarMutationOptions(options));
 };
 
 /**

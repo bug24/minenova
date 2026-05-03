@@ -11,6 +11,7 @@ interface AuthUser {
   totalEarned: number;
   createdAt: string;
   emailVerified: boolean;
+  avatarUrl?: string | null;
 }
 
 interface AuthContextType {
@@ -19,6 +20,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (user: AuthUser, token: string) => void;
   logout: () => void;
+  updateUser: (updates: Partial<AuthUser>) => void;
   isAuthenticated: boolean;
 }
 
@@ -64,8 +66,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     queryClient.clear();
   }, [queryClient]);
 
+  const updateUser = useCallback((updates: Partial<AuthUser>) => {
+    setUser(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, ...updates };
+      localStorage.setItem("minenova_user", JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, logout, updateUser, isAuthenticated: !!user }}>
       {children}
     </AuthContext.Provider>
   );

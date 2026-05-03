@@ -9,8 +9,27 @@ interface ChatMessage {
   id: number;
   userId: number;
   username: string;
+  avatarUrl?: string | null;
   message: string;
   createdAt: string;
+}
+
+function Avatar({ username, avatarUrl, size = 6 }: { username: string; avatarUrl?: string | null; size?: number }) {
+  const sizeClass = `w-${size} h-${size}`;
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={username}
+        className={`${sizeClass} rounded-full object-cover shrink-0`}
+      />
+    );
+  }
+  return (
+    <div className={`${sizeClass} rounded-full bg-primary/20 flex items-center justify-center shrink-0`}>
+      <span className="text-[10px] font-bold text-primary">{username[0]?.toUpperCase()}</span>
+    </div>
+  );
 }
 
 export default function Chat() {
@@ -160,23 +179,34 @@ export default function Chat() {
                 </p>
               </div>
             ) : (
-              messages.map(msg => (
-                <div key={msg.id} className={`flex flex-col ${msg.userId === user.id ? "items-end" : "items-start"}`}>
-                  <div
-                    className={`max-w-[80%] rounded-xl px-3 py-2 text-sm break-words ${
-                      msg.userId === user.id
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-foreground"
-                    }`}
-                  >
-                    {msg.userId !== user.id && (
-                      <p className="text-[10px] font-semibold mb-0.5 opacity-70">{msg.username}</p>
+              messages.map(msg => {
+                const isOwn = msg.userId === user.id;
+                return (
+                  <div key={msg.id} className={`flex gap-1.5 ${isOwn ? "flex-row-reverse" : "flex-row"} items-end`}>
+                    {!isOwn && (
+                      <Avatar username={msg.username} avatarUrl={msg.avatarUrl} size={6} />
                     )}
-                    <p className="leading-snug">{msg.message}</p>
+                    <div className={`flex flex-col max-w-[75%] ${isOwn ? "items-end" : "items-start"}`}>
+                      <div
+                        className={`rounded-xl px-3 py-2 text-sm break-words ${
+                          isOwn
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-foreground"
+                        }`}
+                      >
+                        {!isOwn && (
+                          <p className="text-[10px] font-semibold mb-0.5 opacity-70">{msg.username}</p>
+                        )}
+                        <p className="leading-snug">{msg.message}</p>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground mt-0.5 px-1">{formatTime(msg.createdAt)}</span>
+                    </div>
+                    {isOwn && (
+                      <Avatar username={msg.username} avatarUrl={msg.avatarUrl} size={6} />
+                    )}
                   </div>
-                  <span className="text-[10px] text-muted-foreground mt-0.5 px-1">{formatTime(msg.createdAt)}</span>
-                </div>
-              ))
+                );
+              })
             )}
             <div ref={bottomRef} />
           </div>

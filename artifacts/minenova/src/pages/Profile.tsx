@@ -1,23 +1,92 @@
-import { useGetMe, useGetReferrals, useGetTransactions, useGetWallet, useGetMiningStatus } from "@workspace/api-client-react";
+import { useGetReferrals, useGetWallet, useGetMiningStatus } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Link } from "wouter";
-import { User, Sun, Moon, Wallet, Users, TrendingUp, LogOut, ExternalLink, Pickaxe } from "lucide-react";
+import { Camera, Sun, Moon, Wallet, Users, TrendingUp, LogOut, ExternalLink, Pickaxe } from "lucide-react";
 import { useLogout } from "@workspace/api-client-react";
+import { useRef, useState } from "react";
 
 export default function Profile() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { data: wallet } = useGetWallet();
   const { data: referrals } = useGetReferrals();
   const { data: miningStatus } = useGetMiningStatus();
   const logoutMutation = useLogout();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const handleLogout = () => {
     logoutMutation.mutate();
     logout();
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!["image/jpeg", "image/png"].includes(file.type)) {
+      setUploadError("Only JPEG and PNG images are allowed.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError("File size must not exceed 5 MB.");
+      return;
+    }
+
+    const token = localStorage.getItem("minenova_token");
+    if (!token) return;
+
+    setUploading(true);
+    setUploadError(null);
+
+    try {
+      const urlRes = await fetch("/api/storage/uploads/request-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+      });
+
+      if (!urlRes.ok) {
+        const err = await urlRes.json().catch(() => ({}));
+        throw new Error((err as Record<string, string>).error || "Failed to get upload URL");
+      }
+
+      const { uploadURL, objectPath } = await urlRes.json() as { uploadURL: string; objectPath: string };
+
+      const putRes = await fetch(uploadURL, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+
+      if (!putRes.ok) throw new Error("Failed to upload image");
+
+      const patchRes = await fetch("/api/users/me/avatar", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ objectPath }),
+      });
+
+      if (!patchRes.ok) throw new Error("Failed to save avatar");
+
+      const avatarUrl = `/api/storage${objectPath}`;
+      updateUser({ avatarUrl });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   return (
@@ -30,12 +99,36 @@ export default function Profile() {
       {/* User Card */}
       <div className="bg-card border border-card-border rounded-2xl p-6">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-primary/20 flex items-center justify-center">
-            <span className="text-2xl font-black text-primary">{user?.username?.[0]?.toUpperCase()}</span>
+          <div className="relative group">
+            <div className="w-16 h-16 rounded-2xl bg-primary/20 flex items-center justify-center overflow-hidden">
+              {user?.avatarUrl ? (
+                <img src={user.avatarUrl} alt={user.username} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-2xl font-black text-primary">{user?.username?.[0]?.toUpperCase()}</span>
+              )}
+            </div>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="absolute inset-0 rounded-2xl bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:cursor-not-allowed"
+              aria-label="Change avatar"
+            >
+              {uploading ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Camera className="w-5 h-5 text-white" />
+              )}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png"
+              className="hidden"
+              onChange={handleAvatarChange}
+            />
           </div>
           <div>
             <h2 className="text-xl font-bold">{user?.username}</h2>
-            <p className="text-sm text-muted-foreground">{user?.email}</p>
             <div className="flex items-center gap-2 mt-1">
               <Pickaxe className="w-3.5 h-3.5 text-primary" />
               <span className="text-xs font-medium text-primary">
@@ -44,6 +137,9 @@ export default function Profile() {
                   : `Mining Level ${user?.miningLevel}`}
               </span>
             </div>
+            {uploadError && (
+              <p className="text-xs text-destructive mt-1">{uploadError}</p>
+            )}
           </div>
         </div>
       </div>
