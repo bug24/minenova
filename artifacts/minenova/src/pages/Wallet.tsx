@@ -37,6 +37,8 @@ interface WithdrawalResult {
   paymentTag: string;
   amount: number;
   transactionId: number;
+  grossAmount: number;
+  feeDeducted: number;
 }
 
 function getStatusBadge(status: string) {
@@ -98,9 +100,13 @@ export default function WalletPage() {
   };
 
   const onWithdraw = (data: WithdrawForm) => {
+    const gross = data.amount;
+    const fee = feeEnabled && feePct > 0
+      ? Math.round(gross * feePct / 100 * 100) / 100
+      : 0;
     requestWithdrawal.mutate({ data }, {
       onSuccess: (res) => {
-        setWithdrawalResult({ usdtAddress: res.usdtAddress, paymentTag: res.paymentTag, amount: res.amount, transactionId: res.transactionId });
+        setWithdrawalResult({ usdtAddress: res.usdtAddress, paymentTag: res.paymentTag, amount: res.amount, transactionId: res.transactionId, grossAmount: gross, feeDeducted: fee });
         setStep("result");
         queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetTransactionsQueryKey() });
@@ -337,6 +343,15 @@ export default function WalletPage() {
                       <p className="text-xs text-muted-foreground">Transfer up to ${maxUsdt.toFixed(2)} USDT to your wallet</p>
                     </div>
                   </button>
+
+                  {feeEnabled && feePct > 0 && (
+                    <div className="flex items-start gap-2 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-rose-400">
+                        A <strong>{feePct}% withdrawal fee</strong> applies. You will receive less than the amount you request.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -431,7 +446,10 @@ export default function WalletPage() {
                     </div>
                     <p className="font-semibold text-foreground">Transfer Confirmed</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Thank you for sending <strong>${withdrawalResult.amount} USDT</strong>. Your withdrawal is being processed.
+                      Your withdrawal of <strong>${withdrawalResult.amount.toFixed(2)} USDT</strong> is being processed.
+                      {withdrawalResult.feeDeducted > 0 && (
+                        <span className="block text-xs text-rose-400 mt-1">${withdrawalResult.feeDeducted.toFixed(2)} USDT fee was deducted from your requested ${withdrawalResult.grossAmount.toFixed(2)} USDT.</span>
+                      )}
                     </p>
                   </div>
                   <div className="bg-primary/10 border border-primary/20 rounded-xl p-4">
@@ -483,8 +501,26 @@ export default function WalletPage() {
                     </div>
                     <p className="font-semibold text-foreground">Withdrawal Request Submitted</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      You will receive <strong>${withdrawalResult.amount.toFixed(2)} USDT</strong> once approved. Send USDT to the address below via TRC20 network with your payment tag.
+                      Send USDT to the address below via TRC20 network with your payment tag.
                     </p>
+                  </div>
+
+                  {/* Payout breakdown receipt */}
+                  <div className="bg-muted rounded-xl px-4 py-3 space-y-2 text-sm">
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Amount requested</span>
+                      <span>${withdrawalResult.grossAmount.toFixed(2)} USDT</span>
+                    </div>
+                    {withdrawalResult.feeDeducted > 0 && (
+                      <div className="flex justify-between text-rose-500">
+                        <span>Fee deducted ({feePct}%)</span>
+                        <span>−${withdrawalResult.feeDeducted.toFixed(2)} USDT</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-bold text-emerald-500 border-t border-border pt-2">
+                      <span>You will receive</span>
+                      <span>${withdrawalResult.amount.toFixed(2)} USDT</span>
+                    </div>
                   </div>
                   <div className="space-y-3">
                     <div>
