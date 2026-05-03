@@ -4857,6 +4857,7 @@ export default function Admin() {
   const [subConfirmPw, setSubConfirmPw] = useState("");
   const [showSubPwVis, setShowSubPwVis] = useState(false);
   const [changingSubPw, setChangingSubPw] = useState(false);
+  const [subPwError, setSubPwError] = useState("");
 
   const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
@@ -5020,9 +5021,10 @@ export default function Admin() {
   };
 
   const handleSubChangePassword = async () => {
-    if (!subCurPw.trim()) { toast({ variant: "destructive", title: "Enter your current password" }); return; }
-    if (subNewPw.length < 8) { toast({ variant: "destructive", title: "Password too short", description: "Min. 8 characters." }); return; }
-    if (subNewPw !== subConfirmPw) { toast({ variant: "destructive", title: "Passwords don't match" }); return; }
+    if (!subCurPw.trim()) { setSubPwError("Enter your current password"); return; }
+    if (subNewPw.length < 8) { setSubPwError("New password must be at least 8 characters"); return; }
+    if (subNewPw !== subConfirmPw) { setSubPwError("Passwords don't match"); return; }
+    setSubPwError("");
     setChangingSubPw(true);
     try {
       const res = await apiFetch("/admin/sub-admins/me/change-password", {
@@ -5032,12 +5034,12 @@ export default function Admin() {
       });
       if (res.ok) {
         toast({ title: "Password changed successfully!" });
-        setSubCurPw(""); setSubNewPw(""); setSubConfirmPw(""); setShowSubChangePw(false);
+        setSubCurPw(""); setSubNewPw(""); setSubConfirmPw(""); setShowSubChangePw(false); setSubPwError("");
       } else {
         const err = await res.json();
-        toast({ variant: "destructive", title: "Failed", description: err.error });
+        setSubPwError(err.error ?? "Failed to change password");
       }
-    } catch { toast({ variant: "destructive", title: "Connection error" }); }
+    } catch { setSubPwError("Connection error — please try again"); }
     finally { setChangingSubPw(false); }
   };
 
@@ -5280,7 +5282,7 @@ export default function Admin() {
                   type={showSubPwVis ? "text" : "password"}
                   placeholder="Current password"
                   value={subCurPw}
-                  onChange={e => setSubCurPw(e.target.value)}
+                  onChange={e => { setSubCurPw(e.target.value); setSubPwError(""); }}
                   className="pr-10"
                 />
                 <button type="button" onClick={() => setShowSubPwVis(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -5291,26 +5293,24 @@ export default function Admin() {
                 type={showSubPwVis ? "text" : "password"}
                 placeholder="New password (min. 8 chars)"
                 value={subNewPw}
-                onChange={e => setSubNewPw(e.target.value)}
+                onChange={e => { setSubNewPw(e.target.value); setSubPwError(""); }}
                 className="flex-1 min-w-[160px]"
               />
               <Input
                 type={showSubPwVis ? "text" : "password"}
                 placeholder="Confirm new password"
                 value={subConfirmPw}
-                onChange={e => setSubConfirmPw(e.target.value)}
+                onChange={e => { setSubConfirmPw(e.target.value); setSubPwError(""); }}
                 className="flex-1 min-w-[160px]"
               />
               <Button size="sm" onClick={handleSubChangePassword} disabled={changingSubPw || !subCurPw || !subNewPw || !subConfirmPw} className="gap-1">
                 <Save className="w-3 h-3" /> {changingSubPw ? "Saving…" : "Save"}
               </Button>
-              <Button size="sm" variant="outline" onClick={() => { setShowSubChangePw(false); setSubCurPw(""); setSubNewPw(""); setSubConfirmPw(""); }}>
+              <Button size="sm" variant="outline" onClick={() => { setShowSubChangePw(false); setSubCurPw(""); setSubNewPw(""); setSubConfirmPw(""); setSubPwError(""); }}>
                 <X className="w-3 h-3" />
               </Button>
             </div>
-            {subNewPw && subConfirmPw && subNewPw !== subConfirmPw && (
-              <p className="text-xs text-destructive mt-2">Passwords don't match</p>
-            )}
+            {subPwError && <p className="text-xs text-destructive mt-2">{subPwError}</p>}
           </div>
         )}
 
