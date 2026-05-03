@@ -4445,16 +4445,18 @@ function AuditLogTab({ secret }: { secret: string }) {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [actorTypeFilter, setActorTypeFilter] = useState("all");
   const LIMIT = 50;
 
-  const load = async (p = page, af = actionFilter, atf = actorTypeFilter) => {
+  const load = async (p = page, af = actionFilter, atf = actorTypeFilter, s = search) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(p), limit: String(LIMIT) });
       if (af !== "all") params.set("action", af);
       if (atf !== "all") params.set("actorType", atf);
+      if (s.trim()) params.set("search", s.trim());
       const res = await apiFetch(`/admin/audit-log?${params}`, { headers: h });
       if (res.ok) {
         const data = await res.json();
@@ -4466,7 +4468,7 @@ function AuditLogTab({ secret }: { secret: string }) {
 
   useEffect(() => { load(); }, []);
 
-  const applyFilters = () => { setPage(1); load(1, actionFilter, actorTypeFilter); };
+  const applyFilters = () => { setPage(1); load(1, actionFilter, actorTypeFilter, search); };
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
 
@@ -4493,6 +4495,16 @@ function AuditLogTab({ secret }: { secret: string }) {
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end">
         <div className="space-y-1">
+          <label className="text-xs text-muted-foreground font-medium">Search actor</label>
+          <Input
+            placeholder="Username…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && applyFilters()}
+            className="h-9 w-44 text-sm"
+          />
+        </div>
+        <div className="space-y-1">
           <label className="text-xs text-muted-foreground font-medium">Action</label>
           <select
             value={actionFilter}
@@ -4506,22 +4518,22 @@ function AuditLogTab({ secret }: { secret: string }) {
           </select>
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground font-medium">Actor</label>
+          <label className="text-xs text-muted-foreground font-medium">Actor type</label>
           <select
             value={actorTypeFilter}
             onChange={e => setActorTypeFilter(e.target.value)}
             className="h-9 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           >
-            <option value="all">All actors</option>
+            <option value="all">All</option>
             <option value="superadmin">Super Admin</option>
             <option value="subadmin">Sub Admin</option>
           </select>
         </div>
         <Button size="sm" onClick={applyFilters} className="gap-1.5 self-end">
-          <Filter className="w-3.5 h-3.5" /> Filter
+          <Filter className="w-3.5 h-3.5" /> Search
         </Button>
-        {(actionFilter !== "all" || actorTypeFilter !== "all") && (
-          <Button size="sm" variant="ghost" onClick={() => { setActionFilter("all"); setActorTypeFilter("all"); setPage(1); load(1, "all", "all"); }} className="self-end text-muted-foreground">
+        {(search.trim() || actionFilter !== "all" || actorTypeFilter !== "all") && (
+          <Button size="sm" variant="ghost" onClick={() => { setSearch(""); setActionFilter("all"); setActorTypeFilter("all"); setPage(1); load(1, "all", "all", ""); }} className="self-end text-muted-foreground">
             <X className="w-3.5 h-3.5" /> Clear
           </Button>
         )}

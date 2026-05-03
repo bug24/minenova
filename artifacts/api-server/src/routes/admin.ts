@@ -2117,10 +2117,13 @@ router.get("/admin/audit-log", requireSuperAdmin, async (req, res): Promise<void
   const offset = (page - 1) * limit;
   const actionFilter = req.query.action as string | undefined;
   const actorTypeFilter = req.query.actorType as string | undefined;
+  // search: partial match on actor_username (case-insensitive)
+  const search = (req.query.search as string | undefined)?.trim();
 
   const conditions: SQL<unknown>[] = [];
   if (actionFilter && actionFilter !== "all") conditions.push(eq(adminAuditLogTable.action, actionFilter));
   if (actorTypeFilter && actorTypeFilter !== "all") conditions.push(eq(adminAuditLogTable.actorType, actorTypeFilter));
+  if (search) conditions.push(ilike(adminAuditLogTable.actorUsername, `%${search}%`));
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
