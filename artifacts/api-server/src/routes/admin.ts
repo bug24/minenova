@@ -2284,11 +2284,11 @@ router.delete("/admin/trivia/questions/:id", requireAdmin, requirePermission("tr
 
 // ─── Support ──────────────────────────────────────────────────────────────────
 
-router.get("/admin/support/threads", requireAdmin, requirePermission("users", "read"), getSupportThreads);
-router.get("/admin/support/threads/:userId", requireAdmin, requirePermission("users", "read"), getSupportThread);
-router.post("/admin/support/threads/:userId/reply", requireAdmin, requirePermission("users", "write"), postAdminReply);
-router.patch("/admin/support/threads/:userId/resolve", requireAdmin, requirePermission("users", "write"), patchSupportResolve);
-router.get("/admin/support/unread-count", requireAdmin, requirePermission("users", "read"), getSupportUnreadCount);
-router.post("/admin/support/uploads/request-url", requireAdmin, requirePermission("users", "write"), requestAdminUploadUrl);
+router.get("/admin/support/threads", requireAdmin, requirePermission("support", "read"), getSupportThreads);
+router.get("/admin/support/threads/:userId", requireAdmin, requirePermission("support", "read"), getSupportThread);
+router.post("/admin/support/threads/:userId/reply", requireAdmin, requirePermission("support", "write"), postAdminReply);
+router.patch("/admin/support/threads/:userId/resolve", requireAdmin, requirePermission("support", "write"), patchSupportResolve);
+router.get("/admin/support/unread-count", requireAdmin, requirePermission("support", "read"), getSupportUnreadCount);
+router.post("/admin/support/uploads/request-url", requireAdmin, requirePermission("support", "write"), requestAdminUploadUrl);
 
 export default router;
