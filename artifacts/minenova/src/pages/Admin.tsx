@@ -11,7 +11,7 @@ import {
   Sun, Moon, UserCircle, Copy, RotateCcw, Activity, ChevronRight,
   Play, Zap, AlertTriangle, ToggleLeft, ToggleRight, Menu, ChevronLeft,
   Film, Link, Clock, MonitorPlay, Code, Bell, Layers, ArrowUp, ArrowDown,
-  TrendingUp, TrendingDown, DollarSign, LineChart,
+  TrendingUp, TrendingDown, DollarSign, LineChart, UserPlus, ShieldCheck, Lock,
 } from "lucide-react";
 
 function apiFetch(path: string, options?: RequestInit) {
@@ -177,7 +177,16 @@ interface UserProfile extends AdminUser {
   transactions: UserTransaction[];
 }
 
-type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads" | "scripts" | "reports";
+type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads" | "scripts" | "reports" | "sub-admins";
+
+const ALL_MODULES: Tab[] = ["dashboard","reports","users","withdrawals","transactions","mining","referrals","upgrades","settings","share","ads","scripts"];
+
+interface SubAdminRecord {
+  id: number; username: string; email: string; isActive: boolean; createdAt: string;
+  permissions: Record<string, { canRead: boolean; canWrite: boolean }>;
+}
+
+type PermMap = Record<string, { canRead: boolean; canWrite: boolean }>;
 type UpgradeSubTab = "manage" | "history" | "approve-reject";
 
 interface AdminAd {
@@ -3791,6 +3800,268 @@ function ReportsTab({ secret }: { secret: string }) {
   );
 }
 
+// ─── Sub Admins Tab ───────────────────────────────────────────────────────────
+
+const MODULE_LABELS: Record<string, string> = {
+  dashboard: "Dashboard", reports: "Reports", users: "Users",
+  withdrawals: "Withdrawals", transactions: "Transactions", mining: "Mining Control",
+  referrals: "Referrals", upgrades: "Upgrades", settings: "Settings",
+  share: "Share Links", ads: "Ads", scripts: "Scripts",
+};
+
+function PermissionMatrix({ perms, onChange }: { perms: PermMap; onChange: (p: PermMap) => void }) {
+  const toggle = (mod: string, field: "canRead" | "canWrite") => {
+    const cur = perms[mod] ?? { canRead: false, canWrite: false };
+    const next = { ...cur, [field]: !cur[field] };
+    if (field === "canRead" && !next.canRead) next.canWrite = false;
+    if (field === "canWrite" && next.canWrite) next.canRead = true;
+    onChange({ ...perms, [mod]: next });
+  };
+  const setAll = (canRead: boolean, canWrite: boolean) => {
+    const updated: PermMap = {};
+    for (const m of ALL_MODULES) updated[m] = { canRead, canWrite };
+    onChange(updated);
+  };
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Module Permissions</span>
+        <div className="flex gap-2 text-xs">
+          <button onClick={() => setAll(true, true)} className="text-primary hover:underline">All Read+Write</button>
+          <button onClick={() => setAll(true, false)} className="text-muted-foreground hover:underline">All Read</button>
+          <button onClick={() => setAll(false, false)} className="text-destructive hover:underline">None</button>
+        </div>
+      </div>
+      <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1.5 text-sm">
+        <span className="text-xs text-muted-foreground font-medium">Module</span>
+        <span className="text-xs text-muted-foreground font-medium text-center w-10">Read</span>
+        <span className="text-xs text-muted-foreground font-medium text-center w-10">Write</span>
+        {ALL_MODULES.map(mod => {
+          const p = perms[mod] ?? { canRead: false, canWrite: false };
+          return (
+            <>
+              <span key={`lbl-${mod}`} className="text-sm">{MODULE_LABELS[mod] ?? mod}</span>
+              <span key={`r-${mod}`} className="flex justify-center">
+                <input type="checkbox" checked={p.canRead} onChange={() => toggle(mod, "canRead")} className="w-4 h-4 accent-primary cursor-pointer" />
+              </span>
+              <span key={`w-${mod}`} className="flex justify-center">
+                <input type="checkbox" checked={p.canWrite} onChange={() => toggle(mod, "canWrite")} className="w-4 h-4 accent-primary cursor-pointer" />
+              </span>
+            </>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SubAdminsTab({ secret }: { secret: string }) {
+  const { toast } = useToast();
+  const h = { "x-admin-secret": secret, "Content-Type": "application/json" };
+  const [admins, setAdmins] = useState<SubAdminRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const [createForm, setCreateForm] = useState({ username: "", email: "", password: "" });
+  const [showCreatePw, setShowCreatePw] = useState(false);
+  const [createPerms, setCreatePerms] = useState<PermMap>({});
+
+  const [editActive, setEditActive] = useState(true);
+  const [editPassword, setEditPassword] = useState("");
+  const [showEditPw, setShowEditPw] = useState(false);
+  const [editPerms, setEditPerms] = useState<PermMap>({});
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch("/admin/sub-admins", { headers: h });
+      if (res.ok) setAdmins(await res.json());
+    } catch { /* silent */ } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const startEdit = (sa: SubAdminRecord) => {
+    setEditingId(sa.id);
+    setEditActive(sa.isActive);
+    setEditPassword("");
+    setEditPerms({ ...sa.permissions });
+  };
+
+  const handleCreate = async () => {
+    if (!createForm.username.trim() || !createForm.email.trim() || createForm.password.length < 8) {
+      toast({ variant: "destructive", title: "Fill all fields (password min 8 chars)" }); return;
+    }
+    setSaving(true);
+    try {
+      const res = await apiFetch("/admin/sub-admins", {
+        method: "POST", headers: h,
+        body: JSON.stringify({ ...createForm, permissions: createPerms }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast({ variant: "destructive", title: data.error ?? "Failed" }); return; }
+      toast({ title: `Sub-admin "${data.username}" created` });
+      setShowCreate(false);
+      setCreateForm({ username: "", email: "", password: "" });
+      setCreatePerms({});
+      load();
+    } catch { toast({ variant: "destructive", title: "Connection error" }); }
+    finally { setSaving(false); }
+  };
+
+  const handleSaveEdit = async (id: number) => {
+    setSaving(true);
+    try {
+      const patchBody: Record<string, unknown> = { isActive: editActive };
+      if (editPassword.length >= 8) patchBody.password = editPassword;
+      const [patchRes, permRes] = await Promise.all([
+        apiFetch(`/admin/sub-admins/${id}`, { method: "PATCH", headers: h, body: JSON.stringify(patchBody) }),
+        apiFetch(`/admin/sub-admins/${id}/permissions`, { method: "PUT", headers: h, body: JSON.stringify(editPerms) }),
+      ]);
+      if (!patchRes.ok || !permRes.ok) { toast({ variant: "destructive", title: "Save failed" }); return; }
+      toast({ title: "Saved" });
+      setEditingId(null);
+      load();
+    } catch { toast({ variant: "destructive", title: "Connection error" }); }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await apiFetch(`/admin/sub-admins/${id}`, { method: "DELETE", headers: h });
+      toast({ title: "Deleted" });
+      setDeleteId(null);
+      load();
+    } catch { toast({ variant: "destructive", title: "Failed" }); }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold">Sub Admins</h2>
+          <p className="text-sm text-muted-foreground">Create accounts with limited module access</p>
+        </div>
+        <Button size="sm" onClick={() => { setShowCreate(v => !v); setEditingId(null); }} className="gap-1.5">
+          <UserPlus className="w-4 h-4" />{showCreate ? "Cancel" : "Add Sub Admin"}
+        </Button>
+      </div>
+
+      {showCreate && (
+        <div className="bg-card border border-card-border rounded-2xl p-5 space-y-5">
+          <h3 className="font-semibold text-sm">New Sub Admin</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Username</p>
+              <Input placeholder="username" value={createForm.username} onChange={e => setCreateForm(v => ({ ...v, username: e.target.value }))} />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Email</p>
+              <Input type="email" placeholder="email@example.com" value={createForm.email} onChange={e => setCreateForm(v => ({ ...v, email: e.target.value }))} />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Password (min 8 chars)</p>
+              <div className="relative">
+                <Input type={showCreatePw ? "text" : "password"} placeholder="Password" value={createForm.password} onChange={e => setCreateForm(v => ({ ...v, password: e.target.value }))} className="pr-10" />
+                <button type="button" onClick={() => setShowCreatePw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                  {showCreatePw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+          <PermissionMatrix perms={createPerms} onChange={setCreatePerms} />
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" size="sm" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleCreate} disabled={saving}>{saving ? "Creating…" : "Create Sub Admin"}</Button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-12"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+      ) : admins.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <ShieldCheck className="w-10 h-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">No sub-admins yet. Create one to delegate access.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {admins.map(sa => (
+            <div key={sa.id} className="bg-card border border-card-border rounded-2xl p-4 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">{sa.username}</span>
+                    <Badge variant={sa.isActive ? "default" : "secondary"} className="text-[10px] px-1.5 py-0">{sa.isActive ? "Active" : "Inactive"}</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{sa.email}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {Object.entries(sa.permissions).filter(([, p]) => p.canRead).length} modules accessible · Created {new Date(sa.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => editingId === sa.id ? setEditingId(null) : startEdit(sa)}>
+                    <Pencil className="w-3 h-3" />{editingId === sa.id ? "Cancel" : "Edit"}
+                  </Button>
+                  <Button size="sm" variant="outline" className="text-destructive border-destructive/40 hover:bg-destructive/10 gap-1.5" onClick={() => setDeleteId(sa.id)}>
+                    <Trash2 className="w-3 h-3" />Delete
+                  </Button>
+                </div>
+              </div>
+
+              {editingId === sa.id && (
+                <div className="border-t border-border pt-4 space-y-5">
+                  <div className="flex flex-wrap gap-4 items-end">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Status</p>
+                      <button onClick={() => setEditActive(v => !v)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${editActive ? "border-green-500/50 text-green-500 bg-green-500/10" : "border-border text-muted-foreground"}`}>
+                        {editActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}{editActive ? "Active" : "Inactive"}
+                      </button>
+                    </div>
+                    <div className="flex-1 min-w-[200px]">
+                      <p className="text-xs text-muted-foreground mb-1">New Password (leave blank to keep)</p>
+                      <div className="relative">
+                        <Input type={showEditPw ? "text" : "password"} placeholder="New password (min 8)" value={editPassword} onChange={e => setEditPassword(e.target.value)} className="pr-10" />
+                        <button type="button" onClick={() => setShowEditPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                          {showEditPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <PermissionMatrix perms={editPerms} onChange={setEditPerms} />
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="outline" size="sm" onClick={() => setEditingId(null)}>Cancel</Button>
+                    <Button size="sm" onClick={() => handleSaveEdit(sa.id)} disabled={saving}>{saving ? "Saving…" : "Save Changes"}</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {deleteId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
+          <div className="bg-card border border-card-border rounded-2xl p-6 w-full max-w-xs text-center space-y-4">
+            <Trash2 className="w-10 h-10 text-destructive mx-auto" />
+            <div>
+              <h3 className="font-bold">Delete sub-admin?</h3>
+              <p className="text-sm text-muted-foreground mt-1">This cannot be undone.</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setDeleteId(null)}>Cancel</Button>
+              <Button variant="destructive" className="flex-1" onClick={() => handleDelete(deleteId)}>Delete</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function Admin() {
@@ -3807,6 +4078,13 @@ export default function Admin() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [needs2FA, setNeeds2FA] = useState(false);
   const [totpLoginCode, setTotpLoginCode] = useState("");
+
+  const [loginMode, setLoginMode] = useState<"admin" | "sub-admin">("admin");
+  const [subUsername, setSubUsername] = useState("");
+  const [subPassword, setSubPassword] = useState("");
+  const [showSubPw, setShowSubPw] = useState(false);
+  const [isSubAdmin, setIsSubAdmin] = useState(false);
+  const [subAdminPermissions, setSubAdminPermissions] = useState<PermMap>({});
 
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -3863,9 +4141,36 @@ export default function Admin() {
     }
   };
 
+  const handleSubAdminLogin = async () => {
+    if (!subUsername.trim() || !subPassword.trim()) return;
+    setLoading(true);
+    try {
+      const res = await apiFetch("/admin/sub-admins/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: subUsername.trim(), password: subPassword }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        toast({ variant: "destructive", title: d.error ?? "Invalid credentials" }); return;
+      }
+      const { token } = await res.json() as { token: string };
+      const meRes = await apiFetch("/admin/sub-admins/me", { headers: { "x-admin-secret": token } });
+      const me = await meRes.json() as { isSuperAdmin: boolean; permissions: PermMap };
+      setSecret(token);
+      setIsSubAdmin(true);
+      setSubAdminPermissions(me.permissions);
+      const firstAccessible = ALL_MODULES.find(m => me.permissions[m]?.canRead);
+      setTab(firstAccessible ?? "dashboard");
+      setAuthed(true);
+    } catch { toast({ variant: "destructive", title: "Connection error" }); }
+    finally { setLoading(false); }
+  };
+
   const handleLogout = () => {
     setAuthed(false); setSecret(""); setNeeds2FA(false); setTotpLoginCode(""); setShowChangePassword(false);
     setPendingPaymentsCount(0); setPendingWithdrawalsCount(0); setUpgradeSubTab("manage");
+    setIsSubAdmin(false); setSubAdminPermissions({}); setSubUsername(""); setSubPassword("");
   };
 
   useEffect(() => {
@@ -3959,17 +4264,39 @@ export default function Admin() {
             <>
               <div className="text-center">
                 <h1 className="text-2xl font-black font-serif text-foreground">Admin Panel</h1>
-                <p className="text-muted-foreground text-sm mt-1">Enter your admin password to continue</p>
+                <p className="text-muted-foreground text-sm mt-1">Sign in to manage your platform</p>
               </div>
-              <div className="bg-card border border-card-border rounded-2xl p-6 space-y-4">
-                <div className="relative">
-                  <Input type={showSecret ? "text" : "password"} placeholder="Admin password" value={secret} onChange={e => setSecret(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} className="pr-10" />
-                  <button type="button" onClick={() => setShowSecret(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                    {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+              {/* Login mode toggle */}
+              <div className="flex rounded-xl border border-border overflow-hidden">
+                <button onClick={() => setLoginMode("admin")} className={`flex-1 py-2 text-sm font-medium transition-colors ${loginMode === "admin" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}>
+                  Super Admin
+                </button>
+                <button onClick={() => setLoginMode("sub-admin")} className={`flex-1 py-2 text-sm font-medium transition-colors ${loginMode === "sub-admin" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}>
+                  Sub Admin
+                </button>
+              </div>
+              {loginMode === "admin" ? (
+                <div className="bg-card border border-card-border rounded-2xl p-6 space-y-4">
+                  <div className="relative">
+                    <Input type={showSecret ? "text" : "password"} placeholder="Admin password" value={secret} onChange={e => setSecret(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} className="pr-10" />
+                    <button type="button" onClick={() => setShowSecret(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <Button className="w-full" onClick={handleLogin} disabled={loading}>{loading ? "Checking…" : "Login"}</Button>
                 </div>
-                <Button className="w-full" onClick={handleLogin} disabled={loading}>{loading ? "Checking…" : "Login"}</Button>
-              </div>
+              ) : (
+                <div className="bg-card border border-card-border rounded-2xl p-6 space-y-4">
+                  <Input placeholder="Username" value={subUsername} onChange={e => setSubUsername(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubAdminLogin()} autoComplete="username" />
+                  <div className="relative">
+                    <Input type={showSubPw ? "text" : "password"} placeholder="Password" value={subPassword} onChange={e => setSubPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubAdminLogin()} className="pr-10" autoComplete="current-password" />
+                    <button type="button" onClick={() => setShowSubPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      {showSubPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <Button className="w-full" onClick={handleSubAdminLogin} disabled={loading}>{loading ? "Checking…" : "Login as Sub Admin"}</Button>
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -4003,7 +4330,7 @@ export default function Admin() {
     );
   }
 
-  const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
+  const ALL_TABS: { id: Tab; label: string; icon: LucideIcon; superAdminOnly?: boolean }[] = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "reports", label: "Reports", icon: LineChart },
     { id: "users", label: "Users", icon: Users },
@@ -4016,7 +4343,12 @@ export default function Admin() {
     { id: "share", label: "Share Links", icon: ArrowDownCircle },
     { id: "ads", label: "Ads", icon: MonitorPlay },
     { id: "scripts", label: "Scripts", icon: Code },
+    { id: "sub-admins", label: "Sub Admins", icon: UserPlus, superAdminOnly: true },
   ];
+
+  const TABS = isSubAdmin
+    ? ALL_TABS.filter(t => !t.superAdminOnly && subAdminPermissions[t.id]?.canRead)
+    : ALL_TABS;
 
   const currentTab = TABS.find(t => t.id === tab);
 
@@ -4026,7 +4358,12 @@ export default function Admin() {
       <aside className={`shrink-0 border-r border-border bg-background flex flex-col h-screen sticky top-0 z-20 transition-all duration-200 ${sidebarOpen ? "w-52" : "w-14"}`}>
         {/* Logo / Toggle */}
         <div className="flex items-center justify-between px-3 py-4 border-b border-border">
-          {sidebarOpen && <span className="text-sm font-black font-serif truncate">Admin Panel</span>}
+          {sidebarOpen && (
+            <div className="flex flex-col truncate">
+              <span className="text-sm font-black font-serif truncate">Admin Panel</span>
+              {isSubAdmin && <span className="text-[10px] text-amber-400 font-medium truncate">Sub Admin</span>}
+            </div>
+          )}
           <Button variant="ghost" size="sm" className="w-8 h-8 p-0 shrink-0 ml-auto" onClick={() => setSidebarOpen(v => !v)}>
             {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </Button>
@@ -4034,17 +4371,21 @@ export default function Admin() {
 
         {/* Nav items */}
         <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              title={!sidebarOpen ? t.label : undefined}
-              className={`w-full flex items-center gap-3 px-2.5 py-2.5 rounded-lg text-sm font-medium transition-colors ${tab === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"} ${!sidebarOpen ? "justify-center" : ""}`}
-            >
-              <t.icon className="w-4 h-4 shrink-0" />
-              {sidebarOpen && <span className="truncate">{t.label}</span>}
-            </button>
-          ))}
+          {TABS.map(t => {
+            const readOnly = isSubAdmin && subAdminPermissions[t.id]?.canRead && !subAdminPermissions[t.id]?.canWrite;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                title={!sidebarOpen ? t.label : undefined}
+                className={`w-full flex items-center gap-3 px-2.5 py-2.5 rounded-lg text-sm font-medium transition-colors ${tab === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"} ${!sidebarOpen ? "justify-center" : ""}`}
+              >
+                <t.icon className="w-4 h-4 shrink-0" />
+                {sidebarOpen && <span className="truncate flex-1 text-left">{t.label}</span>}
+                {sidebarOpen && readOnly && <Lock className="w-3 h-3 shrink-0 text-muted-foreground/50" />}
+              </button>
+            );
+          })}
         </nav>
 
         {/* Footer actions */}
@@ -4057,14 +4398,16 @@ export default function Admin() {
             {theme === "dark" ? <Sun className="w-4 h-4 shrink-0" /> : <Moon className="w-4 h-4 shrink-0" />}
             {sidebarOpen && <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>}
           </button>
-          <button
-            onClick={() => setShowChangePassword(v => !v)}
-            title="Change password"
-            className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors w-full ${!sidebarOpen ? "justify-center" : ""}`}
-          >
-            <KeyRound className="w-4 h-4 shrink-0" />
-            {sidebarOpen && <span>Change Password</span>}
-          </button>
+          {!isSubAdmin && (
+            <button
+              onClick={() => setShowChangePassword(v => !v)}
+              title="Change password"
+              className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors w-full ${!sidebarOpen ? "justify-center" : ""}`}
+            >
+              <KeyRound className="w-4 h-4 shrink-0" />
+              {sidebarOpen && <span>Change Password</span>}
+            </button>
+          )}
           <button
             onClick={handleLogout}
             title="Logout"
@@ -4129,6 +4472,12 @@ export default function Admin() {
 
         {/* Tab content */}
         <div className="flex-1 px-6 py-6 overflow-auto">
+          {isSubAdmin && tab !== "sub-admins" && subAdminPermissions[tab]?.canRead && !subAdminPermissions[tab]?.canWrite && (
+            <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-medium">
+              <Lock className="w-3.5 h-3.5 shrink-0" />
+              Read Only — you can view this section but cannot make changes
+            </div>
+          )}
           {tab === "dashboard" && <DashboardTab secret={secret} />}
           {tab === "users" && <UsersTab secret={secret} />}
           {tab === "withdrawals" && <WithdrawalsTab secret={secret} />}
@@ -4148,6 +4497,7 @@ export default function Admin() {
           {tab === "share" && <ShareMessagesTab secret={secret} />}
           {tab === "ads" && <AdsTab secret={secret} />}
           {tab === "scripts" && <ScriptsTab secret={secret} />}
+          {tab === "sub-admins" && <SubAdminsTab secret={secret} />}
         </div>
       </div>
     </div>

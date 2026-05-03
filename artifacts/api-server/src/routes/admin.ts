@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import {
   db,
   shareMessagesTable,
@@ -14,10 +14,13 @@ import {
   adsTable,
   tasksTable,
   pushSubscriptionsTable,
+  subAdminsTable,
+  subAdminPermissionsTable,
+  ADMIN_MODULES,
 } from "@workspace/db";
 import { eq, and, isNull, or, ilike, sql, desc, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { hashPassword } from "../lib/auth";
+import { hashPassword, verifyPassword, generateSubAdminToken, verifySubAdminToken, isSubAdminToken } from "../lib/auth";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import { sendUpgradeApprovedEmail, sendUpgradeRejectedEmail } from "../lib/email";
@@ -94,15 +97,59 @@ async function seedAdminConfig() {
   }
 }
 
-const requireAdmin = async (req: any, res: any, next: any) => {
-  const secret = req.headers["x-admin-secret"] ?? req.query.secret;
-  const currentPassword = await getAdminPassword();
-  if (secret !== currentPassword) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
+async function getSubAdminWithPermissions(id: number) {
+  const [sa] = await db.select().from(subAdminsTable).where(eq(subAdminsTable.id, id)).limit(1);
+  if (!sa || !sa.isActive) return null;
+  const perms = await db.select().from(subAdminPermissionsTable).where(eq(subAdminPermissionsTable.subAdminId, id));
+  const permissions: Record<string, { canRead: boolean; canWrite: boolean }> = {};
+  for (const p of perms) permissions[p.module] = { canRead: p.canRead, canWrite: p.canWrite };
+  return { ...sa, permissions };
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      isSuperAdmin?: boolean;
+      subAdmin?: { id: number; username: string; permissions: Record<string, { canRead: boolean; canWrite: boolean }> };
+    }
   }
-  next();
+}
+
+const requireAdmin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const secret = (req.headers["x-admin-secret"] as string) ?? (req.query.secret as string);
+  if (!secret) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const currentPassword = await getAdminPassword();
+  if (secret === currentPassword) {
+    req.isSuperAdmin = true;
+    return next();
+  }
+  if (isSubAdminToken(secret)) {
+    const subAdminId = verifySubAdminToken(secret);
+    if (!subAdminId) { res.status(401).json({ error: "Invalid or expired token" }); return; }
+    const sa = await getSubAdminWithPermissions(subAdminId);
+    if (!sa) { res.status(401).json({ error: "Sub-admin account disabled" }); return; }
+    req.subAdmin = { id: sa.id, username: sa.username, permissions: sa.permissions };
+    return next();
+  }
+  res.status(401).json({ error: "Unauthorized" });
 };
+
+const requireSuperAdmin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const secret = (req.headers["x-admin-secret"] as string) ?? (req.query.secret as string);
+  const currentPassword = await getAdminPassword();
+  if (secret === currentPassword) { req.isSuperAdmin = true; return next(); }
+  res.status(403).json({ error: "Super-admin access required" });
+};
+
+const requirePermission = (module: string, type: "read" | "write") =>
+  (req: Request, res: Response, next: NextFunction): void => {
+    if (req.isSuperAdmin) return next();
+    const perm = req.subAdmin?.permissions[module];
+    if (!perm) { res.status(403).json({ error: `No access to module: ${module}` }); return; }
+    if (type === "read" && !perm.canRead) { res.status(403).json({ error: `Read access required for: ${module}` }); return; }
+    if (type === "write" && !perm.canWrite) { res.status(403).json({ error: `Write access required for: ${module}` }); return; }
+    next();
+  };
 
 // ─── 2FA helpers ──────────────────────────────────────────────────────────────
 
@@ -377,7 +424,7 @@ router.delete("/admin/share-messages/:id", requireAdmin, async (req, res): Promi
 
 // ─── Change Password ───────────────────────────────────────────────────────────
 
-router.post("/admin/change-password", requireAdmin, async (req, res): Promise<void> => {
+router.post("/admin/change-password", requireSuperAdmin, async (req, res): Promise<void> => {
   const schema = z.object({
     newPassword: z.string().min(8, "Password must be at least 8 characters"),
   });
@@ -1797,6 +1844,135 @@ router.post("/admin/notifications/subscribe", requireAdmin, async (req, res): Pr
       set: { userId: adminUserId, p256dh: keys.p256dh, auth: keys.auth },
     });
   res.json({ ok: true });
+});
+
+// ─── Sub-Admin Management ─────────────────────────────────────────────────────
+
+// POST /admin/sub-admins/login — public, no auth required
+router.post("/admin/sub-admins/login", async (req, res): Promise<void> => {
+  const schema = z.object({
+    username: z.string().min(1),
+    password: z.string().min(1),
+  });
+  const data = schema.safeParse(req.body);
+  if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
+  const [sa] = await db
+    .select()
+    .from(subAdminsTable)
+    .where(eq(subAdminsTable.username, data.data.username.trim()))
+    .limit(1);
+  if (!sa || !sa.isActive) { res.status(401).json({ error: "Invalid credentials" }); return; }
+  if (!verifyPassword(data.data.password, sa.passwordHash)) {
+    res.status(401).json({ error: "Invalid credentials" }); return;
+  }
+  const token = generateSubAdminToken(sa.id);
+  res.json({ token, username: sa.username, email: sa.email });
+});
+
+// GET /admin/sub-admins/me — sub-admin fetches own permissions
+router.get("/admin/sub-admins/me", requireAdmin, async (req, res): Promise<void> => {
+  if (req.isSuperAdmin) { res.json({ isSuperAdmin: true, permissions: {} }); return; }
+  if (!req.subAdmin) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const perms = await db
+    .select()
+    .from(subAdminPermissionsTable)
+    .where(eq(subAdminPermissionsTable.subAdminId, req.subAdmin.id));
+  const permissions: Record<string, { canRead: boolean; canWrite: boolean }> = {};
+  for (const p of perms) permissions[p.module] = { canRead: p.canRead, canWrite: p.canWrite };
+  res.json({ isSuperAdmin: false, username: req.subAdmin.username, permissions });
+});
+
+// GET /admin/sub-admins — list all (superadmin only)
+router.get("/admin/sub-admins", requireSuperAdmin, async (_req, res): Promise<void> => {
+  const admins = await db
+    .select({
+      id: subAdminsTable.id,
+      username: subAdminsTable.username,
+      email: subAdminsTable.email,
+      isActive: subAdminsTable.isActive,
+      createdAt: subAdminsTable.createdAt,
+    })
+    .from(subAdminsTable)
+    .orderBy(desc(subAdminsTable.createdAt));
+  const allPerms = await db.select().from(subAdminPermissionsTable);
+  const permMap: Record<number, Record<string, { canRead: boolean; canWrite: boolean }>> = {};
+  for (const p of allPerms) {
+    if (!permMap[p.subAdminId]) permMap[p.subAdminId] = {};
+    permMap[p.subAdminId][p.module] = { canRead: p.canRead, canWrite: p.canWrite };
+  }
+  res.json(admins.map(a => ({ ...a, permissions: permMap[a.id] ?? {} })));
+});
+
+// POST /admin/sub-admins — create (superadmin only)
+router.post("/admin/sub-admins", requireSuperAdmin, async (req, res): Promise<void> => {
+  const schema = z.object({
+    username: z.string().min(2).max(32),
+    email: z.string().email(),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+    permissions: z.record(z.object({ canRead: z.boolean(), canWrite: z.boolean() })).optional(),
+  });
+  const data = schema.safeParse(req.body);
+  if (!data.success) {
+    res.status(400).json({ error: data.error.issues[0]?.message ?? "Invalid input" }); return;
+  }
+  const existingUser = await db
+    .select({ id: subAdminsTable.id })
+    .from(subAdminsTable)
+    .where(or(eq(subAdminsTable.username, data.data.username), eq(subAdminsTable.email, data.data.email)))
+    .limit(1);
+  if (existingUser.length > 0) {
+    res.status(409).json({ error: "Username or email already exists" }); return;
+  }
+  const [sa] = await db
+    .insert(subAdminsTable)
+    .values({ username: data.data.username, email: data.data.email, passwordHash: hashPassword(data.data.password) })
+    .returning();
+  if (data.data.permissions && Object.keys(data.data.permissions).length > 0) {
+    const permRows = Object.entries(data.data.permissions)
+      .filter(([mod]) => (ADMIN_MODULES as readonly string[]).includes(mod))
+      .map(([module, p]) => ({ subAdminId: sa.id, module, canRead: p.canRead, canWrite: p.canWrite }));
+    if (permRows.length > 0) await db.insert(subAdminPermissionsTable).values(permRows);
+  }
+  res.json({ id: sa.id, username: sa.username, email: sa.email, isActive: sa.isActive, createdAt: sa.createdAt });
+});
+
+// PATCH /admin/sub-admins/:id — update (superadmin only)
+router.patch("/admin/sub-admins/:id", requireSuperAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  const schema = z.object({
+    isActive: z.boolean().optional(),
+    password: z.string().min(8).optional(),
+  });
+  const data = schema.safeParse(req.body);
+  if (!data.success) { res.status(400).json({ error: data.error.issues[0]?.message ?? "Invalid" }); return; }
+  const updateData: Record<string, unknown> = {};
+  if (data.data.isActive !== undefined) updateData.isActive = data.data.isActive;
+  if (data.data.password) updateData.passwordHash = hashPassword(data.data.password);
+  if (Object.keys(updateData).length === 0) { res.status(400).json({ error: "Nothing to update" }); return; }
+  const [sa] = await db.update(subAdminsTable).set(updateData).where(eq(subAdminsTable.id, id)).returning();
+  if (!sa) { res.status(404).json({ error: "Sub-admin not found" }); return; }
+  res.json({ id: sa.id, username: sa.username, email: sa.email, isActive: sa.isActive });
+});
+
+// DELETE /admin/sub-admins/:id — delete (superadmin only)
+router.delete("/admin/sub-admins/:id", requireSuperAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  await db.delete(subAdminsTable).where(eq(subAdminsTable.id, id));
+  res.json({ success: true });
+});
+
+// PUT /admin/sub-admins/:id/permissions — replace all permissions (superadmin only)
+router.put("/admin/sub-admins/:id/permissions", requireSuperAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  const schema = z.record(z.object({ canRead: z.boolean(), canWrite: z.boolean() }));
+  const data = schema.safeParse(req.body);
+  if (!data.success) { res.status(400).json({ error: "Invalid permissions format" }); return; }
+  await db.delete(subAdminPermissionsTable).where(eq(subAdminPermissionsTable.subAdminId, id));
+  const permRows = Object.entries(data.data)
+    .filter(([mod]) => (ADMIN_MODULES as readonly string[]).includes(mod))
+    .map(([module, p]) => ({ subAdminId: id, module, canRead: p.canRead, canWrite: p.canWrite }));
+  if (permRows.length > 0) await db.insert(subAdminPermissionsTable).values(permRows);
+  res.json({ success: true });
 });
 
 export default router;
