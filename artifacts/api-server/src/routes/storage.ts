@@ -6,6 +6,7 @@ import {
 } from "@workspace/api-zod";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { requireAuth } from "../middlewares/requireAuth";
+import { reserveUpload } from "../lib/avatarUploadRegistry";
 
 const ALLOWED_CONTENT_TYPES = ["image/jpeg", "image/png"];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
@@ -42,6 +43,8 @@ router.post("/storage/uploads/request-url", requireAuth, async (req: Request, re
   try {
     const uploadURL = await objectStorageService.getObjectEntityUploadURL();
     const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
+
+    reserveUpload(objectPath, req.userId!);
 
     res.json(
       RequestUploadUrlResponse.parse({
@@ -94,30 +97,25 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
  * GET /storage/objects/*
  *
  * Serve object entities from PRIVATE_OBJECT_DIR.
- * These are served from a separate path from /public-objects and can optionally
- * be protected with authentication or ACL checks based on the use case.
+ * Intentionally public — objects stored here are user avatars that must be
+ * visible to all users (e.g. in global chat). Access is scoped by a strict
+ * UUID path pattern so only upload-generated paths can be served. Arbitrary
+ * path traversal is rejected before hitting storage.
  */
+const OBJECT_PATH_RE = /^uploads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 router.get("/storage/objects/*path", async (req: Request, res: Response) => {
   try {
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
+
+    if (!OBJECT_PATH_RE.test(wildcardPath)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
     const objectPath = `/objects/${wildcardPath}`;
     const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
-
-    // --- Protected route example (uncomment when using replit-auth) ---
-    // if (!req.isAuthenticated()) {
-    //   res.status(401).json({ error: "Unauthorized" });
-    //   return;
-    // }
-    // const canAccess = await objectStorageService.canAccessObjectEntity({
-    //   userId: req.user.id,
-    //   objectFile,
-    //   requestedPermission: ObjectPermission.READ,
-    // });
-    // if (!canAccess) {
-    //   res.status(403).json({ error: "Forbidden" });
-    //   return;
-    // }
 
     const response = await objectStorageService.downloadObject(objectFile);
 

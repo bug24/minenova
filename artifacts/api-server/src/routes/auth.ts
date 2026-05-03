@@ -7,6 +7,7 @@ import { RegisterBody, LoginBody, GetMeResponse } from "@workspace/api-zod";
 import { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail } from "../lib/email";
 import crypto from "crypto";
 import { z } from "zod";
+import { verifyUploadOwnership, consumeUpload } from "../lib/avatarUploadRegistry";
 
 /** Extract the real client IP, preferring the first address in X-Forwarded-For. */
 function getClientIp(req: any): string | null {
@@ -420,6 +421,8 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
   res.json({ success: true });
 });
 
+const AVATAR_OBJECT_PATH_RE = /^\/objects\/uploads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 router.patch("/users/me/avatar", requireAuth, async (req, res): Promise<void> => {
   const schema = z.object({ objectPath: z.string().min(1) });
   const parsed = schema.safeParse(req.body);
@@ -428,10 +431,15 @@ router.patch("/users/me/avatar", requireAuth, async (req, res): Promise<void> =>
     return;
   }
   const { objectPath } = parsed.data;
-  if (!objectPath.startsWith("/objects/")) {
+  if (!AVATAR_OBJECT_PATH_RE.test(objectPath)) {
     res.status(400).json({ error: "Invalid objectPath" });
     return;
   }
+  if (!verifyUploadOwnership(objectPath, req.userId!)) {
+    res.status(403).json({ error: "Upload not authorised for this user" });
+    return;
+  }
+  consumeUpload(objectPath);
   const avatarUrl = `/api/storage${objectPath}`;
   await db.update(usersTable).set({ avatarUrl }).where(eq(usersTable.id, req.userId!));
   res.json({ success: true });

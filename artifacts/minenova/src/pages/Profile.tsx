@@ -6,7 +6,8 @@ import { Switch } from "@/components/ui/switch";
 import { Link } from "wouter";
 import { Camera, Sun, Moon, Wallet, Users, TrendingUp, LogOut, ExternalLink, Pickaxe } from "lucide-react";
 import { useLogout } from "@workspace/api-client-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Profile() {
   const { user, logout, updateUser } = useAuth();
@@ -15,9 +16,8 @@ export default function Profile() {
   const { data: referrals } = useGetReferrals();
   const { data: miningStatus } = useGetMiningStatus();
   const logoutMutation = useLogout();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const handleLogout = () => {
     logoutMutation.mutate();
@@ -29,11 +29,11 @@ export default function Profile() {
     if (!file) return;
 
     if (!["image/jpeg", "image/png"].includes(file.type)) {
-      setUploadError("Only JPEG and PNG images are allowed.");
+      toast({ variant: "destructive", title: "Unsupported file type", description: "Only JPEG and PNG images are allowed." });
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      setUploadError("File size must not exceed 5 MB.");
+      toast({ variant: "destructive", title: "File too large", description: "File size must not exceed 5 MB." });
       return;
     }
 
@@ -41,7 +41,6 @@ export default function Profile() {
     if (!token) return;
 
     setUploading(true);
-    setUploadError(null);
 
     try {
       const urlRes = await fetch("/api/storage/uploads/request-url", {
@@ -81,11 +80,13 @@ export default function Profile() {
 
       const avatarUrl = `/api/storage${objectPath}`;
       updateUser({ avatarUrl });
+      toast({ title: "Avatar updated!", description: "Your profile picture has been saved." });
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed");
+      toast({ variant: "destructive", title: "Upload failed", description: err instanceof Error ? err.message : "Something went wrong." });
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      const inp = document.getElementById("avatar-input") as HTMLInputElement | null;
+      if (inp) inp.value = "";
     }
   };
 
@@ -99,31 +100,34 @@ export default function Profile() {
       {/* User Card */}
       <div className="bg-card border border-card-border rounded-2xl p-6">
         <div className="flex items-center gap-4">
-          <div className="relative group">
+          <div className="relative">
             <div className="w-16 h-16 rounded-2xl bg-primary/20 flex items-center justify-center overflow-hidden">
               {user?.avatarUrl ? (
                 <img src={user.avatarUrl} alt={user.username} className="w-full h-full object-cover" />
               ) : (
                 <span className="text-2xl font-black text-primary">{user?.username?.[0]?.toUpperCase()}</span>
               )}
-            </div>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="absolute inset-0 rounded-2xl bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:cursor-not-allowed"
-              aria-label="Change avatar"
-            >
-              {uploading ? (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <Camera className="w-5 h-5 text-white" />
+              {uploading && (
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                </div>
               )}
-            </button>
+            </div>
+            {!uploading && (
+              <label
+                htmlFor="avatar-input"
+                aria-label="Change avatar"
+                className="absolute -bottom-1.5 -right-1.5 w-7 h-7 rounded-full bg-primary shadow-md flex items-center justify-center cursor-pointer hover:bg-primary/90 transition-colors"
+              >
+                <Camera className="w-3.5 h-3.5 text-primary-foreground" />
+              </label>
+            )}
             <input
-              ref={fileInputRef}
+              id="avatar-input"
               type="file"
-              accept="image/jpeg,image/png"
-              className="hidden"
+              accept=".jpg,.jpeg,.png"
+              className="sr-only"
+              disabled={uploading}
               onChange={handleAvatarChange}
             />
           </div>
@@ -137,9 +141,6 @@ export default function Profile() {
                   : `Mining Level ${user?.miningLevel}`}
               </span>
             </div>
-            {uploadError && (
-              <p className="text-xs text-destructive mt-1">{uploadError}</p>
-            )}
           </div>
         </div>
       </div>
