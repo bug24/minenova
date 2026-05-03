@@ -2011,6 +2011,26 @@ router.get("/admin/sub-admins/me", requireAdmin, async (req, res): Promise<void>
   res.json({ isSuperAdmin: false, username: req.subAdmin.username, permissions });
 });
 
+// POST /admin/sub-admins/me/change-password — sub-admin self-service password change
+router.post("/admin/sub-admins/me/change-password", requireAdmin, async (req, res): Promise<void> => {
+  if (req.isSuperAdmin || !req.subAdmin) { res.status(403).json({ error: "Only sub-admins can use this endpoint" }); return; }
+  const schema = z.object({
+    currentPassword: z.string().min(1),
+    newPassword: z.string().min(8, "New password must be at least 8 characters"),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid input" }); return; }
+  const { currentPassword, newPassword } = parsed.data;
+  const [sa] = await db.select().from(subAdminsTable).where(eq(subAdminsTable.id, req.subAdmin.id)).limit(1);
+  if (!sa) { res.status(404).json({ error: "Sub-admin not found" }); return; }
+  if (!verifyPassword(currentPassword, sa.passwordHash)) {
+    res.status(401).json({ error: "Current password is incorrect" }); return;
+  }
+  const newHash = hashPassword(newPassword);
+  await db.update(subAdminsTable).set({ passwordHash: newHash }).where(eq(subAdminsTable.id, sa.id));
+  res.json({ ok: true });
+});
+
 // GET /admin/sub-admins — list all (superadmin only)
 router.get("/admin/sub-admins", requireSuperAdmin, async (_req, res): Promise<void> => {
   const admins = await db

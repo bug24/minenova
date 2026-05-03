@@ -4851,6 +4851,13 @@ export default function Admin() {
   const [showNewPw, setShowNewPw] = useState(false);
   const [changingPw, setChangingPw] = useState(false);
 
+  const [showSubChangePw, setShowSubChangePw] = useState(false);
+  const [subCurPw, setSubCurPw] = useState("");
+  const [subNewPw, setSubNewPw] = useState("");
+  const [subConfirmPw, setSubConfirmPw] = useState("");
+  const [showSubPwVis, setShowSubPwVis] = useState(false);
+  const [changingSubPw, setChangingSubPw] = useState(false);
+
   const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
   const handleLogin = async () => {
@@ -5012,6 +5019,28 @@ export default function Admin() {
     finally { setChangingPw(false); }
   };
 
+  const handleSubChangePassword = async () => {
+    if (!subCurPw.trim()) { toast({ variant: "destructive", title: "Enter your current password" }); return; }
+    if (subNewPw.length < 8) { toast({ variant: "destructive", title: "Password too short", description: "Min. 8 characters." }); return; }
+    if (subNewPw !== subConfirmPw) { toast({ variant: "destructive", title: "Passwords don't match" }); return; }
+    setChangingSubPw(true);
+    try {
+      const res = await apiFetch("/admin/sub-admins/me/change-password", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ currentPassword: subCurPw, newPassword: subNewPw }),
+      });
+      if (res.ok) {
+        toast({ title: "Password changed successfully!" });
+        setSubCurPw(""); setSubNewPw(""); setSubConfirmPw(""); setShowSubChangePw(false);
+      } else {
+        const err = await res.json();
+        toast({ variant: "destructive", title: "Failed", description: err.error });
+      }
+    } catch { toast({ variant: "destructive", title: "Connection error" }); }
+    finally { setChangingSubPw(false); }
+  };
+
   if (!authed) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
@@ -5169,6 +5198,16 @@ export default function Admin() {
               {sidebarOpen && <span>Change Password</span>}
             </button>
           )}
+          {isSubAdmin && (
+            <button
+              onClick={() => { setShowSubChangePw(v => !v); setSubCurPw(""); setSubNewPw(""); setSubConfirmPw(""); }}
+              title="Change my password"
+              className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors w-full ${!sidebarOpen ? "justify-center" : ""}`}
+            >
+              <KeyRound className="w-4 h-4 shrink-0" />
+              {sidebarOpen && <span>Change Password</span>}
+            </button>
+          )}
           <button
             onClick={handleLogout}
             title="Logout"
@@ -5211,8 +5250,8 @@ export default function Admin() {
           })()}
         </div>
 
-        {/* Change password panel */}
-        {showChangePassword && (
+        {/* Superadmin change password panel */}
+        {showChangePassword && !isSubAdmin && (
           <div className="px-6 py-3 border-b border-border bg-muted/30">
             <div className="flex gap-3 flex-wrap max-w-2xl">
               <div className="relative flex-1 min-w-[160px]">
@@ -5228,6 +5267,50 @@ export default function Admin() {
               <Button size="sm" variant="outline" onClick={() => { setShowChangePassword(false); setNewPassword(""); setConfirmPassword(""); }}><X className="w-3 h-3" /></Button>
             </div>
             {newPassword && confirmPassword && newPassword !== confirmPassword && <p className="text-xs text-destructive mt-2">Passwords don't match</p>}
+          </div>
+        )}
+
+        {/* Sub-admin change password panel */}
+        {showSubChangePw && isSubAdmin && (
+          <div className="px-6 py-3 border-b border-border bg-muted/30">
+            <p className="text-xs font-semibold text-muted-foreground mb-2">Change your password</p>
+            <div className="flex gap-3 flex-wrap max-w-2xl">
+              <div className="relative flex-1 min-w-[160px]">
+                <Input
+                  type={showSubPwVis ? "text" : "password"}
+                  placeholder="Current password"
+                  value={subCurPw}
+                  onChange={e => setSubCurPw(e.target.value)}
+                  className="pr-10"
+                />
+                <button type="button" onClick={() => setShowSubPwVis(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  {showSubPwVis ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <Input
+                type={showSubPwVis ? "text" : "password"}
+                placeholder="New password (min. 8 chars)"
+                value={subNewPw}
+                onChange={e => setSubNewPw(e.target.value)}
+                className="flex-1 min-w-[160px]"
+              />
+              <Input
+                type={showSubPwVis ? "text" : "password"}
+                placeholder="Confirm new password"
+                value={subConfirmPw}
+                onChange={e => setSubConfirmPw(e.target.value)}
+                className="flex-1 min-w-[160px]"
+              />
+              <Button size="sm" onClick={handleSubChangePassword} disabled={changingSubPw || !subCurPw || !subNewPw || !subConfirmPw} className="gap-1">
+                <Save className="w-3 h-3" /> {changingSubPw ? "Saving…" : "Save"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => { setShowSubChangePw(false); setSubCurPw(""); setSubNewPw(""); setSubConfirmPw(""); }}>
+                <X className="w-3 h-3" />
+              </Button>
+            </div>
+            {subNewPw && subConfirmPw && subNewPw !== subConfirmPw && (
+              <p className="text-xs text-destructive mt-2">Passwords don't match</p>
+            )}
           </div>
         )}
 
