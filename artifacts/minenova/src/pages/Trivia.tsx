@@ -62,7 +62,7 @@ export default function Trivia() {
   const { data: settings } = useQuery<TriviaSettings>({
     queryKey: ["/api/trivia/settings"],
     queryFn: fetchTriviaSettings,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
   });
 
   const minFee = settings?.minFee ?? 50;
