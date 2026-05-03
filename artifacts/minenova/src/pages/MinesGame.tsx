@@ -17,7 +17,7 @@ import {
 const API_BASE = "/api";
 
 async function minesApi<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = localStorage.getItem("token");
+  const token = localStorage.getItem("minenova_token");
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
@@ -225,9 +225,9 @@ export default function MinesGame() {
 
   const handleStart = useCallback(async () => {
     if (loading) return;
-    if (!betNum || betNum <= 0) { toast({ variant: "destructive", title: "Enter a valid bet" }); return; }
-    if (betNum < settings.minBet) { toast({ variant: "destructive", title: `Minimum bet is ${settings.minBet} coins` }); return; }
-    if (betNum > settings.maxBet) { toast({ variant: "destructive", title: `Maximum bet is ${settings.maxBet} coins` }); return; }
+    if (!betNum || betNum <= 0) { toast({ variant: "destructive", title: "Enter a valid amount" }); return; }
+    if (betNum < settings.minBet) { toast({ variant: "destructive", title: `Minimum entry is ${settings.minBet} coins` }); return; }
+    if (betNum > settings.maxBet) { toast({ variant: "destructive", title: `Maximum entry is ${settings.maxBet} coins` }); return; }
 
     setLoading(true);
     try {
@@ -373,7 +373,7 @@ export default function MinesGame() {
 
       {/* Title */}
       <div className="flex items-center gap-2">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-600 to-orange-600 flex items-center justify-center shrink-0">
+        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0">
           <Bomb className="w-5 h-5 text-white" />
         </div>
         <div>
@@ -400,13 +400,13 @@ export default function MinesGame() {
         <div className="bg-card border border-border rounded-2xl p-4 space-y-4">
           {/* Bet */}
           <div>
-            <label className="text-xs font-semibold text-muted-foreground block mb-1.5">Bet Amount</label>
+            <label className="text-xs font-semibold text-muted-foreground block mb-1.5">Entry Amount</label>
             <div className="flex gap-2">
               <Input
                 type="number"
                 value={bet}
                 onChange={e => setBet(e.target.value)}
-                placeholder="Enter bet"
+                placeholder="Enter amount"
                 className="flex-1"
                 min={settings.minBet}
                 max={settings.maxBet}
@@ -449,7 +449,7 @@ export default function MinesGame() {
 
           {/* Multiplier preview table */}
           <div className="bg-muted/40 rounded-xl p-3">
-            <p className="text-[10px] font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Potential payouts</p>
+            <p className="text-[10px] font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Win Multipliers</p>
             <div className="grid grid-cols-3 gap-1.5">
               {[1, 2, 3, 5, 8, 12].map(n => {
                 if (n > TOTAL_TILES - mineCount) return null;
@@ -473,7 +473,7 @@ export default function MinesGame() {
             onClick={handleStart}
             disabled={loading || !settings.enabled || !betNum || betNum <= 0}
           >
-            {loading ? "Starting…" : `Start Game — ${betNum > 0 ? betNum.toFixed(0) : "?"} coins`}
+            {loading ? "Starting…" : `Play — ${betNum > 0 ? betNum.toFixed(0) : "?"} coins entry`}
           </Button>
           {!settings.enabled && (
             <p className="text-xs text-destructive text-center">Mines is currently disabled by admin</p>
@@ -487,7 +487,7 @@ export default function MinesGame() {
           {/* Stats bar */}
           <div className="grid grid-cols-3 gap-2">
             <div className="bg-card border border-border rounded-xl p-2.5 text-center">
-              <p className="text-[10px] text-muted-foreground mb-0.5">Bet</p>
+              <p className="text-[10px] text-muted-foreground mb-0.5">Entry</p>
               <p className="text-sm font-black">{betNum.toFixed(0)}</p>
             </div>
             <div className={`rounded-xl p-2.5 text-center border transition-colors ${

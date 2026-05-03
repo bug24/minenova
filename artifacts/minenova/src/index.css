@@ -97,7 +97,7 @@
   --secondary: 240 15% 91%;
   --secondary-foreground: 237 35% 12%;
   --muted: 240 15% 93%;
-  --muted-foreground: 237 15% 48%;
+  --muted-foreground: 237 15% 38%;
   --accent: 43 90% 55%;
   --accent-foreground: 237 35% 8%;
   --destructive: 0 84% 60%;
@@ -174,7 +174,7 @@
   --secondary-foreground: 230 40% 92%;
 
   --muted: 237 30% 13%;
-  --muted-foreground: 230 20% 50%;
+  --muted-foreground: 230 25% 68%;
 
   /* Gold/amber accent */
   --accent: 43 90% 60%;

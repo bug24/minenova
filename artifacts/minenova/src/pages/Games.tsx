@@ -6,7 +6,7 @@ const games = [
     href: "/ludo",
     name: "Ludo",
     tagline: "Classic Board Game",
-    description: "Roll the dice, race your pieces home and outrun your opponent in this beloved 2-player wager game.",
+    description: "Roll the dice, race your pieces home and outrun your opponent in this classic 2-player skill game.",
     icon: Dices,
     gradient: "from-violet-600 to-indigo-700",
     badge: "2 Players",
@@ -43,7 +43,7 @@ export default function Games() {
           <Trophy className="w-6 h-6 text-primary" />
           Games
         </h1>
-        <p className="text-xs text-muted-foreground">Pick a game, wager coins and win</p>
+        <p className="text-xs text-muted-foreground">Pick a game and earn coins</p>
       </div>
 
       {/* Game cards */}
