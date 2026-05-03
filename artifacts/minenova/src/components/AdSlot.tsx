@@ -37,7 +37,7 @@ function getAdSlots(): Promise<AdSlots> {
 function injectSlotHtml(container: HTMLElement, html: string) {
   container.innerHTML = "";
   if (!html.trim()) return;
-  const sanitized = DOMPurify.sanitize(html.trim(), SLOT_PURIFY_CONFIG) as unknown as string;
+  const sanitized = String(DOMPurify.sanitize(html.trim(), SLOT_PURIFY_CONFIG));
 
   const wrapper = document.createElement("div");
   wrapper.innerHTML = sanitized;

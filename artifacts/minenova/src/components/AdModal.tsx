@@ -54,7 +54,7 @@ function resolveExternalUrl(raw: string | null | undefined): string {
 
 function injectAdHtml(container: HTMLElement, providerScript: string, body: string) {
   container.innerHTML = "";
-  const sanitized = DOMPurify.sanitize(`${providerScript}${body}`, AD_PURIFY_CONFIG) as unknown as string;
+  const sanitized = String(DOMPurify.sanitize(`${providerScript}${body}`, AD_PURIFY_CONFIG));
   const wrapper = document.createElement("div");
   wrapper.innerHTML = sanitized;
 

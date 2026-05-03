@@ -12,7 +12,7 @@ async function injectBodyScripts() {
     if (!scripts.trim()) return;
 
     const container = document.createElement("div");
-    container.innerHTML = DOMPurify.sanitize(scripts, { FORCE_BODY: true, ADD_TAGS: ["script"] }) as unknown as string;
+    container.innerHTML = String(DOMPurify.sanitize(scripts, { FORCE_BODY: true, ADD_TAGS: ["script"] }));
 
     const scriptEls = Array.from(container.querySelectorAll("script"));
     for (const oldScript of scriptEls) {
