@@ -593,7 +593,7 @@ router.post("/admin/users/:id/reset-password", requireAdmin, async (req, res): P
   res.json({ success: true, newPassword });
 });
 
-router.post("/admin/users/:id/suspend", requireAdmin, async (req, res): Promise<void> => {
+router.post("/admin/users/:id/suspend", requireAdmin, requirePermission("users", "write"), async (req, res): Promise<void> => {
   const id = parseInt(req.params.id as string);
   const [user] = await db.select({ isSuspended: usersTable.isSuspended }).from(usersTable).where(eq(usersTable.id, id)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
@@ -718,7 +718,7 @@ router.put("/admin/withdrawals/:id/note", requireAdmin, async (req, res): Promis
   res.json({ success: true });
 });
 
-router.post("/admin/withdrawals/:id/approve", requireAdmin, async (req, res): Promise<void> => {
+router.post("/admin/withdrawals/:id/approve", requireAdmin, requirePermission("withdrawals", "write"), async (req, res): Promise<void> => {
   const id = parseInt(req.params.id as string);
   if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid withdrawal ID" }); return; }
   const schema = z.object({ adminNote: z.string().nullable().optional() });
@@ -739,7 +739,7 @@ router.post("/admin/withdrawals/:id/approve", requireAdmin, async (req, res): Pr
   });
 });
 
-router.post("/admin/withdrawals/:id/reject", requireAdmin, async (req, res): Promise<void> => {
+router.post("/admin/withdrawals/:id/reject", requireAdmin, requirePermission("withdrawals", "write"), async (req, res): Promise<void> => {
   const id = parseInt(req.params.id as string);
   if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid withdrawal ID" }); return; }
   const schema = z.object({ adminNote: z.string().nullable().optional() });
@@ -1562,7 +1562,7 @@ router.get("/admin/upgrade-payments", requireAdmin, async (_req, res): Promise<v
   })));
 });
 
-router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, async (req, res): Promise<void> => {
+router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, requirePermission("upgrades", "write"), async (req, res): Promise<void> => {
   const id = parseInt(req.params.transactionId as string, 10);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -1612,7 +1612,7 @@ router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, asyn
   res.json({ success: true, message: `Upgrade approved for ${user.username}.` });
 });
 
-router.post("/admin/upgrade-payments/:transactionId/reject", requireAdmin, async (req, res): Promise<void> => {
+router.post("/admin/upgrade-payments/:transactionId/reject", requireAdmin, requirePermission("upgrades", "write"), async (req, res): Promise<void> => {
   const id = parseInt(req.params.transactionId as string, 10);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
 
