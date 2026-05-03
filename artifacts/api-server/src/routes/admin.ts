@@ -89,6 +89,8 @@ async function seedAdminConfig() {
     trivia_min_fee: "50",
     trivia_max_fee: "50000",
     trivia_fee_pct: "5",
+    withdrawal_fee_enabled: "false",
+    withdrawal_fee_pct: "0",
   };
   for (const [key, value] of Object.entries(defaults)) {
     const [existing] = await db
@@ -1351,6 +1353,7 @@ router.get("/admin/settings", requireAdmin, async (_req, res): Promise<void> => 
     "auto_miner_interval_minutes",
     "trivia_enabled", "trivia_min_fee", "trivia_max_fee", "trivia_fee_pct",
     "mines_enabled", "mines_min_bet", "mines_max_bet", "mines_fee_pct",
+    "withdrawal_fee_enabled", "withdrawal_fee_pct",
   ];
   const rows = await db.select().from(adminConfigTable).where(sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`);
   const settings: Record<string, string> = {};
@@ -1404,6 +1407,8 @@ router.put("/admin/settings", requireAdmin, async (req, res): Promise<void> => {
     mines_min_bet: strictNum(1).optional(),
     mines_max_bet: strictNum(1).optional(),
     mines_fee_pct: strictNum(0, 99).optional(),
+    withdrawal_fee_enabled: boolStr.optional(),
+    withdrawal_fee_pct: strictNum(0, 99).optional(),
   });
   const data = schema.safeParse(req.body);
   if (!data.success) {

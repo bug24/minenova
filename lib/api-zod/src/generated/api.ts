@@ -275,6 +275,8 @@ export const GetWalletResponse = zod.object({
   minimumWithdrawal: zod.number(),
   usdtBalance: zod.number(),
   lockedUsdtBalance: zod.number(),
+  withdrawalFeeEnabled: zod.boolean(),
+  withdrawalFeePct: zod.number(),
 });
 
 /**

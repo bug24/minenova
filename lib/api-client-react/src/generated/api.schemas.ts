@@ -168,6 +168,8 @@ export interface Wallet {
   minimumWithdrawal: number;
   usdtBalance: number;
   lockedUsdtBalance: number;
+  withdrawalFeeEnabled: boolean;
+  withdrawalFeePct: number;
 }
 
 export interface WithdrawalBody {

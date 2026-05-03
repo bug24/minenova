@@ -890,6 +890,10 @@ components:
           type: number
         lockedUsdtBalance:
           type: number
+        withdrawalFeeEnabled:
+          type: boolean
+        withdrawalFeePct:
+          type: number
       required:
         - totalBalance
         - pendingBalance
@@ -898,6 +902,8 @@ components:
         - minimumWithdrawal
         - usdtBalance
         - lockedUsdtBalance
+        - withdrawalFeeEnabled
+        - withdrawalFeePct
 
     WithdrawalBody:
       type: object

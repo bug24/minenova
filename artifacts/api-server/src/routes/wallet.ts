@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, usersTable, transactionsTable } from "@workspace/db";
+import { db, usersTable, transactionsTable, adminConfigTable } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { RequestWithdrawalBody, GetWalletResponse, RequestWithdrawalResponse, GetTransactionsResponse } from "@workspace/api-zod";
@@ -13,8 +13,29 @@ const MINIMUM_WITHDRAWAL = 5;
 const COINS_PER_USDT = 1000;
 const MINIMUM_COINS = MINIMUM_WITHDRAWAL * COINS_PER_USDT;
 
+async function getWithdrawalFeeConfig(): Promise<{ enabled: boolean; pct: number }> {
+  const rows = await db
+    .select()
+    .from(adminConfigTable)
+    .where(sql`key IN ('withdrawal_fee_enabled', 'withdrawal_fee_pct')`);
+  const map: Record<string, string> = {};
+  for (const r of rows) map[r.key] = r.value;
+  return {
+    enabled: map["withdrawal_fee_enabled"] === "true",
+    pct: parseFloat(map["withdrawal_fee_pct"] ?? "0") || 0,
+  };
+}
+
+function applyFee(amount: number, feePct: number): { fee: number; netPayout: number } {
+  const fee = Math.round(amount * feePct / 100 * 100) / 100;
+  return { fee, netPayout: Math.round((amount - fee) * 100) / 100 };
+}
+
 router.get("/wallet", requireAuth, async (req, res): Promise<void> => {
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
+  const [[user], feeConfig] = await Promise.all([
+    db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1),
+    getWithdrawalFeeConfig(),
+  ]);
 
   res.json(GetWalletResponse.parse({
     totalBalance: user.coinBalance,
@@ -24,6 +45,8 @@ router.get("/wallet", requireAuth, async (req, res): Promise<void> => {
     minimumWithdrawal: MINIMUM_WITHDRAWAL,
     usdtBalance: user.usdtBalance ?? 0,
     lockedUsdtBalance: user.lockedUsdtBalance ?? 0,
+    withdrawalFeeEnabled: feeConfig.enabled,
+    withdrawalFeePct: feeConfig.pct,
   }));
 });
 
@@ -54,14 +77,22 @@ router.post("/wallet/withdraw", requireAuth, async (req, res): Promise<void> => 
     return;
   }
 
+  const feeConfig = await getWithdrawalFeeConfig();
+  const { fee, netPayout } = feeConfig.enabled
+    ? applyFee(amount, feeConfig.pct)
+    : { fee: 0, netPayout: amount };
+
   const paymentTag = generatePaymentTag();
+  const description = feeConfig.enabled && fee > 0
+    ? `USDT withdrawal to ${walletAddress.slice(0, 8)}... (${feeConfig.pct}% fee, $${fee.toFixed(2)} deducted)`
+    : `USDT withdrawal to ${walletAddress.slice(0, 8)}...`;
 
   const [tx] = await db.insert(transactionsTable).values({
     userId: req.userId!,
     type: "withdrawal",
-    amount,
+    amount: netPayout,
     status: "pending",
-    description: `USDT withdrawal to ${walletAddress.slice(0, 8)}...`,
+    description,
     walletAddress,
     usdtAddress: USDT_DEPOSIT_ADDRESS,
     paymentTag,
@@ -70,19 +101,19 @@ router.post("/wallet/withdraw", requireAuth, async (req, res): Promise<void> => 
   await db.update(usersTable)
     .set({
       coinBalance: user.coinBalance - requiredCoins,
-      totalWithdrawn: user.totalWithdrawn + amount,
+      totalWithdrawn: user.totalWithdrawn + netPayout,
     })
     .where(eq(usersTable.id, req.userId!));
 
   sendAdminNotification({
     title: "New Withdrawal Request",
-    body: `$${amount} USDT from @${user.username} — tag ${paymentTag}`,
+    body: `$${netPayout} USDT from @${user.username} — tag ${paymentTag}`,
     url: "/admin",
   }).catch(() => {});
 
   res.json(RequestWithdrawalResponse.parse({
     transactionId: tx.id,
-    amount,
+    amount: netPayout,
     status: "pending",
     message: "Withdrawal request submitted. Send USDT to the address with your payment tag.",
     usdtAddress: USDT_DEPOSIT_ADDRESS,
@@ -121,7 +152,15 @@ router.post("/wallet/withdraw-usdt", requireAuth, async (req, res): Promise<void
     return;
   }
 
+  const feeConfig = await getWithdrawalFeeConfig();
+  const { fee, netPayout } = feeConfig.enabled
+    ? applyFee(amount, feeConfig.pct)
+    : { fee: 0, netPayout: amount };
+
   const paymentTag = generatePaymentTag();
+  const description = feeConfig.enabled && fee > 0
+    ? `Referral USDT withdrawal to ${walletAddress.slice(0, 8)}... (${feeConfig.pct}% fee, $${fee.toFixed(2)} deducted)`
+    : `Referral USDT withdrawal to ${walletAddress.slice(0, 8)}...`;
 
   let transactionId = 0;
   let debited = false;
@@ -145,9 +184,9 @@ router.post("/wallet/withdraw-usdt", requireAuth, async (req, res): Promise<void
     const [inserted] = await tx.insert(transactionsTable).values({
       userId: req.userId!,
       type: "withdrawal",
-      amount,
+      amount: netPayout,
       status: "pending",
-      description: `Referral USDT withdrawal to ${walletAddress.slice(0, 8)}...`,
+      description,
       walletAddress,
       usdtAddress: USDT_DEPOSIT_ADDRESS,
       paymentTag,
@@ -164,13 +203,13 @@ router.post("/wallet/withdraw-usdt", requireAuth, async (req, res): Promise<void
 
   sendAdminNotification({
     title: "New USDT Withdrawal Request",
-    body: `$${amount} referral USDT from @${user.username} — tag ${paymentTag}`,
+    body: `$${netPayout} referral USDT from @${user.username} — tag ${paymentTag}`,
     url: "/admin",
   }).catch(() => {});
 
   res.json(RequestWithdrawalResponse.parse({
     transactionId,
-    amount,
+    amount: netPayout,
     status: "pending",
     message: "Referral USDT withdrawal request submitted.",
     usdtAddress: USDT_DEPOSIT_ADDRESS,

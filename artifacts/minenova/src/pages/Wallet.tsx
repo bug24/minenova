@@ -124,8 +124,15 @@ export default function WalletPage() {
 
   const nearbyUpgrades = upgrades?.filter(u => !u.owned && u.coinCost && u.coinCost <= coinBalance * 1.5 && u.coinCost > coinBalance * 0.5);
 
+  const feeEnabled = wallet?.withdrawalFeeEnabled ?? false;
+  const feePct = wallet?.withdrawalFeePct ?? 0;
+
   const watchedAmount = form.watch("amount") || MINIMUM_USDT;
   const requiredCoins = watchedAmount * COINS_PER_USDT;
+  const feeAmount = feeEnabled && feePct > 0
+    ? Math.round(watchedAmount * feePct / 100 * 100) / 100
+    : 0;
+  const netPayout = Math.round((watchedAmount - feeAmount) * 100) / 100;
 
   return (
     <div className="px-4 pt-2 pb-6 space-y-5">
@@ -382,6 +389,24 @@ export default function WalletPage() {
                       </FormItem>
                     )}
                   />
+
+                  {feeEnabled && feePct > 0 && (
+                    <div className="bg-muted rounded-xl px-4 py-3 space-y-1.5 text-sm">
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Requested</span>
+                        <span>${watchedAmount.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-rose-500">
+                        <span>Fee ({feePct}%)</span>
+                        <span>−${feeAmount.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between font-semibold text-emerald-500 border-t border-border pt-1.5">
+                        <span>You receive</span>
+                        <span>${netPayout.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex gap-2">
                     <Button type="button" variant="outline" className="flex-1" onClick={() => setStep("choose")}>
                       Back
@@ -458,7 +483,7 @@ export default function WalletPage() {
                     </div>
                     <p className="font-semibold text-foreground">Withdrawal Request Submitted</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Send <strong>${withdrawalResult.amount} USDT</strong> to the address below via TRC20 network, with your payment tag.
+                      You will receive <strong>${withdrawalResult.amount.toFixed(2)} USDT</strong> once approved. Send USDT to the address below via TRC20 network with your payment tag.
                     </p>
                   </div>
                   <div className="space-y-3">

@@ -174,6 +174,8 @@ interface Settings {
   withdrawal_ticker_enabled: string;
   voice_chat_enabled: string;
   auto_miner_interval_minutes: string;
+  withdrawal_fee_enabled: string;
+  withdrawal_fee_pct: string;
 }
 interface ShareMessage { id: number; platform: string; message: string; isActive: boolean; sortOrder: number; }
 interface UserReferral { id: number; referredId: number; referredUsername: string; totalEarned: number; bonusPaid: boolean; createdAt: string; }
@@ -2101,6 +2103,8 @@ function SettingsTab({ secret }: { secret: string }) {
     withdrawal_ticker_enabled: "true",
     voice_chat_enabled: "true",
     auto_miner_interval_minutes: "15",
+    withdrawal_fee_enabled: "false",
+    withdrawal_fee_pct: "0",
   };
 
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
@@ -2888,6 +2892,46 @@ function SettingsTab({ secret }: { secret: string }) {
             <SaveBtn k="trivia_fee_pct" />
           </div>
           <p className="text-xs text-muted-foreground">Deducted from total pot before paying the winner.</p>
+        </div>
+      </div>
+
+      {/* ── Withdrawal Fee ── */}
+      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+        <h3 className="font-semibold text-sm text-emerald-400">Withdrawal Fee</h3>
+
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Fee enabled</p>
+            <p className="text-xs text-muted-foreground">
+              {settings.withdrawal_fee_enabled === "true"
+                ? "A percentage fee is deducted from USDT withdrawals"
+                : "No fee is charged on withdrawals"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isSaving("withdrawal_fee_enabled") && <span className="text-xs text-muted-foreground">Saving…</span>}
+            {isSaved("withdrawal_fee_enabled") && <span className="text-xs text-green-400">Saved ✓</span>}
+            <Toggle
+              on={settings.withdrawal_fee_enabled === "true"}
+              disabled={isSaving("withdrawal_fee_enabled")}
+              onChange={v => saveSetting("withdrawal_fee_enabled", v ? "true" : "false")}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Fee percentage (%)</label>
+          <div className="flex gap-2">
+            <Input
+              type="number" step="0.5" min="0" max="99"
+              value={settings.withdrawal_fee_pct}
+              onChange={e => setSettings(p => ({ ...p, withdrawal_fee_pct: e.target.value }))}
+            />
+            <SaveBtn k="withdrawal_fee_pct" />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Deducted from the payout amount. e.g. 2% on $10 → user receives $9.80.
+          </p>
         </div>
       </div>
 
