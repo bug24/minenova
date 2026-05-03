@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, jsonb, timestamp, index } from "drizzle-orm/pg-core";
 
 export const adminAuditLogTable = pgTable("admin_audit_log", {
   id: serial("id").primaryKey(),
@@ -10,4 +10,9 @@ export const adminAuditLogTable = pgTable("admin_audit_log", {
   targetId: integer("target_id"),
   details: jsonb("details"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index("audit_log_created_at_idx").on(t.createdAt),
+  index("audit_log_actor_type_idx").on(t.actorType),
+  index("audit_log_action_idx").on(t.action),
+  index("audit_log_actor_username_idx").on(t.actorUsername),
+]);
