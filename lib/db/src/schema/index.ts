@@ -13,3 +13,4 @@ export * from "./push_subscriptions";
 export * from "./ludo";
 export * from "./whot";
 export * from "./sub_admins";
+export * from "./mines";

@@ -21,6 +21,7 @@ import LudoGame from "@/pages/LudoGame";
 import Whot from "@/pages/Whot";
 import WhotGame from "@/pages/WhotGame";
 import Games from "@/pages/Games";
+import MinesGame from "@/pages/MinesGame";
 import NotFound from "@/pages/not-found";
 import { useEffect } from "react";
 
@@ -99,6 +100,7 @@ function Router() {
       <Route path="/ludo/game/:id" component={() => <ProtectedRoute component={LudoGame} />} />
       <Route path="/whot" component={() => <ProtectedRoute component={Whot} />} />
       <Route path="/whot/game/:id" component={() => <ProtectedRoute component={WhotGame} />} />
+      <Route path="/mines" component={() => <ProtectedRoute component={MinesGame} />} />
       <Route path="/admin" component={Admin} />
       <Route component={NotFound} />
     </Switch>

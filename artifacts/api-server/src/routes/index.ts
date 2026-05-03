@@ -12,6 +12,7 @@ import adsRouter from "./ads";
 import notificationsRouter from "./notifications";
 import ludoRouter from "./ludo";
 import whotRouter from "./whot";
+import minesRouter from "./mines";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(adsRouter);
 router.use(notificationsRouter);
 router.use(ludoRouter);
 router.use(whotRouter);
+router.use(minesRouter);
 
 export default router;

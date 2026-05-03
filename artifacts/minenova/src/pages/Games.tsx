@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Dices, Layers, ChevronRight, Trophy } from "lucide-react";
+import { Dices, Layers, Bomb, ChevronRight, Trophy } from "lucide-react";
 
 const games = [
   {
@@ -21,6 +21,16 @@ const games = [
     gradient: "from-amber-500 to-red-600",
     badge: "2 Players",
     testId: "game-card-whot",
+  },
+  {
+    href: "/mines",
+    name: "Mines",
+    tagline: "Crypto-Style Risk Game",
+    description: "Pick tiles to uncover gems and grow your multiplier. Cash out before you hit a mine or lose it all.",
+    icon: Bomb,
+    gradient: "from-red-600 to-orange-600",
+    badge: "Solo",
+    testId: "game-card-mines",
   },
 ] as const;
 
