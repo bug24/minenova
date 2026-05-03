@@ -608,6 +608,8 @@ components:
           type: number
         createdAt:
           type: string
+        emailVerified:
+          type: boolean
       required:
         - id
         - username
@@ -616,6 +618,7 @@ components:
         - miningLevel
         - totalEarned
         - createdAt
+        - emailVerified
 
     AuthResponse:
       type: object

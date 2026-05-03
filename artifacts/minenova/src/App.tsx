@@ -22,6 +22,8 @@ import Whot from "@/pages/Whot";
 import WhotGame from "@/pages/WhotGame";
 import Games from "@/pages/Games";
 import MinesGame from "@/pages/MinesGame";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/not-found";
 import { useEffect } from "react";
 
@@ -101,6 +103,8 @@ function Router() {
       <Route path="/whot" component={() => <ProtectedRoute component={Whot} />} />
       <Route path="/whot/game/:id" component={() => <ProtectedRoute component={WhotGame} />} />
       <Route path="/mines" component={() => <ProtectedRoute component={MinesGame} />} />
+      <Route path="/forgot-password" component={ForgotPassword} />
+      <Route path="/reset-password" component={ResetPassword} />
       <Route path="/admin" component={Admin} />
       <Route component={NotFound} />
     </Switch>

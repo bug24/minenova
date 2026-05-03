@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
-import { db, usersTable, referralsTable } from "@workspace/db";
+import { db, usersTable, referralsTable, passwordResetTokensTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { hashPassword, verifyPassword, generateReferralCode, generateToken } from "../lib/auth";
 import { requireAuth } from "../middlewares/requireAuth";
 import { RegisterBody, LoginBody, GetMeResponse } from "@workspace/api-zod";
-import { sendVerificationEmail } from "../lib/email";
+import { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail } from "../lib/email";
 import crypto from "crypto";
+import { z } from "zod";
 
 const router: IRouter = Router();
 
@@ -99,6 +100,12 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     await sendVerificationEmail(email, username, verificationUrl);
   } catch (err) {
     console.error("[email] Failed to send verification email:", err);
+  }
+
+  try {
+    await sendWelcomeEmail(email, username);
+  } catch (err) {
+    console.error("[email] Failed to send welcome email:", err);
   }
 
   const token = generateToken(user.id);
@@ -287,5 +294,63 @@ function verifyPageHtml(title: string, message: string, success: boolean): strin
 </body>
 </html>`;
 }
+
+router.post("/auth/forgot-password", async (req, res): Promise<void> => {
+  const schema = z.object({ email: z.string().email() });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Valid email required" }); return; }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.email, parsed.data.email)).limit(1);
+
+  if (user) {
+    await db.delete(passwordResetTokensTable).where(eq(passwordResetTokensTable.userId, user.id));
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    await db.insert(passwordResetTokensTable).values({ userId: user.id, tokenHash, expiresAt });
+
+    const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
+    const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost";
+    const base = (req.headers["x-replit-base-path"] as string | undefined) ?? "";
+    const resetUrl = `${proto}://${host}${base}/reset-password?token=${token}`;
+
+    try {
+      await sendPasswordResetEmail(user.email, user.username, resetUrl);
+    } catch (err) {
+      console.error("[email] Failed to send password reset email:", err);
+    }
+  }
+
+  res.json({ success: true, message: "If an account with that email exists, a reset link has been sent." });
+});
+
+router.post("/auth/reset-password", async (req, res): Promise<void> => {
+  const schema = z.object({ token: z.string().min(1), newPassword: z.string().min(8, "Password must be at least 8 characters") });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+
+  const tokenHash = crypto.createHash("sha256").update(parsed.data.token).digest("hex");
+  const now = new Date();
+
+  const [row] = await db.select().from(passwordResetTokensTable)
+    .where(eq(passwordResetTokensTable.tokenHash, tokenHash))
+    .limit(1);
+
+  if (!row || row.expiresAt < now) {
+    res.status(400).json({ error: "Invalid or expired reset link. Please request a new one." });
+    return;
+  }
+
+  const passwordHash = hashPassword(parsed.data.newPassword);
+  await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, row.userId));
+  await db.delete(passwordResetTokensTable).where(eq(passwordResetTokensTable.userId, row.userId));
+
+  res.json({ success: true });
+});
 
 export default router;

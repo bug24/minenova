@@ -23,7 +23,7 @@ import { z } from "zod";
 import { hashPassword, verifyPassword, generateSubAdminToken, verifySubAdminToken, isSubAdminToken } from "../lib/auth";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
-import { sendUpgradeApprovedEmail, sendUpgradeRejectedEmail } from "../lib/email";
+import { sendUpgradeApprovedEmail, sendUpgradeRejectedEmail, sendAdminMessageEmail } from "../lib/email";
 import { triggerUpgradeReferralReward } from "../lib/referralReward";
 
 const router: IRouter = Router();
@@ -402,7 +402,7 @@ router.post("/admin/share-messages", requireAdmin, async (req, res): Promise<voi
 });
 
 router.put("/admin/share-messages/:id", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   const schema = z.object({
     platform: z.enum(["twitter", "whatsapp", "facebook", "general"]).optional(),
     message: z.string().min(1).optional(),
@@ -417,7 +417,7 @@ router.put("/admin/share-messages/:id", requireAdmin, async (req, res): Promise<
 });
 
 router.delete("/admin/share-messages/:id", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   await db.delete(shareMessagesTable).where(eq(shareMessagesTable.id, id));
   res.json({ success: true });
 });
@@ -522,7 +522,7 @@ router.get("/admin/users", requireAdmin, async (req, res): Promise<void> => {
 });
 
 router.get("/admin/users/:id", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid user ID" }); return; }
 
   const [user] = await db.select({
@@ -580,7 +580,7 @@ router.get("/admin/users/:id", requireAdmin, async (req, res): Promise<void> => 
 });
 
 router.post("/admin/users/:id/reset-password", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid user ID" }); return; }
 
   const chars = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -594,7 +594,7 @@ router.post("/admin/users/:id/reset-password", requireAdmin, async (req, res): P
 });
 
 router.post("/admin/users/:id/suspend", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   const [user] = await db.select({ isSuspended: usersTable.isSuspended }).from(usersTable).where(eq(usersTable.id, id)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
   const [updated] = await db.update(usersTable).set({ isSuspended: !user.isSuspended }).where(eq(usersTable.id, id)).returning({ id: usersTable.id, isSuspended: usersTable.isSuspended });
@@ -602,7 +602,7 @@ router.post("/admin/users/:id/suspend", requireAdmin, async (req, res): Promise<
 });
 
 router.delete("/admin/users/:id", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   await db.delete(miningSessionsTable).where(eq(miningSessionsTable.userId, id));
   await db.delete(transactionsTable).where(eq(transactionsTable.userId, id));
   await db.delete(referralsTable).where(or(eq(referralsTable.referrerId, id), eq(referralsTable.referredId, id)));
@@ -612,7 +612,7 @@ router.delete("/admin/users/:id", requireAdmin, async (req, res): Promise<void> 
 });
 
 router.post("/admin/users/:id/adjust-balance", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   const schema = z.object({
     delta: z.number(),
     note: z.string().min(1),
@@ -706,7 +706,7 @@ router.get("/admin/withdrawals", requireAdmin, async (req, res): Promise<void> =
 });
 
 router.put("/admin/withdrawals/:id/note", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid withdrawal ID" }); return; }
   const schema = z.object({ adminNote: z.string().nullable() });
   const data = schema.safeParse(req.body);
@@ -719,7 +719,7 @@ router.put("/admin/withdrawals/:id/note", requireAdmin, async (req, res): Promis
 });
 
 router.post("/admin/withdrawals/:id/approve", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid withdrawal ID" }); return; }
   const schema = z.object({ adminNote: z.string().nullable().optional() });
   const data = schema.safeParse(req.body);
@@ -740,7 +740,7 @@ router.post("/admin/withdrawals/:id/approve", requireAdmin, async (req, res): Pr
 });
 
 router.post("/admin/withdrawals/:id/reject", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid withdrawal ID" }); return; }
   const schema = z.object({ adminNote: z.string().nullable().optional() });
   const data = schema.safeParse(req.body);
@@ -860,13 +860,13 @@ router.get("/admin/mining-sessions", requireAdmin, async (_req, res): Promise<vo
 });
 
 router.post("/admin/mining-sessions/:id/stop", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   await db.update(miningSessionsTable).set({ isActive: false, claimedAt: new Date() }).where(eq(miningSessionsTable.id, id));
   res.json({ success: true });
 });
 
 router.post("/admin/mining-sessions/:id/reset", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   await db.update(miningSessionsTable).set({ isActive: false, claimedAt: new Date(), coinsEarned: 0 }).where(eq(miningSessionsTable.id, id));
   res.json({ success: true });
 });
@@ -921,7 +921,7 @@ router.put("/admin/mining-config", requireAdmin, async (req, res): Promise<void>
 });
 
 router.put("/admin/users/:id/mining-rate", requireAdmin, async (req, res): Promise<void> => {
-  const userId = parseInt(req.params.id);
+  const userId = parseInt(req.params.id as string);
   const schema = z.object({ rate: z.number().positive().nullable() });
   const data = schema.safeParse(req.body);
   if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
@@ -933,13 +933,35 @@ router.put("/admin/users/:id/mining-rate", requireAdmin, async (req, res): Promi
   res.json({ success: true });
 });
 
+router.post("/admin/users/:id/send-email", requireSuperAdmin, async (req, res): Promise<void> => {
+  const userId = parseInt(req.params.id as string);
+  const schema = z.object({
+    subject: z.string().min(1).max(200),
+    body: z.string().min(1).max(5000),
+  });
+  const data = schema.safeParse(req.body);
+  if (!data.success) { res.status(400).json({ error: "Subject and body are required" }); return; }
+
+  const [user] = await db.select({ email: usersTable.email, username: usersTable.username })
+    .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+  try {
+    await sendAdminMessageEmail(user.email, user.username, data.data.subject, data.data.body);
+    res.json({ success: true });
+  } catch (err) {
+    req.log?.error({ err }, "Failed to send admin message email");
+    res.status(500).json({ error: "Failed to send email. Check SMTP configuration in Settings." });
+  }
+});
+
 router.post("/admin/mining/start-for-user", requireAdmin, async (req, res): Promise<void> => {
-  const schema = z.object({ userId: z.number().int() });
+  const schema = z.object({ username: z.string().min(1) });
   const data = schema.safeParse(req.body);
   if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, data.data.userId)).limit(1);
-  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.username, data.data.username)).limit(1);
+  if (!user) { res.status(404).json({ error: `User "${data.data.username}" not found` }); return; }
 
   const [activeSession] = await db.select().from(miningSessionsTable)
     .where(and(eq(miningSessionsTable.userId, user.id), eq(miningSessionsTable.isActive, true), isNull(miningSessionsTable.claimedAt)))
@@ -972,6 +994,23 @@ router.post("/admin/mining/start-for-user", requireAdmin, async (req, res): Prom
   }).returning();
 
   res.json({ success: true, session: { ...session, startedAt: session.startedAt.toISOString(), endsAt: session.endsAt.toISOString() } });
+});
+
+router.put("/admin/mining/rate-for-user", requireAdmin, async (req, res): Promise<void> => {
+  const schema = z.object({ username: z.string().min(1), rate: z.number().positive().nullable() });
+  const data = schema.safeParse(req.body);
+  if (!data.success) { res.status(400).json({ error: "Invalid input" }); return; }
+
+  const [user] = await db.select({ id: usersTable.id }).from(usersTable)
+    .where(eq(usersTable.username, data.data.username)).limit(1);
+  if (!user) { res.status(404).json({ error: `User "${data.data.username}" not found` }); return; }
+
+  if (data.data.rate === null) {
+    await db.delete(adminConfigTable).where(eq(adminConfigTable.key, `user_rate_override_${user.id}`));
+  } else {
+    await upsertSetting(`user_rate_override_${user.id}`, data.data.rate.toString());
+  }
+  res.json({ success: true });
 });
 
 // ─── Referrals ────────────────────────────────────────────────────────────────
@@ -1013,7 +1052,7 @@ router.get("/admin/referrals", requireAdmin, async (req, res): Promise<void> => 
 });
 
 router.delete("/admin/referrals/:id", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   await db.delete(referralsTable).where(eq(referralsTable.id, id));
   res.json({ success: true });
@@ -1213,7 +1252,7 @@ router.post("/admin/upgrades", requireAdmin, async (req, res): Promise<void> => 
 });
 
 router.put("/admin/upgrades/:id", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
   const schema = z.object({
     name: z.string().min(1).optional(),
@@ -1236,7 +1275,7 @@ router.put("/admin/upgrades/:id", requireAdmin, async (req, res): Promise<void> 
 });
 
 router.delete("/admin/upgrades/:id", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   if (!Number.isInteger(id) || isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
   const [ownerRow] = await db
     .select({ id: userUpgradesTable.id })
@@ -1510,7 +1549,7 @@ router.get("/admin/upgrade-payments", requireAdmin, async (_req, res): Promise<v
 });
 
 router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.transactionId, 10);
+  const id = parseInt(req.params.transactionId as string, 10);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const body = z.object({ note: z.string().optional() }).safeParse(req.body);
@@ -1560,7 +1599,7 @@ router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, asyn
 });
 
 router.post("/admin/upgrade-payments/:transactionId/reject", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.transactionId, 10);
+  const id = parseInt(req.params.transactionId as string, 10);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const body = z.object({ note: z.string().optional() }).safeParse(req.body);
@@ -1938,7 +1977,7 @@ router.post("/admin/sub-admins", requireSuperAdmin, async (req, res): Promise<vo
 
 // PATCH /admin/sub-admins/:id — update (superadmin only)
 router.patch("/admin/sub-admins/:id", requireSuperAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   const schema = z.object({
     isActive: z.boolean().optional(),
     password: z.string().min(8).optional(),
@@ -1956,14 +1995,14 @@ router.patch("/admin/sub-admins/:id", requireSuperAdmin, async (req, res): Promi
 
 // DELETE /admin/sub-admins/:id — delete (superadmin only)
 router.delete("/admin/sub-admins/:id", requireSuperAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   await db.delete(subAdminsTable).where(eq(subAdminsTable.id, id));
   res.json({ success: true });
 });
 
 // PUT /admin/sub-admins/:id/permissions — replace all permissions (superadmin only)
 router.put("/admin/sub-admins/:id/permissions", requireSuperAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   const schema = z.record(z.object({ canRead: z.boolean(), canWrite: z.boolean() }));
   const data = schema.safeParse(req.body);
   if (!data.success) { res.status(400).json({ error: "Invalid permissions format" }); return; }

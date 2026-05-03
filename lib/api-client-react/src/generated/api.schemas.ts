@@ -34,6 +34,7 @@ export interface User {
   miningLevel: number;
   totalEarned: number;
   createdAt: string;
+  emailVerified: boolean;
 }
 
 export interface AuthResponse {

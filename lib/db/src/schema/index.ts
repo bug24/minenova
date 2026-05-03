@@ -14,3 +14,4 @@ export * from "./ludo";
 export * from "./whot";
 export * from "./sub_admins";
 export * from "./mines";
+export * from "./password_reset_tokens";

@@ -12,6 +12,7 @@ import {
   Play, Zap, AlertTriangle, ToggleLeft, ToggleRight, Menu, ChevronLeft,
   Film, Link, Clock, MonitorPlay, Code, Bell, Layers, ArrowUp, ArrowDown,
   TrendingUp, TrendingDown, DollarSign, LineChart, UserPlus, ShieldCheck, Lock,
+  Mail, Send,
 } from "lucide-react";
 
 function apiFetch(path: string, options?: RequestInit) {
@@ -235,6 +236,9 @@ function UserProfileModal({ userId, secret, onClose, onRefreshList }: { userId: 
   const [loading, setLoading] = useState(true);
   const [resettingPw, setResettingPw] = useState(false);
   const [newPw, setNewPw] = useState<string | null>(null);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
   const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
   const loadProfile = useCallback(async () => {
@@ -264,6 +268,25 @@ function UserProfileModal({ userId, secret, onClose, onRefreshList }: { userId: 
       toast({ title: "Password reset" });
     } else toast({ variant: "destructive", title: "Failed to reset password" });
     setResettingPw(false);
+  };
+
+  const handleSendEmail = async () => {
+    if (!emailSubject.trim() || !emailBody.trim()) return;
+    setSendingEmail(true);
+    const res = await apiFetch(`/admin/users/${userId}/send-email`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ subject: emailSubject.trim(), body: emailBody.trim() }),
+    });
+    if (res.ok) {
+      toast({ title: "Email sent", description: `Message delivered to ${profile?.email}` });
+      setEmailSubject("");
+      setEmailBody("");
+    } else {
+      const data = await res.json().catch(() => ({}));
+      toast({ variant: "destructive", title: "Failed to send email", description: data.error });
+    }
+    setSendingEmail(false);
   };
 
   const timeLeft = (endsAt: string) => {
@@ -435,6 +458,36 @@ function UserProfileModal({ userId, secret, onClose, onRefreshList }: { userId: 
               </Button>
               <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleResetPassword} disabled={resettingPw}>
                 <RotateCcw className="w-3.5 h-3.5" /> {resettingPw ? "Resetting…" : "Reset Password"}
+              </Button>
+            </div>
+
+            {/* Send Email */}
+            <div className="bg-card border border-card-border rounded-2xl p-4 space-y-3">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5" /> Send Email to User
+              </h3>
+              <div className="space-y-2">
+                <Input
+                  placeholder="Subject"
+                  value={emailSubject}
+                  onChange={e => setEmailSubject(e.target.value)}
+                  className="text-sm"
+                />
+                <textarea
+                  placeholder="Message body…"
+                  value={emailBody}
+                  onChange={e => setEmailBody(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={handleSendEmail}
+                disabled={sendingEmail || !emailSubject.trim() || !emailBody.trim()}
+                className="gap-1.5"
+              >
+                <Send className="w-3.5 h-3.5" /> {sendingEmail ? "Sending…" : "Send Email"}
               </Button>
             </div>
           </div>
@@ -1033,11 +1086,11 @@ function MiningTab({ secret }: { secret: string }) {
   const [savingConfig, setSavingConfig] = useState(false);
 
   // Start mining for user
-  const [startUserId, setStartUserId] = useState("");
+  const [startUsername, setStartUsername] = useState("");
   const [starting, setStarting] = useState(false);
 
   // User rate override
-  const [overrideUserId, setOverrideUserId] = useState("");
+  const [overrideUsername, setOverrideUsername] = useState("");
   const [overrideRate, setOverrideRate] = useState("");
   const [savingOverride, setSavingOverride] = useState(false);
 
@@ -1106,11 +1159,10 @@ function MiningTab({ secret }: { secret: string }) {
   };
 
   const handleStartMining = async () => {
-    const userId = parseInt(startUserId);
-    if (isNaN(userId) || userId <= 0) { toast({ variant: "destructive", title: "Enter a valid User ID" }); return; }
+    if (!startUsername.trim()) { toast({ variant: "destructive", title: "Enter a username" }); return; }
     setStarting(true);
-    const res = await apiFetch("/admin/mining/start-for-user", { method: "POST", headers, body: JSON.stringify({ userId }) });
-    if (res.ok) { toast({ title: `Mining started for user #${userId}` }); setStartUserId(""); loadSessions(); }
+    const res = await apiFetch("/admin/mining/start-for-user", { method: "POST", headers, body: JSON.stringify({ username: startUsername.trim() }) });
+    if (res.ok) { toast({ title: `Mining started for @${startUsername.trim()}` }); setStartUsername(""); loadSessions(); }
     else {
       const data = await res.json().catch(() => ({}));
       toast({ variant: "destructive", title: data.error ?? "Failed to start mining" });
@@ -1119,14 +1171,16 @@ function MiningTab({ secret }: { secret: string }) {
   };
 
   const handleSaveOverride = async () => {
-    const userId = parseInt(overrideUserId);
+    if (!overrideUsername.trim()) { toast({ variant: "destructive", title: "Enter a username" }); return; }
     const rate = parseFloat(overrideRate);
-    if (isNaN(userId) || userId <= 0) { toast({ variant: "destructive", title: "Enter a valid User ID" }); return; }
     if (isNaN(rate) || rate <= 0) { toast({ variant: "destructive", title: "Enter a valid rate" }); return; }
     setSavingOverride(true);
-    const res = await apiFetch(`/admin/users/${userId}/mining-rate`, { method: "PUT", headers, body: JSON.stringify({ rate }) });
-    if (res.ok) { toast({ title: `Rate override set for user #${userId}` }); setOverrideUserId(""); setOverrideRate(""); loadConfig(); }
-    else toast({ variant: "destructive", title: "Failed to set rate override" });
+    const res = await apiFetch("/admin/mining/rate-for-user", { method: "PUT", headers, body: JSON.stringify({ username: overrideUsername.trim(), rate }) });
+    if (res.ok) { toast({ title: `Rate override set for @${overrideUsername.trim()}` }); setOverrideUsername(""); setOverrideRate(""); loadConfig(); }
+    else {
+      const data = await res.json().catch(() => ({}));
+      toast({ variant: "destructive", title: data.error ?? "Failed to set rate override" });
+    }
     setSavingOverride(false);
   };
 
@@ -1234,21 +1288,19 @@ function MiningTab({ secret }: { secret: string }) {
       {/* Start Mining for User */}
       <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
         <h3 className="font-bold flex items-center gap-2"><Play className="w-4 h-4 text-primary" /> Start Mining for User</h3>
-        <p className="text-xs text-muted-foreground">Admin can force-start a 12-hour (or configured duration) mining session for any user by their ID.</p>
+        <p className="text-xs text-muted-foreground">Force-start a mining session for any user by their username.</p>
         <div className="flex gap-3">
           <Input
-            value={startUserId}
-            onChange={e => setStartUserId(e.target.value)}
-            placeholder="User ID (e.g. 42)"
-            type="number"
+            value={startUsername}
+            onChange={e => setStartUsername(e.target.value)}
+            placeholder="Username (e.g. john123)"
             className="max-w-xs"
             onKeyDown={e => e.key === "Enter" && handleStartMining()}
           />
-          <Button onClick={handleStartMining} disabled={starting || !startUserId} className="gap-1.5">
+          <Button onClick={handleStartMining} disabled={starting || !startUsername.trim()} className="gap-1.5">
             <Play className="w-3.5 h-3.5" /> {starting ? "Starting…" : "Start Mining"}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">You can find a user's ID in the Users tab.</p>
       </div>
 
       {/* User Rate Overrides */}
@@ -1256,9 +1308,9 @@ function MiningTab({ secret }: { secret: string }) {
         <h3 className="font-bold flex items-center gap-2"><Zap className="w-4 h-4 text-orange-400" /> User-Specific Rate Overrides</h3>
         <p className="text-xs text-muted-foreground">Override the global mining rate for a specific user. Overrides apply on future sessions and override calculations.</p>
         <div className="flex gap-3 flex-wrap">
-          <Input value={overrideUserId} onChange={e => setOverrideUserId(e.target.value)} placeholder="User ID" type="number" className="w-36" />
+          <Input value={overrideUsername} onChange={e => setOverrideUsername(e.target.value)} placeholder="Username" className="w-40" />
           <Input value={overrideRate} onChange={e => setOverrideRate(e.target.value)} placeholder="Rate (coins/hr)" type="number" min="0.001" step="0.1" className="w-48" />
-          <Button size="sm" onClick={handleSaveOverride} disabled={savingOverride || !overrideUserId || !overrideRate} className="gap-1.5">
+          <Button size="sm" onClick={handleSaveOverride} disabled={savingOverride || !overrideUsername.trim() || !overrideRate} className="gap-1.5">
             <Save className="w-3.5 h-3.5" /> {savingOverride ? "Saving…" : "Set Override"}
           </Button>
         </div>
