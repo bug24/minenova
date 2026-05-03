@@ -22,6 +22,7 @@ export const RegisterBody = zod.object({
   email: zod.string(),
   password: zod.string(),
   referralCode: zod.string().nullish(),
+  deviceFingerprint: zod.string().nullish(),
 });
 
 /**

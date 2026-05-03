@@ -1,12 +1,33 @@
 import { Router, type IRouter } from "express";
 import { db, usersTable, referralsTable, passwordResetTokensTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { hashPassword, verifyPassword, generateReferralCode, generateToken } from "../lib/auth";
 import { requireAuth } from "../middlewares/requireAuth";
 import { RegisterBody, LoginBody, GetMeResponse } from "@workspace/api-zod";
 import { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail } from "../lib/email";
 import crypto from "crypto";
 import { z } from "zod";
+
+/** Extract the real client IP, preferring the first address in X-Forwarded-For. */
+function getClientIp(req: any): string | null {
+  const fwd = req.headers["x-forwarded-for"] as string | undefined;
+  if (fwd) {
+    const first = fwd.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return (req.ip as string | undefined) ?? null;
+}
+
+/** Returns true for loopback / RFC-1918 addresses (skip duplicate-check in dev). */
+function isPrivateIp(ip: string): boolean {
+  return (
+    ip === "127.0.0.1" ||
+    ip === "::1" ||
+    ip.startsWith("10.") ||
+    ip.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(ip)
+  );
+}
 
 const router: IRouter = Router();
 
@@ -40,8 +61,35 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { username, email, password, referralCode } = parsed.data;
+  const { username, email, password, referralCode, deviceFingerprint } = parsed.data;
 
+  // ── Duplicate signal checks ────────────────────────────────────────────────
+  const clientIp = getClientIp(req);
+  const enforceIp = clientIp !== null && !isPrivateIp(clientIp);
+  const enforceFingerprint = !!deviceFingerprint;
+
+  if (enforceIp || enforceFingerprint) {
+    const conditions = [];
+    if (enforceIp) conditions.push(eq(usersTable.registrationIp, clientIp!));
+    if (enforceFingerprint) conditions.push(eq(usersTable.deviceFingerprint, deviceFingerprint!));
+
+    const [duplicate] = await db
+      .select({ id: usersTable.id, registrationIp: usersTable.registrationIp, deviceFingerprint: usersTable.deviceFingerprint })
+      .from(usersTable)
+      .where(conditions.length === 1 ? conditions[0] : or(...conditions))
+      .limit(1);
+
+    if (duplicate) {
+      if (enforceFingerprint && duplicate.deviceFingerprint === deviceFingerprint) {
+        res.status(400).json({ error: "An account has already been created on this device" });
+      } else {
+        res.status(400).json({ error: "An account has already been created from your network" });
+      }
+      return;
+    }
+  }
+
+  // ── Email / username uniqueness ────────────────────────────────────────────
   const [existing] = await db
     .select({ id: usersTable.id })
     .from(usersTable)
@@ -95,6 +143,8 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       emailVerified: false,
       verificationToken,
       verificationTokenExpiry,
+      registrationIp: clientIp ?? undefined,
+      deviceFingerprint: deviceFingerprint ?? undefined,
     })
     .returning();
 

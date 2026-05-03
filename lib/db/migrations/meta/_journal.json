@@ -71,6 +71,13 @@
       "when": 1777795919604,
       "tag": "0009_audit_log_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777796177069,
+      "tag": "0010_user_registration_tracking",
+      "breakpoints": true
     }
   ]
 }

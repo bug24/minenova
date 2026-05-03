@@ -19,6 +19,8 @@ export interface RegisterBody {
   password: string;
   /** @nullable */
   referralCode?: string | null;
+  /** @nullable */
+  deviceFingerprint?: string | null;
 }
 
 export interface LoginBody {

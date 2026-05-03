@@ -12,6 +12,40 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Sun, Moon, Eye, EyeOff, Gift } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+async function generateDeviceFingerprint(): Promise<string> {
+  try {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    let canvasData = "";
+    if (ctx) {
+      ctx.textBaseline = "top";
+      ctx.font = "14px 'Arial'";
+      ctx.fillStyle = "#f60";
+      ctx.fillRect(125, 1, 62, 20);
+      ctx.fillStyle = "#069";
+      ctx.fillText("MineNova🔑", 2, 15);
+      ctx.fillStyle = "rgba(102,204,0,0.7)";
+      ctx.fillText("MineNova🔑", 4, 17);
+      canvasData = canvas.toDataURL();
+    }
+    const parts = [
+      navigator.userAgent,
+      navigator.language,
+      String(screen.width),
+      String(screen.height),
+      String(screen.colorDepth),
+      String(window.devicePixelRatio ?? 1),
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      String(navigator.hardwareConcurrency ?? ""),
+      canvasData,
+    ].join("|");
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(parts));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return "";
+  }
+}
+
 const registerSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters").max(20, "Max 20 characters"),
   email: z.string().email("Enter a valid email"),
@@ -38,7 +72,8 @@ export default function Register() {
   });
 
   const onSubmit = async (data: RegisterForm) => {
-    registerMutation.mutate({ data: { ...data, referralCode: data.referralCode || null } }, {
+    const deviceFingerprint = await generateDeviceFingerprint();
+    registerMutation.mutate({ data: { ...data, referralCode: data.referralCode || null, deviceFingerprint: deviceFingerprint || null } }, {
       onSuccess: (res) => {
         login(res.user, res.token);
         toast({ title: "Welcome to MineNova!", description: data.referralCode ? "You received 4 bonus coins!" : "Start your first mining session." });
