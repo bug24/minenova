@@ -1,0 +1,181 @@
+Build a real-time chat system backend for the MineNova app using Node.js, Express, and Socket.IO.
+
+---
+
+TECH STACK:
+
+- Node.js (Express server)
+- Socket.IO for real-time communication
+- MongoDB (or PostgreSQL if already in use)
+- JWT authentication (reuse existing auth system)
+
+---
+
+CORE FEATURES:
+
+1. GLOBAL CHAT ROOM
+
+- Single default room: "global"
+- All connected users join automatically after authentication
+- Broadcast messages to all users in the room
+
+---
+
+2. GAME LOBBY CHAT (OPTIONAL ROOM)
+
+- Room name: "lobby"
+- Users can join/leave
+- Used for challenges and matchmaking
+
+---
+
+3. USER AUTHENTICATION
+
+- Require JWT token on socket connection
+- Verify token before allowing user to connect
+- Reject connection if invalid
+
+Store in socket:
+
+- user_id
+- username
+
+---
+
+4. MESSAGE STRUCTURE
+
+Each message should include:
+
+- id
+- user_id
+- username
+- message
+- timestamp
+- room (global or lobby)
+
+---
+
+5. RATE LIMITING (ANTI-SPAM)
+
+- Allow 1 message every 5 seconds per user
+- If exceeded:
+  - Block message
+  - Send warning event to user
+
+---
+
+6. WORD FILTER (ANTI-SCAM)
+
+Create a filter for banned phrases:
+
+Examples:
+
+- "send me coins"
+- "double your coins"
+- "I will pay you back"
+- "send first"
+
+If message contains banned phrase:
+
+- Reject message
+- Notify user
+
+---
+
+7. MESSAGE STORAGE
+
+- Store last 100 messages per room
+- When user connects:
+  - Send recent messages
+
+---
+
+8. EVENTS
+
+Client → Server:
+
+- "join_room" (room name)
+- "send_message" (message text)
+
+Server → Client:
+
+- "message" (new message broadcast)
+- "chat_history" (last messages)
+- "error" (rate limit, banned words, etc.)
+
+---
+
+9. USER PRESENCE
+
+Track:
+
+- Online users
+- When user connects:
+  - Add to online list
+- When disconnect:
+  - Remove
+
+Emit:
+
+- "online_users_count"
+
+---
+
+10. MODERATION SYSTEM
+
+Add admin controls:
+
+- Mute user (temporary)
+- Ban user (disconnect + block)
+
+Store:
+
+- muted_until timestamp
+- banned flag
+
+If muted:
+
+- User cannot send messages
+
+---
+
+11. SECURITY
+
+- Sanitize all messages (prevent XSS)
+- Limit message length (max 200 characters)
+- Validate input
+
+---
+
+12. PERFORMANCE
+
+- Use in-memory cache for recent messages
+- Avoid heavy DB writes for every message (batch if needed)
+
+---
+
+13. OPTIONAL FEATURES
+
+- Typing indicator ("user is typing...")
+- Emoji support
+- Message reactions (like 👍)
+
+---
+
+14. FILE STRUCTURE
+
+- server.js (main server)
+- socket/chat.js (Socket.IO logic)
+- middleware/auth.js (JWT verification)
+- models/User.js
+- models/Message.js
+
+---
+
+GOAL:
+
+Build a real-time, secure, and scalable chat backend that:
+
+- Prevents spam and scams
+- Supports thousands of users
+- Integrates cleanly with MineNova
