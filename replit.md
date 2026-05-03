@@ -48,6 +48,7 @@ A full-stack gamified crypto mining engagement web app.
 ### Admin Panel (`/admin`)
 - Dashboard analytics, user management, withdrawal approval
 - Mining control, referral management, upgrade management
+- **Sub-admin accounts** with per-module read/write permissions (see Sub-Admin System below)
 - Settings (mining rate, session duration, referral bonuses)
 - Share link message templates
 - Ad management (placement-based with tier targeting)
@@ -116,6 +117,25 @@ A full-stack gamified crypto mining engagement web app.
 - **States**: idle → incoming → requesting → connecting → connected | denied | error
 - **Remote speaking indicator**: `AudioContext` AnalyserNode samples remote stream level via rAF loop; renders pulsing dot when voice detected
 - STUN: `stun:stun.l.google.com:19302`; no TURN server (works on same LAN or most public networks)
+
+### Sub-Admin System
+
+- **Token format**: `SAT_{base64(id:timestamp:hmac)}` — 24-hour TTL, HMAC-SHA256 with `SESSION_SECRET`
+- **`requireAdmin` middleware**: accepts superadmin password OR SAT token; sets `req.isSuperAdmin` or `req.subAdmin`
+- **`requireSuperAdmin` middleware**: superadmin password only
+- **`requirePermission(module, type)`**: no-op for superadmin; checks `req.subAdmin.permissions[module]` for sub-admin
+- **Modules**: dashboard, reports, users, withdrawals, transactions, mining, referrals, upgrades, settings, share, ads, scripts, trivia
+- **Login flow**: `POST /api/admin/sub-admins/login` → SAT token → `GET /api/admin/sub-admins/me` → PermMap loaded into frontend state
+- **Tab filtering**: `isSubAdmin` → TABS filtered to `subAdminPermissions[id]?.canRead`, `superAdminOnly` tabs always hidden
+- **Read-only indicator**: lock icon in sidebar + amber banner in tab content when `canRead && !canWrite`
+- **Sub-admin self-service**: `POST /api/admin/sub-admins/me/change-password` (current + new password)
+- **Admin routes** (all `requireSuperAdmin`): GET/POST/PATCH/DELETE `/admin/sub-admins`, PUT `/admin/sub-admins/:id/permissions`
+- **Audit logging**: all create/update/delete/permissions actions written to `admin_audit_log`
+- **DB tables**: `sub_admins`, `sub_admin_permissions` (composite PK: subAdminId + module)
+- **Schema file**: `lib/db/src/schema/sub_admins.ts`
+- **Token helpers**: `artifacts/api-server/src/lib/auth.ts` — `generateSubAdminToken`, `verifySubAdminToken`, `isSubAdminToken`
+- **Frontend component**: `SubAdminsTab` in `artifacts/minenova/src/pages/Admin.tsx` — list, create, edit (isActive + password + permissions), delete with confirmation modal
+- **PermissionMatrix**: all modules × read/write checkboxes, select-all row per type
 
 ### Global Chat
 

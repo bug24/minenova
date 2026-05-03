@@ -517,7 +517,10 @@ function DashboardTab({ secret }: { secret: string }) {
   const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
   useEffect(() => {
-    apiFetch("/admin/analytics", { headers }).then(r => r.json()).then(setData).finally(() => setLoading(false));
+    apiFetch("/admin/analytics", { headers })
+      .then(r => r.ok ? r.json() : null)
+      .then(setData)
+      .finally(() => setLoading(false));
   }, [secret]);
 
   if (loading) return <p className="text-muted-foreground text-sm py-8 text-center">Loading…</p>;
@@ -2276,6 +2279,23 @@ function SettingsTab({ secret }: { secret: string }) {
     }
   };
 
+  const saveChatEnabled = async (enabled: boolean) => {
+    const value = enabled ? "true" : "false";
+    setSaving(p => ({ ...p, chat_enabled: true }));
+    setSavedKeys(p => ({ ...p, chat_enabled: false }));
+    try {
+      const res = await apiFetch("/admin/chat/settings", { method: "PUT", headers: h, body: JSON.stringify({ chat_enabled: value }) });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Failed"); }
+      setSettings(p => ({ ...p, chat_enabled: value }));
+      setSavedKeys(p => ({ ...p, chat_enabled: true }));
+      setTimeout(() => setSavedKeys(p => ({ ...p, chat_enabled: false })), 2000);
+    } catch (e: unknown) {
+      toast({ variant: "destructive", title: e instanceof Error ? e.message : "Failed to save chat setting" });
+    } finally {
+      setSaving(p => ({ ...p, chat_enabled: false }));
+    }
+  };
+
   const handleSavePw = async () => {
     if (!newPw.trim()) { toast({ variant: "destructive", title: "Password cannot be empty" }); return; }
     setSavingPw(true);
@@ -2991,7 +3011,7 @@ function SettingsTab({ secret }: { secret: string }) {
       </div>
 
       {/* ── Chat ── */}
-      <ChatAdminSection secret={secret} chatEnabled={settings.chat_enabled === "true"} isSavingChat={isSaving("chat_enabled")} isSavedChat={isSaved("chat_enabled")} onToggle={v => saveSetting("chat_enabled", v ? "true" : "false")} />
+      <ChatAdminSection secret={secret} chatEnabled={settings.chat_enabled === "true"} isSavingChat={isSaving("chat_enabled")} isSavedChat={isSaved("chat_enabled")} onToggle={saveChatEnabled} />
 
       {/* ── Withdrawal Fee ── */}
       <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
