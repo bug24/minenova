@@ -314,7 +314,7 @@ router.post("/trivia/solo", requireAuth, async (req: Request, res: Response): Pr
     const shuffled = allQ.sort(() => Math.random() - 0.5).slice(0, 10);
     const questionIds = shuffled.map(q => q.id);
 
-    // Bot answers at ~65% accuracy
+    // Bot answers at ~65% accuracy — must be index-aligned with questionIds
     const allQWithAnswers = await db.select({
       id: triviaQuestionsTable.id,
       correctIndex: triviaQuestionsTable.correctIndex,
@@ -322,7 +322,10 @@ router.post("/trivia/solo", requireAuth, async (req: Request, res: Response): Pr
     }).from(triviaQuestionsTable)
       .where(inArray(triviaQuestionsTable.id, questionIds));
 
-    const botAnswers = allQWithAnswers.map(q => {
+    // inArray does not guarantee DB return order matches questionIds, so key by ID first
+    const qById = new Map(allQWithAnswers.map(q => [q.id, q]));
+    const botAnswers = questionIds.map(qid => {
+      const q = qById.get(qid)!;
       const isCorrect = Math.random() < 0.65;
       if (isCorrect) return q.correctIndex;
       const opts = (q.options as string[]).length;
