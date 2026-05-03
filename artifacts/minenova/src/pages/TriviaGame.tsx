@@ -351,11 +351,14 @@ export default function TriviaGame() {
                 return (
                   <div key={q.id} className="text-xs space-y-1">
                     <p className="font-medium leading-snug line-clamp-2">{i + 1}. {q.question}</p>
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                       <span className={`flex items-center gap-1 ${myCorrect ? "text-emerald-400" : "text-red-400"}`}>
                         {myCorrect ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
-                        You
-                        {myA !== null ? ` — ${(q.options as string[])[myA]}` : " — No answer"}
+                        You{myA !== null ? ` — ${(q.options as string[])[myA]}` : " — No answer"}
+                      </span>
+                      <span className={`flex items-center gap-1 ${oppCorrect ? "text-emerald-400" : "text-red-400"}`}>
+                        {oppCorrect ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                        {result.opponentUsername ?? "Bot"}{oppA !== null && oppA !== undefined ? ` — ${(q.options as string[])[oppA]}` : " — No answer"}
                       </span>
                     </div>
                     <p className="text-[10px] text-muted-foreground">
