@@ -77,6 +77,12 @@ router.post("/support/messages", requireAuth, async (req: Request, res: Response
     resolvedImageUrl = `/api/storage/objects/${objectPath.replace(/^\/objects\//, "").replace(/^objects\//, "")}`;
   }
 
+  // Auto-reopen thread if it was previously resolved
+  await db
+    .update(supportMessagesTable)
+    .set({ isResolved: false })
+    .where(eq(supportMessagesTable.userId, userId));
+
   const [msg] = await db
     .insert(supportMessagesTable)
     .values({
@@ -221,12 +227,15 @@ export async function patchSupportResolve(req: Request, res: Response): Promise<
 }
 
 export async function getSupportUnreadCount(_req: Request, res: Response): Promise<void> {
-  const result = await db.execute(sql`
-    SELECT COUNT(DISTINCT user_id)::int AS count
-    FROM support_messages
-    WHERE sender_role = 'user' AND is_read = false
-  `);
-  const row = result.rows[0] as { count: number } | undefined;
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(supportMessagesTable)
+    .where(
+      and(
+        eq(supportMessagesTable.senderRole, "user"),
+        eq(supportMessagesTable.isRead, false),
+      ),
+    );
   res.json({ count: row?.count ?? 0 });
 }
 
