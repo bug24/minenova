@@ -57,6 +57,13 @@
       "when": 1777774890801,
       "tag": "0007_soft_killmonger",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777795674319,
+      "tag": "0008_admin_audit_log",
+      "breakpoints": true
     }
   ]
 }
