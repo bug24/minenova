@@ -317,7 +317,7 @@ function triggerBotMove(gameId: number): void {
         const [g] = await db.select({ p0: whotGamesTable.player0Id, p1: whotGamesTable.player1Id }).from(whotGamesTable).where(eq(whotGamesTable.id, gameId)).limit(1);
         if (g) emitGameUpdate(gameId, "bot_move", newState, g.p0, g.p1);
         if (continueBotTurn) {
-          await new Promise(r => setTimeout(r, 600));
+          await new Promise(r => setTimeout(r, 200));
           triggerBotMove(gameId);
         }
       }
@@ -762,7 +762,7 @@ router.post("/whot/games/:id/play", requireAuth, async (req: Request, res: Respo
 
     emitGameUpdate(gameId, "play", newState!, p0Id, p1Id);
     if (botTriggered) {
-      await new Promise(r => setTimeout(r, 700));
+      await new Promise(r => setTimeout(r, 250));
       triggerBotMove(gameId);
     }
     res.json({ state: sanitiseState(newState!, req.userId!, p0Id) });
@@ -838,7 +838,7 @@ router.post("/whot/games/:id/draw", requireAuth, async (req: Request, res: Respo
 
     emitGameUpdate(gameId, "draw", newState!, p0Id, p1Id);
     if (botTriggered) {
-      await new Promise(r => setTimeout(r, 700));
+      await new Promise(r => setTimeout(r, 250));
       triggerBotMove(gameId);
     }
     res.json({ state: sanitiseState(newState!, req.userId!, p0Id) });
