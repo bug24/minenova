@@ -16,3 +16,4 @@ export * from "./sub_admins";
 export * from "./mines";
 export * from "./password_reset_tokens";
 export * from "./trivia";
+export * from "./audit_log";

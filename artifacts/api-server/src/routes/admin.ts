@@ -17,6 +17,7 @@ import {
   subAdminsTable,
   subAdminPermissionsTable,
   triviaQuestionsTable,
+  adminAuditLogTable,
   ADMIN_MODULES,
 } from "@workspace/db";
 import { eq, and, isNull, or, ilike, sql, desc, type SQL } from "drizzle-orm";
@@ -157,6 +158,28 @@ const requirePermission = (module: string, type: "read" | "write") =>
     if (type === "write" && !perm.canWrite) { res.status(403).json({ error: `Write access required for: ${module}` }); return; }
     next();
   };
+
+// ─── Audit logging ────────────────────────────────────────────────────────────
+
+async function logAudit(
+  req: Request,
+  action: string,
+  targetType: string | null,
+  targetId: number | null,
+  details?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await db.insert(adminAuditLogTable).values({
+      actorType: req.isSuperAdmin ? "superadmin" : "subadmin",
+      actorId: req.subAdmin?.id ?? null,
+      actorUsername: req.subAdmin?.username ?? "superadmin",
+      action,
+      targetType: targetType ?? null,
+      targetId: targetId ?? null,
+      details: details ?? null,
+    });
+  } catch { /* audit logging is non-fatal */ }
+}
 
 // ─── 2FA helpers ──────────────────────────────────────────────────────────────
 
@@ -600,6 +623,7 @@ router.post("/admin/users/:id/reset-password", requireAdmin, requirePermission("
   if (!updated) { res.status(404).json({ error: "User not found" }); return; }
 
   res.json({ success: true, newPassword });
+  logAudit(req, "user.reset_password", "user", id).catch(() => {});
 });
 
 router.post("/admin/users/:id/suspend", requireAdmin, requirePermission("users", "write"), async (req, res): Promise<void> => {
@@ -608,6 +632,7 @@ router.post("/admin/users/:id/suspend", requireAdmin, requirePermission("users",
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
   const [updated] = await db.update(usersTable).set({ isSuspended: !user.isSuspended }).where(eq(usersTable.id, id)).returning({ id: usersTable.id, isSuspended: usersTable.isSuspended });
   res.json(updated);
+  logAudit(req, updated.isSuspended ? "user.suspend" : "user.unsuspend", "user", id).catch(() => {});
 });
 
 router.delete("/admin/users/:id", requireAdmin, requirePermission("users", "write"), async (req, res): Promise<void> => {
@@ -618,6 +643,7 @@ router.delete("/admin/users/:id", requireAdmin, requirePermission("users", "writ
   await db.delete(userUpgradesTable).where(eq(userUpgradesTable.userId, id));
   await db.delete(usersTable).where(eq(usersTable.id, id));
   res.json({ success: true });
+  logAudit(req, "user.delete", "user", id).catch(() => {});
 });
 
 router.post("/admin/users/:id/adjust-balance", requireAdmin, requirePermission("users", "write"), async (req, res): Promise<void> => {
@@ -651,6 +677,7 @@ router.post("/admin/users/:id/adjust-balance", requireAdmin, requirePermission("
   });
 
   res.json({ success: true, newBalance });
+  logAudit(req, "user.adjust_balance", "user", id, { delta: appliedDelta, note: data.data.note, newBalance }).catch(() => {});
 });
 
 // ─── Withdrawals ──────────────────────────────────────────────────────────────
@@ -744,6 +771,15 @@ router.post("/admin/withdrawals/:id/approve", requireAdmin, requirePermission("w
       .where(and(eq(transactionsTable.id, id), eq(transactionsTable.status, "pending")))
       .returning({ id: transactionsTable.id });
     if (!updated) { res.status(409).json({ error: "Withdrawal was already processed" }); return; }
+    await trx.insert(adminAuditLogTable).values({
+      actorType: req.isSuperAdmin ? "superadmin" : "subadmin",
+      actorId: req.subAdmin?.id ?? null,
+      actorUsername: req.subAdmin?.username ?? "superadmin",
+      action: "withdrawal.approve",
+      targetType: "withdrawal",
+      targetId: id,
+      details: { adminNote: data.data.adminNote ?? null, amount: tx.amount },
+    });
     res.json({ success: true });
   });
 });
@@ -781,6 +817,15 @@ router.post("/admin/withdrawals/:id/reject", requireAdmin, requirePermission("wi
       amount: refundCoins,
       status: "completed",
       description: `Refund for rejected withdrawal #${id}${feeDeducted > 0 ? ` (includes $${feeDeducted.toFixed(2)} fee refund)` : ""}`,
+    });
+    await trx.insert(adminAuditLogTable).values({
+      actorType: req.isSuperAdmin ? "superadmin" : "subadmin",
+      actorId: req.subAdmin?.id ?? null,
+      actorUsername: req.subAdmin?.username ?? "superadmin",
+      action: "withdrawal.reject",
+      targetType: "withdrawal",
+      targetId: id,
+      details: { adminNote: data.data.adminNote ?? null, amount: tx.amount, refundCoins, userId: tx.userId },
     });
     res.json({ success: true });
   });
@@ -1639,6 +1684,7 @@ router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, requ
   }
 
   res.json({ success: true, message: `Upgrade approved for ${user.username}.` });
+  logAudit(req, "upgrade.approve", "upgrade_payment", id, { userId: txn.userId, username: user.username, upgradeName: upgrade.name }).catch(() => {});
 });
 
 router.post("/admin/upgrade-payments/:transactionId/reject", requireAdmin, requirePermission("upgrades", "write"), async (req, res): Promise<void> => {
@@ -1673,6 +1719,7 @@ router.post("/admin/upgrade-payments/:transactionId/reject", requireAdmin, requi
   ).catch(() => {});
 
   res.json({ success: true, message: `Payment rejected for ${user.username}.` });
+  logAudit(req, "upgrade.reject", "upgrade_payment", id, { userId: txn.userId, username: user.username, note: note ?? null }).catch(() => {});
 });
 
 // ─── Financial Reports ────────────────────────────────────────────────────────
@@ -2016,6 +2063,7 @@ router.post("/admin/sub-admins", requireSuperAdmin, async (req, res): Promise<vo
     if (permRows.length > 0) await db.insert(subAdminPermissionsTable).values(permRows);
   }
   res.json({ id: sa.id, username: sa.username, email: sa.email, isActive: sa.isActive, createdAt: sa.createdAt });
+  logAudit(req, "sub_admin.create", "sub_admin", sa.id, { username: sa.username, email: sa.email }).catch(() => {});
 });
 
 // PATCH /admin/sub-admins/:id — update (superadmin only)
@@ -2034,13 +2082,16 @@ router.patch("/admin/sub-admins/:id", requireSuperAdmin, async (req, res): Promi
   const [sa] = await db.update(subAdminsTable).set(updateData).where(eq(subAdminsTable.id, id)).returning();
   if (!sa) { res.status(404).json({ error: "Sub-admin not found" }); return; }
   res.json({ id: sa.id, username: sa.username, email: sa.email, isActive: sa.isActive });
+  logAudit(req, "sub_admin.update", "sub_admin", id, { username: sa.username, changes: Object.keys(updateData) }).catch(() => {});
 });
 
 // DELETE /admin/sub-admins/:id — delete (superadmin only)
 router.delete("/admin/sub-admins/:id", requireSuperAdmin, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id as string);
+  const [sa] = await db.select({ username: subAdminsTable.username }).from(subAdminsTable).where(eq(subAdminsTable.id, id)).limit(1);
   await db.delete(subAdminsTable).where(eq(subAdminsTable.id, id));
   res.json({ success: true });
+  logAudit(req, "sub_admin.delete", "sub_admin", id, { username: sa?.username ?? null }).catch(() => {});
 });
 
 // PUT /admin/sub-admins/:id/permissions — replace all permissions (superadmin only)
@@ -2055,6 +2106,30 @@ router.put("/admin/sub-admins/:id/permissions", requireSuperAdmin, async (req, r
     .map(([module, p]) => ({ subAdminId: id, module, canRead: p.canRead, canWrite: p.canWrite }));
   if (permRows.length > 0) await db.insert(subAdminPermissionsTable).values(permRows);
   res.json({ success: true });
+  logAudit(req, "sub_admin.permissions_update", "sub_admin", id, { modules: Object.keys(data.data) }).catch(() => {});
+});
+
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+
+router.get("/admin/audit-log", requireSuperAdmin, async (req, res): Promise<void> => {
+  const page = Math.max(1, parseInt((req.query.page as string) || "1") || 1);
+  const limit = Math.min(100, Math.max(1, parseInt((req.query.limit as string) || "50") || 50));
+  const offset = (page - 1) * limit;
+  const actionFilter = req.query.action as string | undefined;
+  const actorTypeFilter = req.query.actorType as string | undefined;
+
+  const conditions: SQL<unknown>[] = [];
+  if (actionFilter && actionFilter !== "all") conditions.push(eq(adminAuditLogTable.action, actionFilter));
+  if (actorTypeFilter && actorTypeFilter !== "all") conditions.push(eq(adminAuditLogTable.actorType, actorTypeFilter));
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [[{ total }], rows] = await Promise.all([
+    db.select({ total: sql<number>`count(*)::int` }).from(adminAuditLogTable).where(whereClause),
+    db.select().from(adminAuditLogTable).where(whereClause).orderBy(desc(adminAuditLogTable.createdAt)).limit(limit).offset(offset),
+  ]);
+
+  res.json({ total, page, limit, rows });
 });
 
 // ─── Trivia Question Management ──────────────────────────────────────────────

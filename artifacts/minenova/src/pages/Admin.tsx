@@ -188,7 +188,7 @@ interface UserProfile extends AdminUser {
   transactions: UserTransaction[];
 }
 
-type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads" | "scripts" | "reports" | "sub-admins" | "trivia";
+type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads" | "scripts" | "reports" | "sub-admins" | "trivia" | "audit-log";
 
 const ALL_MODULES: Tab[] = ["dashboard","reports","users","withdrawals","transactions","mining","referrals","upgrades","settings","share","ads","scripts","trivia"];
 
@@ -4393,6 +4393,215 @@ function TriviaTab({ secret }: { secret: string }) {
   );
 }
 
+// ─── Audit Log Tab ────────────────────────────────────────────────────────────
+
+interface AuditLogRow {
+  id: number;
+  actorType: string;
+  actorId: number | null;
+  actorUsername: string;
+  action: string;
+  targetType: string | null;
+  targetId: number | null;
+  details: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  "withdrawal.approve": "Approved Withdrawal",
+  "withdrawal.reject": "Rejected Withdrawal",
+  "user.suspend": "Suspended User",
+  "user.unsuspend": "Unsuspended User",
+  "user.delete": "Deleted User",
+  "user.adjust_balance": "Adjusted Balance",
+  "user.reset_password": "Reset Password",
+  "upgrade.approve": "Approved Upgrade",
+  "upgrade.reject": "Rejected Upgrade",
+  "sub_admin.create": "Created Sub Admin",
+  "sub_admin.update": "Updated Sub Admin",
+  "sub_admin.delete": "Deleted Sub Admin",
+  "sub_admin.permissions_update": "Updated Permissions",
+};
+
+const ACTION_COLORS: Record<string, string> = {
+  "withdrawal.approve": "bg-emerald-500/20 text-emerald-500 border-emerald-500/30",
+  "withdrawal.reject": "bg-red-500/20 text-red-400 border-red-500/30",
+  "user.suspend": "bg-amber-500/20 text-amber-500 border-amber-500/30",
+  "user.unsuspend": "bg-emerald-500/20 text-emerald-500 border-emerald-500/30",
+  "user.delete": "bg-red-500/20 text-red-500 border-red-500/30",
+  "user.adjust_balance": "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  "user.reset_password": "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  "upgrade.approve": "bg-emerald-500/20 text-emerald-500 border-emerald-500/30",
+  "upgrade.reject": "bg-red-500/20 text-red-400 border-red-500/30",
+  "sub_admin.create": "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  "sub_admin.update": "bg-amber-500/20 text-amber-500 border-amber-500/30",
+  "sub_admin.delete": "bg-red-500/20 text-red-500 border-red-500/30",
+  "sub_admin.permissions_update": "bg-purple-500/20 text-purple-400 border-purple-500/30",
+};
+
+function AuditLogTab({ secret }: { secret: string }) {
+  const h = { "x-admin-secret": secret };
+  const [rows, setRows] = useState<AuditLogRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [actionFilter, setActionFilter] = useState("all");
+  const [actorTypeFilter, setActorTypeFilter] = useState("all");
+  const LIMIT = 50;
+
+  const load = async (p = page, af = actionFilter, atf = actorTypeFilter) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(p), limit: String(LIMIT) });
+      if (af !== "all") params.set("action", af);
+      if (atf !== "all") params.set("actorType", atf);
+      const res = await apiFetch(`/admin/audit-log?${params}`, { headers: h });
+      if (res.ok) {
+        const data = await res.json();
+        setRows(data.rows);
+        setTotal(data.total);
+      }
+    } catch { /* silent */ } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const applyFilters = () => { setPage(1); load(1, actionFilter, actorTypeFilter); };
+
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+
+  const formatDetails = (details: Record<string, unknown> | null): string => {
+    if (!details) return "";
+    const parts: string[] = [];
+    if (details.note) parts.push(`note: "${details.note}"`);
+    if (details.delta !== undefined) parts.push(`Δ${Number(details.delta) > 0 ? "+" : ""}${details.delta}`);
+    if (details.upgradeName) parts.push(String(details.upgradeName));
+    if (details.username) parts.push(`@${details.username}`);
+    if (details.adminNote) parts.push(`note: "${details.adminNote}"`);
+    if (details.modules && Array.isArray(details.modules)) parts.push(`modules: ${(details.modules as string[]).join(", ")}`);
+    if (details.changes && Array.isArray(details.changes)) parts.push(`changed: ${(details.changes as string[]).join(", ")}`);
+    return parts.join(" · ");
+  };
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-bold">Audit Log</h2>
+        <p className="text-sm text-muted-foreground">Timestamped record of all sensitive admin actions</p>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 items-end">
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground font-medium">Action</label>
+          <select
+            value={actionFilter}
+            onChange={e => setActionFilter(e.target.value)}
+            className="h-9 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="all">All actions</option>
+            {Object.entries(ACTION_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground font-medium">Actor</label>
+          <select
+            value={actorTypeFilter}
+            onChange={e => setActorTypeFilter(e.target.value)}
+            className="h-9 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="all">All actors</option>
+            <option value="superadmin">Super Admin</option>
+            <option value="subadmin">Sub Admin</option>
+          </select>
+        </div>
+        <Button size="sm" onClick={applyFilters} className="gap-1.5 self-end">
+          <Filter className="w-3.5 h-3.5" /> Filter
+        </Button>
+        {(actionFilter !== "all" || actorTypeFilter !== "all") && (
+          <Button size="sm" variant="ghost" onClick={() => { setActionFilter("all"); setActorTypeFilter("all"); setPage(1); load(1, "all", "all"); }} className="self-end text-muted-foreground">
+            <X className="w-3.5 h-3.5" /> Clear
+          </Button>
+        )}
+        <span className="text-xs text-muted-foreground self-end ml-auto">{total.toLocaleString()} entries</span>
+      </div>
+
+      {/* Table */}
+      <div className="bg-card border border-card-border rounded-2xl overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">Loading…</div>
+        ) : rows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 gap-2 text-muted-foreground">
+            <Activity className="w-8 h-8 opacity-30" />
+            <p className="text-sm">No audit entries yet</p>
+            <p className="text-xs">Sensitive actions will appear here after they are performed</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/30">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">When</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Actor</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Action</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Target</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr key={row.id} className={`border-b border-border last:border-0 ${i % 2 === 0 ? "" : "bg-muted/10"}`}>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmt(row.createdAt)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        {row.actorType === "superadmin"
+                          ? <ShieldCheck className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          : <UserCircle className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                        }
+                        <span className="text-xs font-medium">{row.actorUsername}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <Badge className={`text-xs border ${ACTION_COLORS[row.action] ?? "bg-muted text-muted-foreground border-border"}`}>
+                        {ACTION_LABELS[row.action] ?? row.action}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                      {row.targetType && row.targetId ? (
+                        <span className="font-mono">{row.targetType} #{row.targetId}</span>
+                      ) : row.targetType ? (
+                        <span>{row.targetType}</span>
+                      ) : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground max-w-xs truncate">
+                      {formatDetails(row.details)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => { const p = page - 1; setPage(p); load(p); }} className="gap-1">
+            <ChevronLeft className="w-3.5 h-3.5" /> Prev
+          </Button>
+          <span className="text-xs text-muted-foreground px-2">Page {page} of {totalPages}</span>
+          <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => { const p = page + 1; setPage(p); load(p); }} className="gap-1">
+            Next <ChevronRight className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SubAdminsTab({ secret }: { secret: string }) {
   const { toast } = useToast();
   const h = { "x-admin-secret": secret, "Content-Type": "application/json" };
@@ -4883,6 +5092,7 @@ export default function Admin() {
     { id: "scripts", label: "Scripts", icon: Code },
     { id: "trivia", label: "Trivia", icon: BookOpen },
     { id: "sub-admins", label: "Sub Admins", icon: UserPlus, superAdminOnly: true },
+    { id: "audit-log", label: "Audit Log", icon: Activity, superAdminOnly: true },
   ];
 
   const TABS = isSubAdmin
@@ -5038,6 +5248,7 @@ export default function Admin() {
           {tab === "scripts" && <ScriptsTab secret={secret} />}
           {tab === "trivia" && <TriviaTab secret={secret} />}
           {tab === "sub-admins" && <SubAdminsTab secret={secret} />}
+          {tab === "audit-log" && <AuditLogTab secret={secret} />}
         </div>
       </div>
     </div>
