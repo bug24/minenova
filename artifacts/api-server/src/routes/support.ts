@@ -54,9 +54,8 @@ router.post("/support/messages", requireAuth, async (req: Request, res: Response
   const userId = req.userId!;
   const schema = z.object({
     message: z.string().min(1).max(2000).optional(),
-    imageUrl: z.string().url().optional(),
     objectPath: z.string().optional(),
-  }).refine(d => d.message || d.objectPath || d.imageUrl, {
+  }).refine(d => d.message || d.objectPath, {
     message: "At least a message or image is required",
   });
 
@@ -66,7 +65,7 @@ router.post("/support/messages", requireAuth, async (req: Request, res: Response
     return;
   }
 
-  const { message, imageUrl: providedImageUrl, objectPath } = parsed.data;
+  const { message, objectPath } = parsed.data;
 
   let resolvedImageUrl: string | undefined;
   if (objectPath) {
@@ -76,8 +75,6 @@ router.post("/support/messages", requireAuth, async (req: Request, res: Response
     }
     consumeUpload(objectPath);
     resolvedImageUrl = `/api/storage/objects/${objectPath.replace(/^\/objects\//, "").replace(/^objects\//, "")}`;
-  } else if (providedImageUrl) {
-    resolvedImageUrl = providedImageUrl;
   }
 
   const [msg] = await db
@@ -139,7 +136,7 @@ export async function getSupportThreads(_req: Request, res: Response): Promise<v
     FROM support_messages sm
     JOIN users u ON u.id = sm.user_id
     GROUP BY sm.user_id, u.username, u.avatar_url
-    ORDER BY MAX(sm.created_at) DESC
+    ORDER BY COUNT(*) FILTER (WHERE sm.sender_role = 'user' AND sm.is_read = false) DESC, MAX(sm.created_at) DESC
   `);
   res.json(threads.rows);
 }
@@ -187,7 +184,7 @@ export async function postAdminReply(req: Request, res: Response): Promise<void>
     return;
   }
 
-  const { message, imageUrl: providedImageUrl, objectPath } = parsed.data;
+  const { message, objectPath } = parsed.data;
 
   // Verify user exists
   const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
@@ -196,8 +193,6 @@ export async function postAdminReply(req: Request, res: Response): Promise<void>
   let resolvedImageUrl: string | undefined;
   if (objectPath) {
     resolvedImageUrl = `/api/storage/objects/${objectPath.replace(/^\/objects\//, "").replace(/^objects\//, "")}`;
-  } else if (providedImageUrl) {
-    resolvedImageUrl = providedImageUrl;
   }
 
   const [msg] = await db
