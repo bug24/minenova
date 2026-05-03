@@ -230,7 +230,7 @@ function fmtCoins(n: number) { return n.toLocaleString(undefined, { maximumFract
 
 // ─── User Profile Modal ───────────────────────────────────────────────────────
 
-function UserProfileModal({ userId, secret, onClose, onRefreshList }: { userId: number; secret: string; onClose: () => void; onRefreshList: () => void }) {
+function UserProfileModal({ userId, secret, isSuperAdmin, onClose, onRefreshList }: { userId: number; secret: string; isSuperAdmin: boolean; onClose: () => void; onRefreshList: () => void }) {
   const { toast } = useToast();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -461,7 +461,7 @@ function UserProfileModal({ userId, secret, onClose, onRefreshList }: { userId: 
               </Button>
             </div>
 
-            {/* Send Email */}
+            {isSuperAdmin && (
             <div className="bg-card border border-card-border rounded-2xl p-4 space-y-3">
               <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5" /> Send Email to User
@@ -490,6 +490,7 @@ function UserProfileModal({ userId, secret, onClose, onRefreshList }: { userId: 
                 <Send className="w-3.5 h-3.5" /> {sendingEmail ? "Sending…" : "Send Email"}
               </Button>
             </div>
+            )}
           </div>
         )}
       </div>
@@ -540,7 +541,7 @@ function DashboardTab({ secret }: { secret: string }) {
 
 // ─── Users Tab ───────────────────────────────────────────────────────────────
 
-function UsersTab({ secret }: { secret: string }) {
+function UsersTab({ secret, isSuperAdmin }: { secret: string; isSuperAdmin: boolean }) {
   const { toast } = useToast();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -654,6 +655,7 @@ function UsersTab({ secret }: { secret: string }) {
         <UserProfileModal
           userId={profileUserId}
           secret={secret}
+          isSuperAdmin={isSuperAdmin}
           onClose={() => setProfileUserId(null)}
           onRefreshList={load}
         />
@@ -4531,7 +4533,7 @@ export default function Admin() {
             </div>
           )}
           {tab === "dashboard" && <DashboardTab secret={secret} />}
-          {tab === "users" && <UsersTab secret={secret} />}
+          {tab === "users" && <UsersTab secret={secret} isSuperAdmin={!isSubAdmin} />}
           {tab === "withdrawals" && <WithdrawalsTab secret={secret} />}
           {tab === "transactions" && <TransactionsTab secret={secret} />}
           {tab === "mining" && <MiningTab secret={secret} />}
