@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, usersTable, transactionsTable, minesGamesTable, adminConfigTable } from "@workspace/db";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { eq, desc, sql, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
@@ -421,6 +421,88 @@ router.get("/mines/history", requireAuth, async (req: Request, res: Response): P
         ? parseFloat(((g.finalPayout ?? 0) - g.bet).toFixed(2))
         : -g.bet,
     })));
+  } catch (err) { handleErr(err, res); }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/mines/leaderboard — top wins today + all time (public)
+// ---------------------------------------------------------------------------
+router.get("/mines/leaderboard", async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const baseSelect = {
+      username: usersTable.username,
+      mineCount: minesGamesTable.mineCount,
+      multiplier: minesGamesTable.currentMultiplier,
+      payout: minesGamesTable.finalPayout,
+      bet: minesGamesTable.bet,
+      endedAt: minesGamesTable.endedAt,
+    };
+
+    const [today, allTime] = await Promise.all([
+      db.select(baseSelect)
+        .from(minesGamesTable)
+        .innerJoin(usersTable, eq(minesGamesTable.userId, usersTable.id))
+        .where(and(
+          eq(minesGamesTable.status, "won"),
+          gte(minesGamesTable.endedAt, todayStart),
+        ))
+        .orderBy(desc(minesGamesTable.finalPayout))
+        .limit(10),
+
+      db.select(baseSelect)
+        .from(minesGamesTable)
+        .innerJoin(usersTable, eq(minesGamesTable.userId, usersTable.id))
+        .where(eq(minesGamesTable.status, "won"))
+        .orderBy(desc(minesGamesTable.finalPayout))
+        .limit(10),
+    ]);
+
+    const fmt = (rows: typeof today) => rows.map((r, idx) => ({
+      rank: idx + 1,
+      username: r.username,
+      mineCount: r.mineCount,
+      multiplier: r.multiplier,
+      payout: r.payout ?? 0,
+      bet: r.bet,
+      profit: parseFloat(((r.payout ?? 0) - r.bet).toFixed(2)),
+      endedAt: r.endedAt,
+    }));
+
+    res.json({ today: fmt(today), allTime: fmt(allTime) });
+  } catch (err) { handleErr(err, res); }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/mines/streak — current user's consecutive profitable sessions
+// ---------------------------------------------------------------------------
+router.get("/mines/streak", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const games = await db.select({
+      status: minesGamesTable.status,
+      bet: minesGamesTable.bet,
+      finalPayout: minesGamesTable.finalPayout,
+    }).from(minesGamesTable)
+      .where(and(
+        eq(minesGamesTable.userId, req.userId!),
+        sql`status IN ('won', 'lost')`,
+      ))
+      .orderBy(desc(minesGamesTable.endedAt))
+      .limit(100);
+
+    let streak = 0;
+    for (const g of games) {
+      const profitable = g.status === "won" && (g.finalPayout ?? 0) > g.bet;
+      if (profitable) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+
+    res.json({ streak });
   } catch (err) { handleErr(err, res); }
 });
 

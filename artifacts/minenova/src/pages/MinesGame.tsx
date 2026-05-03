@@ -7,8 +7,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  ArrowLeft, Bomb, Gem, TrendingUp, TrendingDown, Minus,
-  RefreshCw, DollarSign, History,
+  ArrowLeft, Bomb, Gem, TrendingUp, TrendingDown,
+  RefreshCw, DollarSign, History, Trophy, Flame, Crown,
 } from "lucide-react";
 import {
   unlockAudio, playMinesTileClick, playMinesGemReveal,
@@ -66,6 +66,22 @@ interface MinesSettings {
   minBet: number;
   maxBet: number;
   feePct: number;
+}
+
+interface LeaderboardEntry {
+  rank: number;
+  username: string;
+  mineCount: number;
+  multiplier: number;
+  payout: number;
+  bet: number;
+  profit: number;
+  endedAt: string | null;
+}
+
+interface Leaderboard {
+  today: LeaderboardEntry[];
+  allTime: LeaderboardEntry[];
 }
 
 const TOTAL_TILES = 25;
@@ -187,10 +203,14 @@ export default function MinesGame() {
   const [settings, setSettings] = useState<MinesSettings>({ enabled: true, minBet: 10, maxBet: 100000, feePct: 3 });
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<Leaderboard | null>(null);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [lbTab, setLbTab] = useState<"today" | "allTime">("today");
+  const [streak, setStreak] = useState<number>(0);
 
   const betNum = parseFloat(bet) || 0;
 
-  // Load settings + check for active game + history on mount
+  // Load settings + check for active game + history + leaderboard on mount
   useEffect(() => {
     (async () => {
       try {
@@ -211,7 +231,7 @@ export default function MinesGame() {
         }
       } catch { /* ignore */ }
 
-      loadHistory();
+      await Promise.all([loadHistory(), loadLeaderboard(), loadStreak()]);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -220,6 +240,20 @@ export default function MinesGame() {
     try {
       const data = await minesApi<HistoryEntry[]>("/mines/history");
       setHistory(data.filter(g => g.status !== "active"));
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadLeaderboard = useCallback(async () => {
+    try {
+      const data = await minesApi<Leaderboard>("/mines/leaderboard");
+      setLeaderboard(data);
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadStreak = useCallback(async () => {
+    try {
+      const data = await minesApi<{ streak: number }>("/mines/streak");
+      setStreak(data.streak);
     } catch { /* ignore */ }
   }, []);
 
@@ -291,6 +325,8 @@ export default function MinesGame() {
         setPhase("ended");
         queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
         loadHistory();
+        loadStreak();
+        loadLeaderboard();
       } else {
         playMinesGemReveal();
         setRevealedTiles(data.revealedTiles);
@@ -306,6 +342,8 @@ export default function MinesGame() {
           setPhase("ended");
           queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
           loadHistory();
+          loadStreak();
+          loadLeaderboard();
           toast({ title: `All gems found! Auto cash out: +${data.payout?.toFixed(0)} coins` });
         }
       }
@@ -333,6 +371,8 @@ export default function MinesGame() {
       setPhase("ended");
       queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
       loadHistory();
+      loadStreak();
+      loadLeaderboard();
       toast({ title: `Cashed out! +${data.payout.toFixed(0)} coins (${data.multiplier.toFixed(2)}x)` });
     } catch (err) {
       toast({ variant: "destructive", title: (err as Error).message });
@@ -379,6 +419,17 @@ export default function MinesGame() {
           <ArrowLeft className="w-4 h-4" /> Games
         </button>
         <div className="flex-1" />
+        {streak > 0 && (
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 text-xs font-bold">
+            <Flame className="w-3 h-3" /> {streak}
+          </div>
+        )}
+        <button
+          onClick={() => { setShowLeaderboard(v => !v); if (!showLeaderboard) loadLeaderboard(); }}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Trophy className="w-3.5 h-3.5" /> Board
+        </button>
         <button
           onClick={() => { setShowHistory(v => !v); if (!showHistory) loadHistory(); }}
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -397,6 +448,56 @@ export default function MinesGame() {
           <p className="text-[11px] text-muted-foreground">Find gems, avoid mines</p>
         </div>
       </div>
+
+      {/* Leaderboard panel */}
+      {showLeaderboard && (
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Trophy className="w-3.5 h-3.5 text-amber-400" />
+            <p className="text-xs font-bold flex-1">Top Wins</p>
+            <div className="flex rounded-lg overflow-hidden border border-border text-[10px] font-semibold">
+              <button
+                onClick={() => setLbTab("today")}
+                className={`px-2.5 py-1 transition-colors ${lbTab === "today" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+              >Today</button>
+              <button
+                onClick={() => setLbTab("allTime")}
+                className={`px-2.5 py-1 transition-colors ${lbTab === "allTime" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+              >All Time</button>
+            </div>
+          </div>
+          {(() => {
+            const entries = lbTab === "today" ? (leaderboard?.today ?? []) : (leaderboard?.allTime ?? []);
+            if (entries.length === 0) {
+              return <p className="text-xs text-muted-foreground text-center py-4">No wins recorded {lbTab === "today" ? "today" : "yet"}</p>;
+            }
+            return (
+              <div className="space-y-1.5">
+                {entries.map(e => (
+                  <div key={`${e.rank}-${e.username}`} className="flex items-center gap-2.5 py-1.5">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-black ${
+                      e.rank === 1 ? "bg-amber-400/20 text-amber-400" :
+                      e.rank === 2 ? "bg-slate-400/20 text-slate-300" :
+                      e.rank === 3 ? "bg-orange-600/20 text-orange-400" :
+                      "bg-muted text-muted-foreground"
+                    }`}>
+                      {e.rank === 1 ? <Crown className="w-3 h-3" /> : e.rank}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold truncate">{e.username}</p>
+                      <p className="text-[10px] text-muted-foreground">{e.mineCount} mine{e.mineCount !== 1 ? "s" : ""} · {e.multiplier.toFixed(2)}×</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-xs font-bold text-emerald-400">+{e.profit.toFixed(0)}</p>
+                      <p className="text-[10px] text-muted-foreground">{e.payout.toFixed(0)} out</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* History panel */}
       {showHistory && (
