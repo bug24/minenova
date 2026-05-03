@@ -2,7 +2,7 @@ import { pgTable, serial, text, boolean, timestamp, integer, primaryKey } from "
 
 export const ADMIN_MODULES = [
   "dashboard", "reports", "users", "withdrawals", "transactions",
-  "mining", "referrals", "upgrades", "settings", "share", "ads", "scripts",
+  "mining", "referrals", "upgrades", "settings", "share", "ads", "scripts", "trivia",
 ] as const;
 
 export type AdminModule = typeof ADMIN_MODULES[number];

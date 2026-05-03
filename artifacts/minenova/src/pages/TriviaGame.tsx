@@ -275,7 +275,7 @@ export default function TriviaGame() {
           <div>
             <h2 className="font-black text-lg">Answers submitted!</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              {game.mode === "pvp" ? "Waiting for opponent to finish…" : "Calculating results…"}
+              {game?.mode === "pvp" ? "Waiting for opponent to finish…" : "Calculating results…"}
             </p>
           </div>
           <div className="flex justify-center">
@@ -331,7 +331,7 @@ export default function TriviaGame() {
               <p className="text-[10px] text-muted-foreground">/ 10 correct</p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground mb-1">{result.opponentUsername ?? (game.mode === "bot" ? "Bot" : "Opponent")}</p>
+              <p className="text-xs text-muted-foreground mb-1">{result.opponentUsername ?? (game?.mode === "bot" ? "Bot" : "Opponent")}</p>
               <p className="text-3xl font-black">{oppFinalScore}</p>
               <p className="text-[10px] text-muted-foreground">/ 10 correct</p>
             </div>
@@ -398,8 +398,8 @@ export default function TriviaGame() {
         </button>
         <div className="flex-1" />
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          {game.mode === "bot" ? <Bot className="w-3.5 h-3.5" /> : <Swords className="w-3.5 h-3.5" />}
-          {game.mode === "bot" ? "vs Bot" : "vs Player"}
+          {game?.mode === "bot" ? <Bot className="w-3.5 h-3.5" /> : <Swords className="w-3.5 h-3.5" />}
+          {game?.mode === "bot" ? "vs Bot" : "vs Player"}
         </div>
       </div>
 

@@ -16,6 +16,7 @@ import {
   pushSubscriptionsTable,
   subAdminsTable,
   subAdminPermissionsTable,
+  triviaQuestionsTable,
   ADMIN_MODULES,
 } from "@workspace/db";
 import { eq, and, isNull, or, ilike, sql, desc, type SQL } from "drizzle-orm";
@@ -2031,6 +2032,45 @@ router.put("/admin/sub-admins/:id/permissions", requireSuperAdmin, async (req, r
     .filter(([mod]) => (ADMIN_MODULES as readonly string[]).includes(mod))
     .map(([module, p]) => ({ subAdminId: id, module, canRead: p.canRead, canWrite: p.canWrite }));
   if (permRows.length > 0) await db.insert(subAdminPermissionsTable).values(permRows);
+  res.json({ success: true });
+});
+
+// ─── Trivia Question Management ──────────────────────────────────────────────
+
+const triviaQuestionSchema = z.object({
+  question: z.string().min(5),
+  options: z.array(z.string().min(1)).length(4),
+  correctIndex: z.number().int().min(0).max(3),
+  category: z.string().min(1),
+  difficulty: z.enum(["easy", "medium", "hard"]).default("medium"),
+});
+
+router.get("/admin/trivia/questions", requireAdmin, requirePermission("trivia", "read"), async (req, res): Promise<void> => {
+  const rows = await db.select().from(triviaQuestionsTable).orderBy(triviaQuestionsTable.id);
+  res.json(rows);
+});
+
+router.post("/admin/trivia/questions", requireAdmin, requirePermission("trivia", "write"), async (req, res): Promise<void> => {
+  const parsed = triviaQuestionSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid question data", details: parsed.error.flatten() }); return; }
+  const [row] = await db.insert(triviaQuestionsTable).values({ ...parsed.data, isActive: true }).returning();
+  res.json(row);
+});
+
+router.patch("/admin/trivia/questions/:id", requireAdmin, requirePermission("trivia", "write"), async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const partial = triviaQuestionSchema.partial().extend({ isActive: z.boolean().optional() }).safeParse(req.body);
+  if (!partial.success) { res.status(400).json({ error: "Invalid data", details: partial.error.flatten() }); return; }
+  const [row] = await db.update(triviaQuestionsTable).set(partial.data).where(eq(triviaQuestionsTable.id, id)).returning();
+  if (!row) { res.status(404).json({ error: "Not found" }); return; }
+  res.json(row);
+});
+
+router.delete("/admin/trivia/questions/:id", requireAdmin, requirePermission("trivia", "write"), async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  await db.delete(triviaQuestionsTable).where(eq(triviaQuestionsTable.id, id));
   res.json({ success: true });
 });
 

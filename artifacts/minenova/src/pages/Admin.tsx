@@ -12,7 +12,7 @@ import {
   Play, Zap, AlertTriangle, ToggleLeft, ToggleRight, Menu, ChevronLeft,
   Film, Link, Clock, MonitorPlay, Code, Bell, Layers, ArrowUp, ArrowDown,
   TrendingUp, TrendingDown, DollarSign, LineChart, UserPlus, ShieldCheck, Lock,
-  Mail, Send,
+  Mail, Send, BookOpen, ChevronDown, Filter,
 } from "lucide-react";
 
 function apiFetch(path: string, options?: RequestInit) {
@@ -186,9 +186,9 @@ interface UserProfile extends AdminUser {
   transactions: UserTransaction[];
 }
 
-type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads" | "scripts" | "reports" | "sub-admins";
+type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads" | "scripts" | "reports" | "sub-admins" | "trivia";
 
-const ALL_MODULES: Tab[] = ["dashboard","reports","users","withdrawals","transactions","mining","referrals","upgrades","settings","share","ads","scripts"];
+const ALL_MODULES: Tab[] = ["dashboard","reports","users","withdrawals","transactions","mining","referrals","upgrades","settings","share","ads","scripts","trivia"];
 
 interface SubAdminRecord {
   id: number; username: string; email: string; isActive: boolean; createdAt: string;
@@ -4048,6 +4048,307 @@ function PermissionMatrix({ perms, onChange }: { perms: PermMap; onChange: (p: P
   );
 }
 
+// ─── Trivia Tab ───────────────────────────────────────────────────────────────
+
+interface AdminTriviaQuestion {
+  id: number;
+  question: string;
+  options: string[];
+  correctIndex: number;
+  category: string;
+  difficulty: string;
+  isActive: boolean;
+}
+
+const TRIVIA_CATEGORIES = ["Bitcoin", "Ethereum", "DeFi", "Mining", "Altcoins", "Blockchain Basics", "NFTs", "Exchanges"];
+const TRIVIA_DIFFICULTIES = ["easy", "medium", "hard"] as const;
+const DIFF_COLOR: Record<string, string> = { easy: "text-green-400 bg-green-400/10 border-green-400/30", medium: "text-amber-400 bg-amber-400/10 border-amber-400/30", hard: "text-red-400 bg-red-400/10 border-red-400/30" };
+
+const emptyForm = () => ({ question: "", options: ["", "", "", ""] as [string, string, string, string], correctIndex: 0, category: "Bitcoin", difficulty: "medium" as string });
+
+function TriviaTab({ secret }: { secret: string }) {
+  const { toast } = useToast();
+  const h = useMemo(() => ({ "x-admin-secret": secret, "Content-Type": "application/json" }), [secret]);
+
+  const [questions, setQuestions] = useState<AdminTriviaQuestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [filterCat, setFilterCat] = useState("all");
+  const [filterDiff, setFilterDiff] = useState("all");
+  const [filterActive, setFilterActive] = useState<"all" | "active" | "inactive">("all");
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState(emptyForm());
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await apiFetch("/admin/trivia/questions", { headers: h });
+      if (!r.ok) throw new Error();
+      setQuestions(await r.json());
+    } catch {
+      toast({ variant: "destructive", title: "Failed to load questions" });
+    } finally {
+      setLoading(false);
+    }
+  }, [h, toast]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = useMemo(() => questions.filter(q => {
+    if (filterCat !== "all" && q.category !== filterCat) return false;
+    if (filterDiff !== "all" && q.difficulty !== filterDiff) return false;
+    if (filterActive === "active" && !q.isActive) return false;
+    if (filterActive === "inactive" && q.isActive) return false;
+    if (search && !q.question.toLowerCase().includes(search.toLowerCase()) && !q.category.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  }), [questions, filterCat, filterDiff, filterActive, search]);
+
+  const categories = useMemo(() => Array.from(new Set(questions.map(q => q.category))).sort(), [questions]);
+  const activeCount = questions.filter(q => q.isActive).length;
+
+  function startAdd() { setForm(emptyForm()); setEditingId(null); setShowAddForm(true); }
+  function startEdit(q: AdminTriviaQuestion) {
+    setForm({ question: q.question, options: [...q.options] as [string, string, string, string], correctIndex: q.correctIndex, category: q.category, difficulty: q.difficulty });
+    setEditingId(q.id);
+    setShowAddForm(true);
+  }
+  function cancelForm() { setShowAddForm(false); setEditingId(null); setForm(emptyForm()); }
+
+  async function handleSave() {
+    if (!form.question.trim() || form.options.some(o => !o.trim())) {
+      toast({ variant: "destructive", title: "Please fill in all fields" }); return;
+    }
+    setSaving(true);
+    try {
+      const body = JSON.stringify(form);
+      const r = editingId != null
+        ? await apiFetch(`/admin/trivia/questions/${editingId}`, { method: "PATCH", headers: h, body })
+        : await apiFetch("/admin/trivia/questions", { method: "POST", headers: h, body });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "Failed"); }
+      const saved: AdminTriviaQuestion = await r.json();
+      if (editingId != null) {
+        setQuestions(qs => qs.map(q => q.id === editingId ? saved : q));
+        toast({ title: "Question updated" });
+      } else {
+        setQuestions(qs => [...qs, saved]);
+        toast({ title: "Question added" });
+      }
+      cancelForm();
+    } catch (e: unknown) {
+      toast({ variant: "destructive", title: String(e instanceof Error ? e.message : "Save failed") });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleToggle(q: AdminTriviaQuestion) {
+    setTogglingId(q.id);
+    try {
+      const r = await apiFetch(`/admin/trivia/questions/${q.id}`, { method: "PATCH", headers: h, body: JSON.stringify({ isActive: !q.isActive }) });
+      if (!r.ok) throw new Error();
+      const updated: AdminTriviaQuestion = await r.json();
+      setQuestions(qs => qs.map(x => x.id === q.id ? updated : x));
+    } catch {
+      toast({ variant: "destructive", title: "Failed to update" });
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
+  async function handleDelete(id: number) {
+    setDeletingId(id);
+    try {
+      const r = await apiFetch(`/admin/trivia/questions/${id}`, { method: "DELETE", headers: h });
+      if (!r.ok) throw new Error();
+      setQuestions(qs => qs.filter(q => q.id !== id));
+      toast({ title: "Question deleted" });
+    } catch {
+      toast({ variant: "destructive", title: "Failed to delete" });
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  return (
+    <div className="space-y-5 max-w-5xl">
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Total Questions", value: questions.length, color: "text-indigo-400" },
+          { label: "Active", value: activeCount, color: "text-green-400" },
+          { label: "Inactive", value: questions.length - activeCount, color: "text-muted-foreground" },
+          { label: "Categories", value: categories.length, color: "text-amber-400" },
+        ].map(s => (
+          <div key={s.label} className="bg-card border border-card-border rounded-xl p-4 text-center">
+            <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[160px]">
+          <Input placeholder="Search questions…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
+          <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+          {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-3 h-3" /></button>}
+        </div>
+        <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="h-8 text-xs rounded-md border border-input bg-background px-2 text-foreground">
+          <option value="all">All Categories</option>
+          {categories.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={filterDiff} onChange={e => setFilterDiff(e.target.value)} className="h-8 text-xs rounded-md border border-input bg-background px-2 text-foreground">
+          <option value="all">All Difficulties</option>
+          {TRIVIA_DIFFICULTIES.map(d => <option key={d} value={d}>{d[0].toUpperCase() + d.slice(1)}</option>)}
+        </select>
+        <select value={filterActive} onChange={e => setFilterActive(e.target.value as typeof filterActive)} className="h-8 text-xs rounded-md border border-input bg-background px-2 text-foreground">
+          <option value="all">All Status</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <Button size="sm" onClick={showAddForm ? cancelForm : startAdd} variant={showAddForm && editingId == null ? "outline" : "default"} className="gap-1 h-8 text-xs ml-auto">
+          {showAddForm && editingId == null ? <><X className="w-3 h-3" />Cancel</> : <><Plus className="w-3 h-3" />Add Question</>}
+        </Button>
+        <Button size="sm" variant="outline" onClick={load} className="h-8 w-8 p-0"><RefreshCw className="w-3.5 h-3.5" /></Button>
+      </div>
+
+      {/* Add / Edit Form */}
+      {showAddForm && (
+        <div className="bg-card border border-indigo-500/30 rounded-2xl p-5 space-y-4">
+          <h3 className="font-semibold text-sm text-indigo-400">{editingId != null ? "Edit Question" : "New Question"}</h3>
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground font-medium">Question</label>
+            <Input value={form.question} onChange={e => setForm(f => ({ ...f, question: e.target.value }))} placeholder="Enter question text…" className="text-sm" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs text-muted-foreground font-medium">Answer Options — click the letter to mark as correct</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {(["A", "B", "C", "D"] as const).map((letter, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, correctIndex: i }))}
+                    className={`shrink-0 w-7 h-7 rounded-full text-xs font-bold border transition-colors ${form.correctIndex === i ? "bg-green-500 border-green-500 text-white" : "border-border text-muted-foreground hover:border-green-400 hover:text-green-400"}`}
+                  >
+                    {letter}
+                  </button>
+                  <Input
+                    value={form.options[i]}
+                    onChange={e => {
+                      const opts = [...form.options] as [string, string, string, string];
+                      opts[i] = e.target.value;
+                      setForm(f => ({ ...f, options: opts }));
+                    }}
+                    placeholder={`Option ${letter}`}
+                    className="text-sm h-8"
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">Correct answer: <span className="text-green-400 font-medium">{["A","B","C","D"][form.correctIndex]} — {form.options[form.correctIndex] || "(empty)"}</span></p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">Category</label>
+              <input
+                list="trivia-categories"
+                value={form.category}
+                onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background text-foreground"
+                placeholder="Category"
+              />
+              <datalist id="trivia-categories">{TRIVIA_CATEGORIES.map(c => <option key={c} value={c} />)}</datalist>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">Difficulty</label>
+              <select value={form.difficulty} onChange={e => setForm(f => ({ ...f, difficulty: e.target.value }))} className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background text-foreground">
+                {TRIVIA_DIFFICULTIES.map(d => <option key={d} value={d}>{d[0].toUpperCase() + d.slice(1)}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button onClick={handleSave} disabled={saving} className="gap-1.5 text-sm">
+              <Save className="w-3.5 h-3.5" />{saving ? "Saving…" : editingId != null ? "Save Changes" : "Add Question"}
+            </Button>
+            <Button variant="outline" onClick={cancelForm} className="text-sm">Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Question List */}
+      {loading ? (
+        <div className="text-center py-12 text-muted-foreground text-sm">Loading questions…</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground text-sm">
+          {questions.length === 0 ? "No questions yet — add one above." : "No questions match your filters."}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">{filtered.length} of {questions.length} questions</p>
+          {filtered.map(q => (
+            <div key={q.id} className={`bg-card border rounded-xl p-4 transition-opacity ${!q.isActive ? "opacity-60" : ""} ${editingId === q.id ? "border-indigo-500/50" : "border-card-border"}`}>
+              <div className="flex items-start gap-3">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <p className="text-sm font-medium leading-snug">{q.question}</p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                    {(q.options as string[]).map((opt, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
+                        <span className={`text-xs font-bold w-4 shrink-0 ${i === q.correctIndex ? "text-green-400" : "text-muted-foreground"}`}>
+                          {["A","B","C","D"][i]}
+                        </span>
+                        <span className={`text-xs truncate ${i === q.correctIndex ? "text-green-400" : "text-muted-foreground"}`}>{opt}</span>
+                        {i === q.correctIndex && <Check className="w-3 h-3 text-green-400 shrink-0" />}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">{q.category}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${DIFF_COLOR[q.difficulty] ?? "text-muted-foreground bg-muted border-border"}`}>{q.difficulty}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${q.isActive ? "text-green-400 bg-green-400/10 border-green-400/30" : "text-muted-foreground bg-muted border-border"}`}>
+                      {q.isActive ? "Active" : "Inactive"}
+                    </span>
+                    <span className="text-xs text-muted-foreground">#{q.id}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => handleToggle(q)}
+                    disabled={togglingId === q.id}
+                    title={q.isActive ? "Disable question" : "Enable question"}
+                    className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                  >
+                    {togglingId === q.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : q.isActive ? <ToggleRight className="w-4 h-4 text-green-400" /> : <ToggleLeft className="w-4 h-4" />}
+                  </button>
+                  <button
+                    onClick={() => startEdit(q)}
+                    title="Edit"
+                    className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(q.id)}
+                    disabled={deletingId === q.id}
+                    title="Delete"
+                    className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                  >
+                    {deletingId === q.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SubAdminsTab({ secret }: { secret: string }) {
   const { toast } = useToast();
   const h = { "x-admin-secret": secret, "Content-Type": "application/json" };
@@ -4536,6 +4837,7 @@ export default function Admin() {
     { id: "share", label: "Share Links", icon: ArrowDownCircle },
     { id: "ads", label: "Ads", icon: MonitorPlay },
     { id: "scripts", label: "Scripts", icon: Code },
+    { id: "trivia", label: "Trivia", icon: BookOpen },
     { id: "sub-admins", label: "Sub Admins", icon: UserPlus, superAdminOnly: true },
   ];
 
@@ -4690,6 +4992,7 @@ export default function Admin() {
           {tab === "share" && <ShareMessagesTab secret={secret} />}
           {tab === "ads" && <AdsTab secret={secret} />}
           {tab === "scripts" && <ScriptsTab secret={secret} />}
+          {tab === "trivia" && <TriviaTab secret={secret} />}
           {tab === "sub-admins" && <SubAdminsTab secret={secret} />}
         </div>
       </div>
