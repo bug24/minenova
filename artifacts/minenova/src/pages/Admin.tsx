@@ -163,6 +163,10 @@ interface Settings {
   whot_pvp_enabled: string;
   whot_pvp_min_fee: string;
   whot_pvp_max_fee: string;
+  mines_enabled: string;
+  mines_min_bet: string;
+  mines_max_bet: string;
+  mines_fee_pct: string;
   withdrawal_ticker_enabled: string;
   voice_chat_enabled: string;
   auto_miner_interval_minutes: string;
@@ -2082,6 +2086,10 @@ function SettingsTab({ secret }: { secret: string }) {
     whot_pvp_enabled: "true",
     whot_pvp_min_fee: "10",
     whot_pvp_max_fee: "10000",
+    mines_enabled: "true",
+    mines_min_bet: "10",
+    mines_max_bet: "100000",
+    mines_fee_pct: "3",
     withdrawal_ticker_enabled: "true",
     voice_chat_enabled: "true",
     auto_miner_interval_minutes: "15",
@@ -2749,6 +2757,68 @@ function SettingsTab({ secret }: { secret: string }) {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* ── Mines Settings ── */}
+      <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+        <h3 className="font-semibold text-sm text-emerald-400">Mines Game</h3>
+
+        {/* Enable/disable */}
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Mines enabled</p>
+            <p className="text-xs text-muted-foreground">
+              {settings.mines_enabled === "true" ? "Players can start Mines games" : "Mines is disabled for all players"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isSaving("mines_enabled") && <span className="text-xs text-muted-foreground">Saving…</span>}
+            {isSaved("mines_enabled") && <span className="text-xs text-green-400">Saved ✓</span>}
+            <Toggle
+              on={settings.mines_enabled === "true"}
+              disabled={isSaving("mines_enabled")}
+              onChange={v => saveSetting("mines_enabled", v ? "true" : "false")}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground font-medium">Min entry (coins)</label>
+            <div className="flex gap-2">
+              <Input
+                type="number" step="1" min="1"
+                value={settings.mines_min_bet}
+                onChange={e => setSettings(p => ({ ...p, mines_min_bet: e.target.value }))}
+              />
+              <SaveBtn k="mines_min_bet" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground font-medium">Max entry (coins)</label>
+            <div className="flex gap-2">
+              <Input
+                type="number" step="1000" min="1"
+                value={settings.mines_max_bet}
+                onChange={e => setSettings(p => ({ ...p, mines_max_bet: e.target.value }))}
+              />
+              <SaveBtn k="mines_max_bet" />
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Platform fee (%)</label>
+          <div className="flex gap-2">
+            <Input
+              type="number" step="0.5" min="0" max="20"
+              value={settings.mines_fee_pct}
+              onChange={e => setSettings(p => ({ ...p, mines_fee_pct: e.target.value }))}
+            />
+            <SaveBtn k="mines_fee_pct" />
+          </div>
+          <p className="text-xs text-muted-foreground">Deducted from winnings. Affects displayed multipliers.</p>
         </div>
       </div>
 
