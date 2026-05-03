@@ -16,7 +16,7 @@ function stripHtml(text: string): string {
   return text.replace(/<[^>]*>/g, "").replace(/&[a-z]+;/gi, " ").trim();
 }
 
-async function isChatEnabled(): Promise<boolean> {
+export async function isChatEnabled(): Promise<boolean> {
   const [row] = await db
     .select({ value: adminConfigTable.value })
     .from(adminConfigTable)
@@ -52,13 +52,42 @@ function onlineCount(): number {
   return connectedUsers.size;
 }
 
+// Singleton IO instance — accessible from admin routes
+let _io: SocketIOServer | null = null;
+
+export function getChatIO(): SocketIOServer | null {
+  return _io;
+}
+
+/** Called by admin when chat is toggled off: notify + disconnect all clients */
+export function broadcastChatDisabled(): void {
+  if (!_io) return;
+  _io.emit("chat_disabled");
+  // Disconnect every socket in the chat namespace after a short delay so the event
+  // reaches the client before the connection drops.
+  setTimeout(() => {
+    _io?.disconnectSockets(true);
+    connectedUsers.clear();
+    _io?.emit("online_users_count", 0);
+  }, 300);
+}
+
 export function attachChatSocket(httpServer: HttpServer): SocketIOServer {
   const io = new SocketIOServer(httpServer, {
     cors: { origin: "*", methods: ["GET", "POST"] },
     path: "/api/socket.io",
   });
+  _io = io;
 
+  // ── Middleware: auth + chat_enabled gate ──────────────────────────────────
   io.use(async (socket, next) => {
+    // 1. Check chat_enabled first — reject at the handshake level
+    const enabled = await isChatEnabled();
+    if (!enabled) {
+      return next(new Error("chat_disabled"));
+    }
+
+    // 2. Verify JWT
     const token =
       (socket.handshake.auth as Record<string, string>)["token"] ??
       (socket.handshake.query["token"] as string);
@@ -83,14 +112,6 @@ export function attachChatSocket(httpServer: HttpServer): SocketIOServer {
     const userId: number = socket.data["userId"];
     const username: string = socket.data["username"];
 
-    // Check if chat is enabled
-    const enabled = await isChatEnabled();
-    if (!enabled) {
-      socket.emit("chat_disabled");
-      socket.disconnect(true);
-      return;
-    }
-
     // Presence tracking
     if (!connectedUsers.has(userId)) connectedUsers.set(userId, new Set());
     connectedUsers.get(userId)!.add(socket.id);
@@ -106,6 +127,14 @@ export function attachChatSocket(httpServer: HttpServer): SocketIOServer {
 
     socket.on("send_message", async (rawMessage: unknown) => {
       if (typeof rawMessage !== "string") return;
+
+      // Runtime guard: reject if chat was disabled after this socket connected
+      const enabled = await isChatEnabled();
+      if (!enabled) {
+        socket.emit("chat_disabled");
+        socket.disconnect(true);
+        return;
+      }
 
       // Rate limit
       const now = Date.now();

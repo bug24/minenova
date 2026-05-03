@@ -2162,6 +2162,38 @@ router.get("/admin/audit-log", requireSuperAdmin, async (req, res): Promise<void
 
 // ─── Chat Admin Routes ─────────────────────────────────────────────────────────
 
+// GET /admin/chat/settings
+router.get("/admin/chat/settings", requireAdmin, requirePermission("settings", "read"), async (_req, res): Promise<void> => {
+  const [row] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable).where(eq(adminConfigTable.key, "chat_enabled")).limit(1);
+  res.json({ chat_enabled: row?.value ?? "true" });
+});
+
+// PUT /admin/chat/settings
+router.put("/admin/chat/settings", requireAdmin, requirePermission("settings", "write"), async (req, res): Promise<void> => {
+  const schema = z.object({ chat_enabled: z.enum(["true", "false"]) });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "chat_enabled must be 'true' or 'false'" }); return; }
+  const { chat_enabled } = parsed.data;
+
+  // Persist
+  await (async () => {
+    const [existing] = await db.select({ key: adminConfigTable.key }).from(adminConfigTable).where(eq(adminConfigTable.key, "chat_enabled")).limit(1);
+    if (existing) {
+      await db.update(adminConfigTable).set({ value: chat_enabled }).where(eq(adminConfigTable.key, "chat_enabled"));
+    } else {
+      await db.insert(adminConfigTable).values({ key: "chat_enabled", value: chat_enabled });
+    }
+  })();
+
+  // If disabling, disconnect all active chat clients
+  if (chat_enabled === "false") {
+    const { broadcastChatDisabled } = await import("../socket/chat");
+    broadcastChatDisabled();
+  }
+
+  res.json({ chat_enabled });
+});
+
 // GET /admin/chat/banned-words
 router.get("/admin/chat/banned-words", requireAdmin, requirePermission("settings", "read"), async (_req, res): Promise<void> => {
   const rows = await db.select().from(chatBannedWordsTable).orderBy(chatBannedWordsTable.id);

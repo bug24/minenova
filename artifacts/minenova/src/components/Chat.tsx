@@ -73,8 +73,12 @@ export default function Chat() {
       s.disconnect();
     });
 
-    s.on("connect_error", () => {
+    s.on("connect_error", (err) => {
       setConnected(false);
+      if (err.message === "chat_disabled") {
+        setDisabled(true);
+        s.disconnect();
+      }
     });
 
     setSocket(s);
