@@ -8,15 +8,12 @@ const router: IRouter = Router();
 // ---------------------------------------------------------------------------
 // Mines multiplier formula
 // Uses the standard combinatorics approach: expected value per safe reveal.
-// multiplier = (totalTiles - mineCount)! / (totalTiles - mineCount - revealed)!
-//            / (totalTiles! / (totalTiles - revealed)!)
-// Simplified: product over k=0..revealed-1 of (totalTiles - mineCount - k) / (totalTiles - k)
-// Then apply house edge.
+// multiplier = product over k=0..revealed-1 of (totalTiles - mineCount - k) / (totalTiles - k)
+// Then apply house edge factor (1 - feePct/100).
 // ---------------------------------------------------------------------------
 const TOTAL_TILES = 25;
-const HOUSE_EDGE = 0.97; // 3% house edge built into multiplier
 
-export function calcMultiplier(mineCount: number, revealed: number): number {
+export function calcMultiplier(mineCount: number, revealed: number, houseEdge: number): number {
   if (revealed === 0) return 1;
   let mult = 1;
   for (let k = 0; k < revealed; k++) {
@@ -25,7 +22,7 @@ export function calcMultiplier(mineCount: number, revealed: number): number {
     if (safeTiles <= 0 || remainingTiles <= 0) return mult;
     mult *= remainingTiles / safeTiles;
   }
-  return parseFloat((mult * HOUSE_EDGE).toFixed(4));
+  return parseFloat((mult * houseEdge).toFixed(4));
 }
 
 // ---------------------------------------------------------------------------
@@ -102,15 +99,6 @@ router.post("/mines/start", requireAuth, async (req: Request, res: Response): Pr
       res.status(400).json({ error: `Bet must be between ${settings.minBet} and ${settings.maxBet} coins` }); return;
     }
 
-    // Check for existing active game
-    const existing = await db.select({ id: minesGamesTable.id })
-      .from(minesGamesTable)
-      .where(and(eq(minesGamesTable.userId, req.userId!), eq(minesGamesTable.status, "active")))
-      .limit(1);
-    if (existing.length > 0) {
-      res.status(409).json({ error: "You already have an active game. Cash out first.", gameId: existing[0].id }); return;
-    }
-
     // Generate mine positions server-side (random shuffle)
     const positions = Array.from({ length: TOTAL_TILES }, (_, i) => i);
     for (let i = positions.length - 1; i > 0; i--) {
@@ -122,6 +110,15 @@ router.post("/mines/start", requireAuth, async (req: Request, res: Response): Pr
     let gameId = 0;
 
     await db.transaction(async tx => {
+      // Check for existing active game inside the transaction
+      const existing = await tx.select({ id: minesGamesTable.id })
+        .from(minesGamesTable)
+        .where(and(eq(minesGamesTable.userId, req.userId!), eq(minesGamesTable.status, "active")))
+        .limit(1);
+      if (existing.length > 0) {
+        throw Object.assign(new Error("You already have an active game. Cash out first."), { status: 409 });
+      }
+
       const claimed = await tx.update(usersTable)
         .set({ coinBalance: sql`coin_balance - ${betNum}` })
         .where(and(eq(usersTable.id, req.userId!), sql`coin_balance >= ${betNum}`))
@@ -156,6 +153,7 @@ router.post("/mines/start", requireAuth, async (req: Request, res: Response): Pr
 
 // ---------------------------------------------------------------------------
 // POST /api/mines/reveal — reveal a tile
+// SELECT FOR UPDATE prevents race conditions / double payouts on concurrent requests.
 // ---------------------------------------------------------------------------
 router.post("/mines/reveal", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
@@ -168,58 +166,68 @@ router.post("/mines/reveal", requireAuth, async (req: Request, res: Response): P
       res.status(400).json({ error: `tileIndex must be 0–${TOTAL_TILES - 1}` }); return;
     }
 
-    const [game] = await db.select().from(minesGamesTable)
-      .where(and(eq(minesGamesTable.id, gid), eq(minesGamesTable.userId, req.userId!)))
-      .limit(1);
+    // Load settings outside transaction (read-only, no race risk)
+    const { feePct } = await getMinesSettings();
+    const houseEdge = 1 - feePct / 100;
 
-    if (!game) { res.status(404).json({ error: "Game not found" }); return; }
-    if (game.status !== "active") { res.status(409).json({ error: "Game is not active" }); return; }
+    let responsePayload: object = {};
 
-    const minePositions = game.minePositions as number[];
-    const revealedTiles = (game.revealedTiles as number[]) ?? [];
+    await db.transaction(async tx => {
+      // Lock the row to prevent concurrent reveals / cashouts on the same game
+      const [game] = await tx
+        .select()
+        .from(minesGamesTable)
+        .where(and(eq(minesGamesTable.id, gid), eq(minesGamesTable.userId, req.userId!)))
+        .for("update")
+        .limit(1);
 
-    if (revealedTiles.includes(tile)) { res.status(400).json({ error: "Tile already revealed" }); return; }
+      if (!game) throw Object.assign(new Error("Game not found"), { status: 404 });
+      if (game.status !== "active") throw Object.assign(new Error("Game is not active"), { status: 409 });
 
-    const isMine = minePositions.includes(tile);
-    const newRevealed = [...revealedTiles, tile];
-    const newMultiplier = calcMultiplier(game.mineCount, newRevealed.length);
-    const safeTilesLeft = TOTAL_TILES - game.mineCount - newRevealed.length;
+      const minePositions = game.minePositions as number[];
+      const revealedTiles = (game.revealedTiles as number[]) ?? [];
 
-    if (isMine) {
-      // Lost — mark game over, no payout
-      await db.update(minesGamesTable).set({
-        status: "lost",
-        revealedTiles: newRevealed as unknown as Record<string, unknown>,
-        currentMultiplier: 0,
-        endedAt: new Date(),
-      }).where(eq(minesGamesTable.id, gid));
+      if (revealedTiles.includes(tile)) throw Object.assign(new Error("Tile already revealed"), { status: 400 });
 
-      res.json({
-        result: "mine",
-        tileIndex: tile,
-        minePositions,
-        revealedTiles: newRevealed,
-        multiplier: 0,
-        payout: 0,
-        status: "lost",
-      });
-    } else {
-      const autoWin = safeTilesLeft === 0;
+      const isMine = minePositions.includes(tile);
+      const newRevealed = [...revealedTiles, tile];
+      const newMultiplier = calcMultiplier(game.mineCount, newRevealed.length, houseEdge);
+      const safeTilesLeft = TOTAL_TILES - game.mineCount - newRevealed.length;
 
-      if (autoWin) {
-        // All safe tiles revealed — auto cash out
-        const systemUserId = await getSystemUserId();
-        const payout = parseFloat((game.bet * newMultiplier).toFixed(2));
-        const fee = parseFloat((game.bet * newMultiplier * (1 - HOUSE_EDGE)).toFixed(2));
+      if (isMine) {
+        // Lost — mark game over, no payout
+        await tx.update(minesGamesTable).set({
+          status: "lost",
+          revealedTiles: newRevealed as unknown as Record<string, unknown>,
+          currentMultiplier: 0,
+          endedAt: new Date(),
+        }).where(and(eq(minesGamesTable.id, gid), eq(minesGamesTable.status, "active")));
 
-        await db.transaction(async tx => {
+        responsePayload = {
+          result: "mine",
+          tileIndex: tile,
+          minePositions,
+          revealedTiles: newRevealed,
+          multiplier: 0,
+          payout: 0,
+          status: "lost",
+        };
+      } else {
+        const autoWin = safeTilesLeft === 0;
+
+        if (autoWin) {
+          // All safe tiles revealed — auto cash out
+          const systemUserId = await getSystemUserId();
+          const payout = parseFloat((game.bet * newMultiplier).toFixed(2));
+          const fee = parseFloat((payout * feePct / 100).toFixed(2));
+
           await tx.update(minesGamesTable).set({
             status: "won",
             revealedTiles: newRevealed as unknown as Record<string, unknown>,
             currentMultiplier: newMultiplier,
             finalPayout: payout,
             endedAt: new Date(),
-          }).where(eq(minesGamesTable.id, gid));
+          }).where(and(eq(minesGamesTable.id, gid), eq(minesGamesTable.status, "active")));
 
           await tx.update(usersTable)
             .set({ coinBalance: sql`coin_balance + ${payout}` })
@@ -239,43 +247,46 @@ router.post("/mines/reveal", requireAuth, async (req: Request, res: Response): P
               type: "mines_fee",
               amount: fee,
               status: "completed",
-              description: `Mines house fee`,
+              description: `Mines house fee (${feePct}%)`,
             });
           }
-        });
 
-        res.json({
-          result: "gem",
-          tileIndex: tile,
-          revealedTiles: newRevealed,
-          multiplier: newMultiplier,
-          payout,
-          status: "won",
-          autoWin: true,
-          minePositions,
-        });
-      } else {
-        await db.update(minesGamesTable).set({
-          revealedTiles: newRevealed as unknown as Record<string, unknown>,
-          currentMultiplier: newMultiplier,
-        }).where(eq(minesGamesTable.id, gid));
+          responsePayload = {
+            result: "gem",
+            tileIndex: tile,
+            revealedTiles: newRevealed,
+            multiplier: newMultiplier,
+            payout,
+            status: "won",
+            autoWin: true,
+            minePositions,
+          };
+        } else {
+          await tx.update(minesGamesTable).set({
+            revealedTiles: newRevealed as unknown as Record<string, unknown>,
+            currentMultiplier: newMultiplier,
+          }).where(and(eq(minesGamesTable.id, gid), eq(minesGamesTable.status, "active")));
 
-        res.json({
-          result: "gem",
-          tileIndex: tile,
-          revealedTiles: newRevealed,
-          multiplier: newMultiplier,
-          potentialPayout: parseFloat((game.bet * newMultiplier).toFixed(2)),
-          status: "active",
-          safeTilesLeft,
-        });
+          responsePayload = {
+            result: "gem",
+            tileIndex: tile,
+            revealedTiles: newRevealed,
+            multiplier: newMultiplier,
+            potentialPayout: parseFloat((game.bet * newMultiplier).toFixed(2)),
+            status: "active",
+            safeTilesLeft,
+          };
+        }
       }
-    }
+    });
+
+    res.json(responsePayload);
   } catch (err) { handleErr(err, res); }
 });
 
 // ---------------------------------------------------------------------------
 // POST /api/mines/cashout — cash out current game
+// SELECT FOR UPDATE prevents duplicate payouts from concurrent cashout calls.
 // ---------------------------------------------------------------------------
 router.post("/mines/cashout", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
@@ -283,29 +294,42 @@ router.post("/mines/cashout", requireAuth, async (req: Request, res: Response): 
     const gid = Number(gameId);
     if (!Number.isInteger(gid) || gid <= 0) { res.status(400).json({ error: "Invalid gameId" }); return; }
 
-    const [game] = await db.select().from(minesGamesTable)
-      .where(and(eq(minesGamesTable.id, gid), eq(minesGamesTable.userId, req.userId!)))
-      .limit(1);
+    // Load settings outside transaction (read-only)
+    const { feePct } = await getMinesSettings();
 
-    if (!game) { res.status(404).json({ error: "Game not found" }); return; }
-    if (game.status !== "active") { res.status(409).json({ error: "Game is not active" }); return; }
-
-    const revealedTiles = (game.revealedTiles as number[]) ?? [];
-    if (revealedTiles.length === 0) {
-      res.status(400).json({ error: "Reveal at least one tile before cashing out" }); return;
-    }
-
-    const systemUserId = await getSystemUserId();
-    const payout = parseFloat((game.bet * game.currentMultiplier).toFixed(2));
-    const fee = parseFloat((game.bet * game.currentMultiplier * (1 - HOUSE_EDGE)).toFixed(2));
-    const minePositions = game.minePositions as number[];
+    let responsePayload: object = {};
 
     await db.transaction(async tx => {
-      await tx.update(minesGamesTable).set({
+      // Lock the row to prevent concurrent cashout + reveal race
+      const [game] = await tx
+        .select()
+        .from(minesGamesTable)
+        .where(and(eq(minesGamesTable.id, gid), eq(minesGamesTable.userId, req.userId!)))
+        .for("update")
+        .limit(1);
+
+      if (!game) throw Object.assign(new Error("Game not found"), { status: 404 });
+      if (game.status !== "active") throw Object.assign(new Error("Game is not active"), { status: 409 });
+
+      const revealedTiles = (game.revealedTiles as number[]) ?? [];
+      if (revealedTiles.length === 0) {
+        throw Object.assign(new Error("Reveal at least one tile before cashing out"), { status: 400 });
+      }
+
+      const systemUserId = await getSystemUserId();
+      const payout = parseFloat((game.bet * game.currentMultiplier).toFixed(2));
+      const fee = parseFloat((payout * feePct / 100).toFixed(2));
+      const minePositions = game.minePositions as number[];
+
+      // Update with status guard — if already changed by a concurrent request, affected rows = 0
+      const updated = await tx.update(minesGamesTable).set({
         status: "won",
         finalPayout: payout,
         endedAt: new Date(),
-      }).where(eq(minesGamesTable.id, gid));
+      }).where(and(eq(minesGamesTable.id, gid), eq(minesGamesTable.status, "active")))
+        .returning({ id: minesGamesTable.id });
+
+      if (updated.length === 0) throw Object.assign(new Error("Game is not active"), { status: 409 });
 
       await tx.update(usersTable)
         .set({ coinBalance: sql`coin_balance + ${payout}` })
@@ -325,17 +349,19 @@ router.post("/mines/cashout", requireAuth, async (req: Request, res: Response): 
           type: "mines_fee",
           amount: fee,
           status: "completed",
-          description: `Mines house fee`,
+          description: `Mines house fee (${feePct}%)`,
         });
       }
+
+      responsePayload = {
+        payout,
+        multiplier: game.currentMultiplier,
+        minePositions,
+        status: "won",
+      };
     });
 
-    res.json({
-      payout,
-      multiplier: game.currentMultiplier,
-      minePositions,
-      status: "won",
-    });
+    res.json(responsePayload);
   } catch (err) { handleErr(err, res); }
 });
 

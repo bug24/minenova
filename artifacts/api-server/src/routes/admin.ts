@@ -453,7 +453,7 @@ router.get("/admin/analytics", requireAdmin, async (_req, res): Promise<void> =>
   const [upgradeRevRow] = await db.select({ sum: sql<number>`coalesce(sum(abs(amount)), 0)::float8` }).from(transactionsTable).where(and(eq(transactionsTable.type, "upgrade_payment"), eq(transactionsTable.status, "completed")));
   const [upgradeCommRow] = await db.select({ sum: sql<number>`coalesce(sum(reward_locked_usdt), 0)::float8` }).from(referralEarningsTable);
   const [upgradeCommCoinsRow] = await db.select({ sum: sql<number>`coalesce(sum(reward_coins), 0)::float8` }).from(referralEarningsTable);
-  const [gameFeeRow] = await db.select({ sum: sql<number>`coalesce(sum(amount), 0)::float8` }).from(transactionsTable).where(or(eq(transactionsTable.type, "ludo_fee"), eq(transactionsTable.type, "whot_fee")));
+  const [gameFeeRow] = await db.select({ sum: sql<number>`coalesce(sum(amount), 0)::float8` }).from(transactionsTable).where(or(eq(transactionsTable.type, "ludo_fee"), eq(transactionsTable.type, "whot_fee"), eq(transactionsTable.type, "mines_fee")));
   const [rateConfigRow] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable).where(eq(adminConfigTable.key, "coin_usd_rate")).limit(1);
   const parsedConfigRate = rateConfigRow ? parseFloat(rateConfigRow.value) : NaN;
   const configCoinUsdRate = Number.isFinite(parsedConfigRate) && parsedConfigRate > 0 ? parsedConfigRate : 0.001;
@@ -1604,7 +1604,7 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
   const parsedQuery = req.query.coinUsdRate ? parseFloat(req.query.coinUsdRate as string) : NaN;
   const coinUsdRate = Number.isFinite(parsedQuery) && parsedQuery > 0 ? parsedQuery : defaultRate;
 
-  const RELEVANT_TYPES = ["upgrade_payment", "withdrawal", "ludo_fee", "whot_fee", "referral"];
+  const RELEVANT_TYPES = ["upgrade_payment", "withdrawal", "ludo_fee", "whot_fee", "mines_fee", "referral"];
 
   // All-time totals grouped by type + status — upgrade_payment uses ABS since stored as negative
   const allTimeTotals = await db
@@ -1694,7 +1694,7 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
 
   const upgradeRevenue = get("upgrade_payment", "completed");
   const withdrawalsCost = get("withdrawal", "approved");
-  const gameFeeCoins = get("ludo_fee") + get("whot_fee");
+  const gameFeeCoins = get("ludo_fee") + get("whot_fee") + get("mines_fee");
   const gameFeeUsd = gameFeeCoins * coinUsdRate;
 
   // Separate referral coin costs from referralTransactionsTable (single source, no double-count)
@@ -1729,7 +1729,7 @@ router.get("/admin/reports/summary", requireAdmin, async (req, res): Promise<voi
 
     const mUpgradeRev = getM("upgrade_payment", "completed");
     const mWithdrawCost = getM("withdrawal", "approved");
-    const mGameCoins = getM("ludo_fee") + getM("whot_fee");
+    const mGameCoins = getM("ludo_fee") + getM("whot_fee") + getM("mines_fee");
     const mGameUsd = mGameCoins * coinUsdRate;
     // Split referral payouts by type from referralTransactionsTable for this month
     const mBonusCoins = monthlyReferralRows.find(r => r.month === month && r.rewardType === "bonus")?.total ?? 0;
