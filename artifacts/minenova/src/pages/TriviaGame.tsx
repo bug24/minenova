@@ -12,7 +12,7 @@ import {
   BookOpen, ArrowLeft, Check, X, Trophy, TrendingUp, TrendingDown,
   Minus, Clock, RefreshCw, Bot, Swords,
 } from "lucide-react";
-import { unlockAudio, playWin, playBuzzer } from "@/lib/sounds";
+import { unlockAudio, playWin, playBuzzer, playTriviaCorrect, playTriviaWrong, playTriviaTimerTick } from "@/lib/sounds";
 import { burstConfetti } from "@/lib/confetti";
 
 const QUESTION_TIME = 15;
@@ -171,6 +171,12 @@ export default function TriviaGame() {
       // Reveal the correct answer for this question immediately
       if (resp.correctIndex !== null && resp.correctIndex !== undefined) {
         setRevealCorrectIndex(resp.correctIndex);
+        // Play correct/wrong sound on answer reveal
+        if (answerIdx !== null && answerIdx === resp.correctIndex) {
+          playTriviaCorrect();
+        } else {
+          playTriviaWrong();
+        }
       }
       // Increment score only if the player's answer was correct
       if (answerIdx !== null && resp.correctIndex !== null && resp.correctIndex !== undefined && answerIdx === resp.correctIndex) {
@@ -249,6 +255,7 @@ export default function TriviaGame() {
           handleTimeout();
           return 0;
         }
+        if (prev <= 6) playTriviaTimerTick();
         return prev - 1;
       });
     }, 1000);

@@ -15,6 +15,7 @@ export const triviaChallengesTable = pgTable("trivia_challenges", {
   id: serial("id").primaryKey(),
   creatorId: integer("creator_id").notNull().references(() => usersTable.id),
   entryFee: real("entry_fee").notNull(),
+  category: text("category").notNull().default("All"),
   status: text("status").notNull().default("open"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

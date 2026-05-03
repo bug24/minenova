@@ -191,3 +191,26 @@ export function playMinesCashout() {
   });
   noise(0.08, 0.18, 0.28, 4500, 1.2);
 }
+
+// ---------- Trivia game sounds ----------
+
+/** Correct answer — bright upward chime */
+export function playTriviaCorrect() {
+  osc(660, "sine", 0.28, 0.10);
+  osc(880, "sine", 0.22, 0.12, 0.06);
+  osc(1320, "sine", 0.14, 0.10, 0.12);
+  noise(0.05, 0.08, 0.04, 5000, 1.5);
+}
+
+/** Wrong answer — low descending thud */
+export function playTriviaWrong() {
+  osc(280, "square", 0.28, 0.12, 0, 180);
+  osc(200, "sawtooth", 0.18, 0.14, 0.06, 120);
+  noise(0.12, 0.12, 0, 400, 5);
+}
+
+/** Countdown tick — subtle click for last seconds */
+export function playTriviaTimerTick() {
+  osc(1100, "sine", 0.12, 0.04);
+  noise(0.04, 0.03, 0, 3500, 2);
+}

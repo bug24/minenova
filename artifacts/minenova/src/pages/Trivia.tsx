@@ -12,7 +12,7 @@ import {
 } from "@/lib/triviaApi";
 import {
   BookOpen, Bot, Swords, ChevronLeft, Plus, RefreshCw, X,
-  Trophy, Clock, Coins, Users, TrendingUp, TrendingDown, History,
+  Trophy, Clock, Coins, Users, TrendingUp, TrendingDown, History, Tag,
 } from "lucide-react";
 
 const FEE_PRESETS = [50, 200, 500, 1000, 5000];
@@ -30,6 +30,11 @@ interface HistoryEntry {
   endedAt: string;
 }
 
+interface Category {
+  id: string;
+  label: string;
+}
+
 export default function Trivia() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -38,6 +43,7 @@ export default function Trivia() {
 
   const [mode, setMode] = useState<"bot" | "pvp">("bot");
   const [entryFee, setEntryFee] = useState("");
+  const [category, setCategory] = useState("All");
   const [creating, setCreating] = useState(false);
   const [startingBot, setStartingBot] = useState(false);
   const [accepting, setAccepting] = useState<number | null>(null);
@@ -52,6 +58,12 @@ export default function Trivia() {
   const [loadingHistory, setLoadingHistory] = useState(false);
 
   const { data: wallet } = useGetWallet();
+
+  const { data: categories = [] } = useQuery<Category[]>({
+    queryKey: ["/api/trivia/categories"],
+    queryFn: () => triviaApi<Category[]>("/trivia/categories"),
+    staleTime: 60_000,
+  });
 
   const { data: challenges = [], isLoading: challengesLoading, refetch: refetchChallenges } = useQuery<TriviaChallenge[]>({
     queryKey: ["/api/trivia/challenges"],
@@ -118,7 +130,7 @@ export default function Trivia() {
     try {
       const data = await triviaApi<{ gameId: number }>("/trivia/solo", {
         method: "POST",
-        body: JSON.stringify({ entryFee: fee }),
+        body: JSON.stringify({ entryFee: fee, category }),
       });
       queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
       navigate(`/trivia/game/${data.gameId}`);
@@ -137,7 +149,7 @@ export default function Trivia() {
     try {
       const data = await triviaApi<{ id: number; entryFee: number }>("/trivia/challenges", {
         method: "POST",
-        body: JSON.stringify({ entryFee: fee }),
+        body: JSON.stringify({ entryFee: fee, category }),
       });
       queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
       setWaitingChallengeId(data.id);
@@ -279,6 +291,30 @@ export default function Trivia() {
               );
             })
           )}
+        </div>
+      )}
+
+      {/* Category selector */}
+      {categories.length > 0 && (
+        <div className="space-y-2">
+          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+            <Tag className="w-3.5 h-3.5" /> Category
+          </label>
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+            {categories.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => setCategory(cat.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all shrink-0 ${
+                  category === cat.id
+                    ? "bg-indigo-500 text-white shadow-sm"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

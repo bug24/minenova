@@ -78,6 +78,13 @@
       "when": 1777796177069,
       "tag": "0010_user_registration_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1777800000000,
+      "tag": "0011_trivia_challenge_category",
+      "breakpoints": true
     }
   ]
 }
