@@ -133,7 +133,7 @@ export default function WalletPage() {
   const feeEnabled = wallet?.withdrawalFeeEnabled ?? false;
   const feePct = wallet?.withdrawalFeePct ?? 0;
 
-  const watchedAmount = form.watch("amount") || MINIMUM_USDT;
+  const watchedAmount = Number(form.watch("amount")) || MINIMUM_USDT;
   const requiredCoins = watchedAmount * COINS_PER_USDT;
   const feeAmount = feeEnabled && feePct > 0
     ? Math.round(watchedAmount * feePct / 100 * 100) / 100
