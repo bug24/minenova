@@ -1,6 +1,7 @@
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import InstallPromptBanner from "@/components/InstallPromptBanner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -121,6 +122,7 @@ function App() {
               <Router />
             </WouterRouter>
             <Toaster />
+            <InstallPromptBanner />
           </AuthProvider>
         </ThemeProvider>
       </TooltipProvider>
