@@ -18,6 +18,8 @@ import {
   subAdminPermissionsTable,
   triviaQuestionsTable,
   adminAuditLogTable,
+  chatBannedWordsTable,
+  chatMessagesTable,
   ADMIN_MODULES,
 } from "@workspace/db";
 import { eq, and, isNull, or, ilike, sql, desc, type SQL } from "drizzle-orm";
@@ -92,6 +94,7 @@ async function seedAdminConfig() {
     trivia_fee_pct: "5",
     withdrawal_fee_enabled: "true",
     withdrawal_fee_pct: "10",
+    chat_enabled: "true",
   };
   for (const [key, value] of Object.entries(defaults)) {
     const [existing] = await db
@@ -1406,6 +1409,7 @@ router.get("/admin/settings", requireAdmin, requirePermission("settings", "read"
     "trivia_enabled", "trivia_min_fee", "trivia_max_fee", "trivia_fee_pct",
     "mines_enabled", "mines_min_bet", "mines_max_bet", "mines_fee_pct",
     "withdrawal_fee_enabled", "withdrawal_fee_pct",
+    "chat_enabled",
   ];
   const rows = await db.select().from(adminConfigTable).where(sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`);
   const settings: Record<string, string> = {};
@@ -1461,6 +1465,7 @@ router.put("/admin/settings", requireAdmin, requirePermission("settings", "write
     mines_fee_pct: strictNum(0, 99).optional(),
     withdrawal_fee_enabled: boolStr.optional(),
     withdrawal_fee_pct: strictNum(0, 99).optional(),
+    chat_enabled: boolStr.optional(),
   });
   const data = schema.safeParse(req.body);
   if (!data.success) {
@@ -2153,6 +2158,49 @@ router.get("/admin/audit-log", requireSuperAdmin, async (req, res): Promise<void
   ]);
 
   res.json({ total, page, limit, rows });
+});
+
+// ─── Chat Admin Routes ─────────────────────────────────────────────────────────
+
+// GET /admin/chat/banned-words
+router.get("/admin/chat/banned-words", requireAdmin, requirePermission("settings", "read"), async (_req, res): Promise<void> => {
+  const rows = await db.select().from(chatBannedWordsTable).orderBy(chatBannedWordsTable.id);
+  res.json(rows);
+});
+
+// POST /admin/chat/banned-words
+router.post("/admin/chat/banned-words", requireAdmin, requirePermission("settings", "write"), async (req, res): Promise<void> => {
+  const schema = z.object({ phrase: z.string().min(1).max(200) });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid phrase" }); return; }
+  const phrase = parsed.data.phrase.trim().toLowerCase();
+  if (!phrase) { res.status(400).json({ error: "Phrase cannot be empty" }); return; }
+  const [existing] = await db.select({ id: chatBannedWordsTable.id }).from(chatBannedWordsTable).where(eq(chatBannedWordsTable.phrase, phrase)).limit(1);
+  if (existing) { res.status(409).json({ error: "Phrase already exists" }); return; }
+  const [row] = await db.insert(chatBannedWordsTable).values({ phrase }).returning();
+  res.json(row);
+});
+
+// DELETE /admin/chat/banned-words/:id
+router.delete("/admin/chat/banned-words/:id", requireAdmin, requirePermission("settings", "write"), async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  await db.delete(chatBannedWordsTable).where(eq(chatBannedWordsTable.id, id));
+  res.json({ success: true });
+});
+
+// GET /admin/chat/messages — latest 100 messages for admin review
+router.get("/admin/chat/messages", requireAdmin, requirePermission("settings", "read"), async (_req, res): Promise<void> => {
+  const rows = await db.select().from(chatMessagesTable).orderBy(desc(chatMessagesTable.id)).limit(100);
+  res.json(rows.reverse());
+});
+
+// DELETE /admin/chat/messages/:id — delete a specific message
+router.delete("/admin/chat/messages/:id", requireAdmin, requirePermission("settings", "write"), async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  await db.delete(chatMessagesTable).where(eq(chatMessagesTable.id, id));
+  res.json({ success: true });
 });
 
 // ─── Trivia Question Management ──────────────────────────────────────────────

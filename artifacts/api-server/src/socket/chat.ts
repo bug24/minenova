@@ -1,0 +1,172 @@
+import type { Server as HttpServer } from "node:http";
+import { Server as SocketIOServer } from "socket.io";
+import { db, chatMessagesTable, chatBannedWordsTable, adminConfigTable, usersTable } from "@workspace/db";
+import { desc, eq, sql } from "drizzle-orm";
+import { verifyToken } from "../lib/auth";
+import { logger } from "../lib/logger";
+
+const MAX_MESSAGE_LENGTH = 200;
+const RATE_LIMIT_MS = 3000;
+const HISTORY_COUNT = 50;
+
+// In-memory rate limit map: userId -> last message timestamp
+const lastMessageAt = new Map<number, number>();
+
+function stripHtml(text: string): string {
+  return text.replace(/<[^>]*>/g, "").replace(/&[a-z]+;/gi, " ").trim();
+}
+
+async function isChatEnabled(): Promise<boolean> {
+  const [row] = await db
+    .select({ value: adminConfigTable.value })
+    .from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "chat_enabled"))
+    .limit(1);
+  return row ? row.value === "true" : true;
+}
+
+async function getBannedPhrases(): Promise<string[]> {
+  const rows = await db.select({ phrase: chatBannedWordsTable.phrase }).from(chatBannedWordsTable);
+  return rows.map(r => r.phrase.toLowerCase());
+}
+
+async function getHistory() {
+  const rows = await db
+    .select({
+      id: chatMessagesTable.id,
+      userId: chatMessagesTable.userId,
+      username: chatMessagesTable.username,
+      message: chatMessagesTable.message,
+      createdAt: chatMessagesTable.createdAt,
+    })
+    .from(chatMessagesTable)
+    .orderBy(desc(chatMessagesTable.id))
+    .limit(HISTORY_COUNT);
+  return rows.reverse();
+}
+
+// Track connected socket count per userId for presence
+const connectedUsers = new Map<number, Set<string>>(); // userId -> Set<socketId>
+
+function onlineCount(): number {
+  return connectedUsers.size;
+}
+
+export function attachChatSocket(httpServer: HttpServer): SocketIOServer {
+  const io = new SocketIOServer(httpServer, {
+    cors: { origin: "*", methods: ["GET", "POST"] },
+    path: "/api/socket.io",
+  });
+
+  io.use(async (socket, next) => {
+    const token =
+      (socket.handshake.auth as Record<string, string>)["token"] ??
+      (socket.handshake.query["token"] as string);
+    if (!token) return next(new Error("Unauthorized"));
+
+    const userId = verifyToken(token);
+    if (!userId) return next(new Error("Invalid token"));
+
+    const [user] = await db
+      .select({ id: usersTable.id, username: usersTable.username, isSuspended: usersTable.isSuspended })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    if (!user || user.isSuspended) return next(new Error("Unauthorized"));
+
+    socket.data["userId"] = user.id;
+    socket.data["username"] = user.username;
+    next();
+  });
+
+  io.on("connection", async (socket) => {
+    const userId: number = socket.data["userId"];
+    const username: string = socket.data["username"];
+
+    // Check if chat is enabled
+    const enabled = await isChatEnabled();
+    if (!enabled) {
+      socket.emit("chat_disabled");
+      socket.disconnect(true);
+      return;
+    }
+
+    // Presence tracking
+    if (!connectedUsers.has(userId)) connectedUsers.set(userId, new Set());
+    connectedUsers.get(userId)!.add(socket.id);
+    io.emit("online_users_count", onlineCount());
+
+    // Send history to this socket only
+    try {
+      const history = await getHistory();
+      socket.emit("chat_history", history);
+    } catch (err) {
+      logger.error({ err }, "Failed to load chat history");
+    }
+
+    socket.on("send_message", async (rawMessage: unknown) => {
+      if (typeof rawMessage !== "string") return;
+
+      // Rate limit
+      const now = Date.now();
+      const last = lastMessageAt.get(userId) ?? 0;
+      if (now - last < RATE_LIMIT_MS) {
+        socket.emit("chat_error", { code: "rate_limited", message: "You're sending messages too fast. Please wait a moment." });
+        return;
+      }
+
+      // Sanitise
+      const clean = stripHtml(rawMessage).slice(0, MAX_MESSAGE_LENGTH);
+      if (!clean) return;
+
+      // Banned-phrase check
+      const banned = await getBannedPhrases();
+      const lower = clean.toLowerCase();
+      for (const phrase of banned) {
+        if (lower.includes(phrase)) {
+          socket.emit("chat_error", { code: "banned_word", message: "Your message contains a blocked phrase." });
+          return;
+        }
+      }
+
+      lastMessageAt.set(userId, now);
+
+      // Persist
+      let saved;
+      try {
+        [saved] = await db
+          .insert(chatMessagesTable)
+          .values({ userId, username, message: clean })
+          .returning();
+      } catch (err) {
+        logger.error({ err }, "Failed to save chat message");
+        socket.emit("chat_error", { code: "server_error", message: "Failed to send message." });
+        return;
+      }
+
+      // Prune old messages async (keep last 200 in DB)
+      db.execute(
+        sql`DELETE FROM chat_messages WHERE id NOT IN (SELECT id FROM chat_messages ORDER BY id DESC LIMIT 200)`
+      ).catch(() => {});
+
+      io.emit("message", {
+        id: saved.id,
+        userId,
+        username,
+        message: clean,
+        createdAt: saved.createdAt,
+      });
+    });
+
+    socket.on("disconnect", () => {
+      const sockets = connectedUsers.get(userId);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size === 0) connectedUsers.delete(userId);
+      }
+      io.emit("online_users_count", onlineCount());
+    });
+  });
+
+  return io;
+}

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import WithdrawalTicker from "@/components/WithdrawalTicker";
 import AdSlot from "@/components/AdSlot";
+import Chat from "@/components/Chat";
 
 const navItems = [
   { href: "/dashboard", label: "Mine", icon: Pickaxe, matchPaths: ["/dashboard"] },
@@ -183,6 +184,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Withdrawal Ticker — controlled by admin toggle */}
       {tickerEnabled && <WithdrawalTicker />}
+
+      {/* Global Chat */}
+      <Chat />
     </div>
   );
 }

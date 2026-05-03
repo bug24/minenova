@@ -117,6 +117,21 @@ A full-stack gamified crypto mining engagement web app.
 - **Remote speaking indicator**: `AudioContext` AnalyserNode samples remote stream level via rAF loop; renders pulsing dot when voice detected
 - STUN: `stun:stun.l.google.com:19302`; no TURN server (works on same LAN or most public networks)
 
+### Global Chat
+
+- **Socket.IO** — real-time bidirectional chat via `socket.io` on the server and `socket.io-client` in the frontend
+- **Connection path**: `/api/socket.io` — same HTTP server, no extra port
+- **Auth**: JWT token passed in `socket.handshake.auth.token` (same token as REST API)
+- **Features**: 50-message history sent on connect, 200-char limit, 3s rate limit, server-side XSS strip, banned-phrase rejection
+- **Online count**: `online_users_count` event broadcast on every connect/disconnect
+- **DB tables**: `chat_messages` (id, userId, username, message, createdAt), `chat_banned_words` (id, phrase, createdAt)
+- **Chat toggle**: `chat_enabled` key in `admin_config` — when false, server emits `chat_disabled` and disconnects the socket
+- **Frontend**: `Chat.tsx` — floating FAB button (bottom-right, above nav bar); slide-up panel with message bubbles, input, online count badge
+- **Admin controls**: Settings tab → Global Chat section — enable/disable toggle + banned phrases CRUD (`/api/admin/chat/banned-words`)
+- **Socket handler**: `artifacts/api-server/src/socket/chat.ts`
+- **Admin routes**: `GET/POST/DELETE /api/admin/chat/banned-words`, `GET/DELETE /api/admin/chat/messages`
+- **Message pruning**: DB keeps latest 200 messages (pruned async after each insert)
+
 ### Database Schema Key Tables
 - `users` — emailVerified, verificationToken, verificationTokenExpiry added
 - `admin_config` — key/value store for settings, scripts, SMTP, TOTP secret
@@ -131,3 +146,5 @@ A full-stack gamified crypto mining engagement web app.
 - `trivia_questions` — crypto trivia question bank (48+ questions seeded at startup)
 - `trivia_challenges` — open PvP challenges with entry fee
 - `trivia_games` — bot/pvp games with question IDs, answers (JSONB), scores, winner
+- `chat_messages` — global chat message history (capped at 200 rows)
+- `chat_banned_words` — admin-managed blocked phrases (case-insensitive match)

@@ -53,6 +53,7 @@
     "clsx": "catalog:",
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
+    "dompurify": "^3.4.2",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "catalog:",
     "input-otp": "^1.4.2",
@@ -72,7 +73,9 @@
     "vaul": "^1.1.2",
     "vite": "catalog:",
     "wouter": "^3.3.5",
-    "dompurify": "^3.4.2",
     "zod": "catalog:"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.3"
   }
 }

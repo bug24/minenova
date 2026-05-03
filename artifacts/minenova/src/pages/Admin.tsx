@@ -176,6 +176,7 @@ interface Settings {
   auto_miner_interval_minutes: string;
   withdrawal_fee_enabled: string;
   withdrawal_fee_pct: string;
+  chat_enabled: string;
 }
 interface ShareMessage { id: number; platform: string; message: string; isActive: boolean; sortOrder: number; }
 interface UserReferral { id: number; referredId: number; referredUsername: string; totalEarned: number; bonusPaid: boolean; createdAt: string; }
@@ -2044,6 +2045,99 @@ function UpgradesTab({
   );
 }
 
+// ─── Chat Admin Section ───────────────────────────────────────────────────────
+
+interface BannedWord { id: number; phrase: string; createdAt: string; }
+
+function ChatAdminSection({ secret, chatEnabled, isSavingChat, isSavedChat, onToggle }: {
+  secret: string;
+  chatEnabled: boolean;
+  isSavingChat: boolean;
+  isSavedChat: boolean;
+  onToggle: (v: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const h = useMemo(() => ({ "x-admin-secret": secret, "Content-Type": "application/json" }), [secret]);
+  const [words, setWords] = useState<BannedWord[]>([]);
+  const [newPhrase, setNewPhrase] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const load = useCallback(async () => {
+    const res = await apiFetch("/admin/chat/banned-words", { headers: h });
+    if (res.ok) setWords(await res.json());
+  }, [h]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleAdd = async () => {
+    if (!newPhrase.trim()) return;
+    setAdding(true);
+    const res = await apiFetch("/admin/chat/banned-words", { method: "POST", headers: h, body: JSON.stringify({ phrase: newPhrase.trim() }) });
+    if (res.ok) { setNewPhrase(""); load(); toast({ title: "Phrase added" }); }
+    else { const d = await res.json().catch(() => ({})); toast({ variant: "destructive", title: d.error ?? "Failed to add phrase" }); }
+    setAdding(false);
+  };
+
+  const handleDelete = async (id: number) => {
+    const res = await apiFetch(`/admin/chat/banned-words/${id}`, { method: "DELETE", headers: h });
+    if (res.ok) { load(); toast({ title: "Phrase removed" }); }
+    else toast({ variant: "destructive", title: "Failed to remove phrase" });
+  };
+
+  return (
+    <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+      <h3 className="font-semibold text-sm text-sky-400">Global Chat</h3>
+
+      {/* Enable / disable toggle */}
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium">Chat enabled</p>
+          <p className="text-xs text-muted-foreground">
+            {chatEnabled ? "Users can send and receive messages in the global chat" : "Chat is disabled — users will see an offline notice"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {isSavingChat && <span className="text-xs text-muted-foreground">Saving…</span>}
+          {isSavedChat && <span className="text-xs text-green-400">Saved ✓</span>}
+          <Toggle on={chatEnabled} disabled={isSavingChat} onChange={onToggle} />
+        </div>
+      </div>
+
+      {/* Banned words */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Banned Phrases</p>
+        <p className="text-xs text-muted-foreground">Messages containing these phrases (case-insensitive) are silently rejected.</p>
+        <div className="flex gap-2">
+          <Input
+            placeholder="e.g. spam phrase, scam link…"
+            value={newPhrase}
+            onChange={e => setNewPhrase(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleAdd()}
+            className="text-sm"
+          />
+          <Button size="sm" onClick={handleAdd} disabled={adding || !newPhrase.trim()} className="shrink-0">
+            <Plus className="w-3.5 h-3.5 mr-1" /> Add
+          </Button>
+        </div>
+        {words.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic">No banned phrases configured.</p>
+        ) : (
+          <div className="space-y-1 max-h-48 overflow-y-auto">
+            {words.map(w => (
+              <div key={w.id} className="flex items-center justify-between gap-2 py-1.5 px-2 bg-muted/50 rounded-lg">
+                <span className="text-sm font-mono text-foreground truncate">{w.phrase}</span>
+                <Button variant="ghost" size="sm" className="w-6 h-6 p-0 text-red-400 hover:text-red-300 shrink-0" onClick={() => handleDelete(w.id)}>
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Settings Tab ────────────────────────────────────────────────────────────
 
 function Toggle({ on, onChange, danger, disabled }: { on: boolean; onChange: (v: boolean) => void; danger?: boolean; disabled?: boolean }) {
@@ -2105,6 +2199,7 @@ function SettingsTab({ secret }: { secret: string }) {
     auto_miner_interval_minutes: "15",
     withdrawal_fee_enabled: "true",
     withdrawal_fee_pct: "10",
+    chat_enabled: "true",
   };
 
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
@@ -2894,6 +2989,9 @@ function SettingsTab({ secret }: { secret: string }) {
           <p className="text-xs text-muted-foreground">Deducted from total pot before paying the winner.</p>
         </div>
       </div>
+
+      {/* ── Chat ── */}
+      <ChatAdminSection secret={secret} chatEnabled={settings.chat_enabled === "true"} isSavingChat={isSaving("chat_enabled")} isSavedChat={isSaved("chat_enabled")} onToggle={v => saveSetting("chat_enabled", v ? "true" : "false")} />
 
       {/* ── Withdrawal Fee ── */}
       <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
