@@ -60,13 +60,14 @@ interface MinesSettings {
   enabled: boolean;
   minBet: number;
   maxBet: number;
+  feePct: number;
 }
 
 const TOTAL_TILES = 25;
 const MINE_PRESETS = [1, 3, 5, 10, 15, 24];
 
-// Multiplier formula (client-side preview)
-function calcMultiplier(mineCount: number, revealed: number): number {
+// Multiplier formula (client-side preview — houseEdge = 1 - feePct/100)
+function calcMultiplier(mineCount: number, revealed: number, houseEdge: number): number {
   if (revealed === 0) return 1;
   let mult = 1;
   for (let k = 0; k < revealed; k++) {
@@ -75,7 +76,7 @@ function calcMultiplier(mineCount: number, revealed: number): number {
     if (safe <= 0 || rem <= 0) return mult;
     mult *= rem / safe;
   }
-  return parseFloat((mult * 0.97).toFixed(4));
+  return parseFloat((mult * houseEdge).toFixed(4));
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +179,7 @@ export default function MinesGame() {
   const [loading, setLoading] = useState(false);
   const [revealing, setRevealing] = useState(false);
   const [cashingOut, setCashingOut] = useState(false);
-  const [settings, setSettings] = useState<MinesSettings>({ enabled: true, minBet: 10, maxBet: 100000 });
+  const [settings, setSettings] = useState<MinesSettings>({ enabled: true, minBet: 10, maxBet: 100000, feePct: 3 });
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
 
@@ -217,10 +218,10 @@ export default function MinesGame() {
     } catch { /* ignore */ }
   }, []);
 
-  // Preview multiplier in setup mode
+  // Preview multiplier in setup mode — uses server-configured fee
   const previewMultiplier = useCallback((mines: number, revealed: number) => {
-    return calcMultiplier(mines, revealed);
-  }, []);
+    return calcMultiplier(mines, revealed, 1 - settings.feePct / 100);
+  }, [settings.feePct]);
 
   const handleStart = useCallback(async () => {
     if (loading) return;
@@ -348,9 +349,9 @@ export default function MinesGame() {
   const lost = phase === "ended" && (finalPayout ?? 0) === 0;
   const profit = won ? (finalPayout ?? 0) - betNum : -betNum;
 
-  // Next multiplier preview
+  // Next multiplier preview — uses server-configured fee
   const nextMult = phase === "playing"
-    ? calcMultiplier(mineCount, revealedTiles.length + 1)
+    ? calcMultiplier(mineCount, revealedTiles.length + 1, 1 - settings.feePct / 100)
     : null;
 
   return (
@@ -602,12 +603,6 @@ export default function MinesGame() {
         </>
       )}
 
-      {/* Coins balance hint */}
-      {user && (
-        <p className="text-center text-xs text-muted-foreground">
-          Balance: <span className="font-semibold text-foreground">{user.coinBalance?.toLocaleString()} coins</span>
-        </p>
-      )}
     </div>
   );
 }

@@ -242,6 +242,9 @@ router.post("/mines/reveal", requireAuth, async (req: Request, res: Response): P
           });
 
           if (fee > 0) {
+            await tx.update(usersTable)
+              .set({ coinBalance: sql`coin_balance + ${fee}` })
+              .where(eq(usersTable.id, systemUserId));
             await tx.insert(transactionsTable).values({
               userId: systemUserId,
               type: "mines_fee",
@@ -344,6 +347,9 @@ router.post("/mines/cashout", requireAuth, async (req: Request, res: Response): 
       });
 
       if (fee > 0) {
+        await tx.update(usersTable)
+          .set({ coinBalance: sql`coin_balance + ${fee}` })
+          .where(eq(usersTable.id, systemUserId));
         await tx.insert(transactionsTable).values({
           userId: systemUserId,
           type: "mines_fee",
