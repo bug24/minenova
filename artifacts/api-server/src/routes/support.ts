@@ -172,9 +172,8 @@ export async function postAdminReply(req: Request, res: Response): Promise<void>
 
   const schema = z.object({
     message: z.string().min(1).max(2000).optional(),
-    imageUrl: z.string().url().optional(),
     objectPath: z.string().optional(),
-  }).refine(d => d.message || d.objectPath || d.imageUrl, {
+  }).refine(d => d.message || d.objectPath, {
     message: "At least a message or image is required",
   });
 
