@@ -16,8 +16,9 @@ import { useAppSettings } from "@/hooks/useAppSettings";
 import VoiceChatButton from "@/components/VoiceChatButton";
 import {
   unlockAudio, playDiceRoll, playPieceTap, playPieceMove,
-  playCapture, playPieceHome, playWin, playLose,
+  playCapture, playPieceHome, playWin, playBuzzer,
 } from "@/lib/sounds";
+import { burstConfetti } from "@/lib/confetti";
 import {
   ArrowLeft,
   Trophy,
@@ -373,8 +374,8 @@ export default function LudoGame() {
               (event.type === "moved" || event.type === "forfeit" || event.type === "timeout" || event.type === "abandoned_timeout") &&
               event.state.status === "completed"
             ) {
-              if (event.state.winnerId === myUserId) playWin();
-              else playLose();
+              if (event.state.winnerId === myUserId) { playWin(); burstConfetti(); }
+              else playBuzzer();
               setShowResult(true);
               queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
             }

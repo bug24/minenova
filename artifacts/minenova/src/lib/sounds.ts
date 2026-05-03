@@ -80,13 +80,11 @@ export function playTap() {
 
 /** Dice rolling rattle */
 export function playDiceRoll() {
-  // Several short noise bursts simulating tumbling dice
   const offsets = [0, 0.06, 0.12, 0.19, 0.27, 0.36];
   offsets.forEach((off, i) => {
     const vol = 0.25 - i * 0.03;
     noise(vol, 0.06, off, 1800 - i * 100, 3);
   });
-  // Final land thud
   osc(140, "sine", 0.35, 0.12, 0.42);
   noise(0.15, 0.08, 0.42, 500, 5);
 }
@@ -112,7 +110,6 @@ export function playCapture() {
 
 /** Piece reached home */
 export function playPieceHome() {
-  // Rising three-note chime: C5 → E5 → G5
   [[523, 0], [659, 0.13], [784, 0.26]].forEach(([f, off]) => {
     osc(f, "sine", 0.28, 0.22, off);
     osc(f * 2, "sine", 0.08, 0.15, off);
@@ -151,4 +148,46 @@ export function playLose() {
     osc(f, "sine", 0.25, 0.30, off);
   });
   osc(110, "sine", 0.15, 0.40, 0.60, 80);
+}
+
+/** Harsh buzzer — negative result / wrong answer / mine hit */
+export function playBuzzer() {
+  osc(180, "square", 0.38, 0.22, 0, 85);
+  osc(130, "sawtooth", 0.28, 0.28, 0.04, 60);
+  osc(100, "square", 0.20, 0.20, 0.12, 50);
+  noise(0.18, 0.25, 0, 350, 6);
+}
+
+// ---------- Mines game sounds ----------
+
+/** Tile click — subtle tap when selecting a hidden tile */
+export function playMinesTileClick() {
+  noise(0.10, 0.035, 0, 3200, 2.5);
+  osc(480, "sine", 0.09, 0.045);
+}
+
+/** Gem revealed — sparkling rising chime */
+export function playMinesGemReveal() {
+  osc(880, "sine", 0.22, 0.14);
+  osc(1320, "sine", 0.13, 0.11, 0.04);
+  osc(1760, "sine", 0.07, 0.09, 0.09);
+  noise(0.06, 0.08, 0.02, 5000, 1.5);
+}
+
+/** Mine exploded — deep rumbling boom */
+export function playMinesExplosion() {
+  osc(80, "sawtooth", 0.42, 0.32, 0, 28);
+  osc(55, "square", 0.30, 0.28, 0.03, 20);
+  noise(0.55, 0.32, 0, 550, 1.2);
+  noise(0.30, 0.22, 0.09, 180, 3);
+  osc(220, "sawtooth", 0.18, 0.18, 0.02, 60);
+}
+
+/** Cashout — ascending coin cascade jingle */
+export function playMinesCashout() {
+  [[523, 0], [659, 0.07], [784, 0.14], [1047, 0.21], [1319, 0.30]].forEach(([f, off]) => {
+    osc(f, "sine", 0.26, 0.18, off);
+    osc(f * 1.5, "sine", 0.09, 0.12, off + 0.02);
+  });
+  noise(0.08, 0.18, 0.28, 4500, 1.2);
 }

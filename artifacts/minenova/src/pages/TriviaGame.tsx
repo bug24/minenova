@@ -12,6 +12,8 @@ import {
   BookOpen, ArrowLeft, Check, X, Trophy, TrendingUp, TrendingDown,
   Minus, Clock, RefreshCw, Bot, Swords,
 } from "lucide-react";
+import { unlockAudio, playWin, playBuzzer } from "@/lib/sounds";
+import { burstConfetti } from "@/lib/confetti";
 
 const QUESTION_TIME = 15;
 const ANSWER_SHOW_TIME = 1500;
@@ -56,6 +58,17 @@ export default function TriviaGame() {
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoSubmitRef = useRef(false);
+  const resultSoundFiredRef = useRef(false);
+
+  // Play sounds + confetti when result arrives
+  useEffect(() => {
+    if (phase !== "result" || !result || resultSoundFiredRef.current) return;
+    resultSoundFiredRef.current = true;
+    const won = result.winnerId === user?.id;
+    const tied = result.winnerId === null;
+    if (won) { playWin(); burstConfetti(); }
+    else if (!tied) { playBuzzer(); }
+  }, [phase, result, user?.id]);
 
   // Load game data on mount
   useEffect(() => {

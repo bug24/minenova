@@ -16,8 +16,9 @@ import { useAppSettings } from "@/hooks/useAppSettings";
 import VoiceChatButton from "@/components/VoiceChatButton";
 import {
   unlockAudio, playCardSelect, playCardPlay, playCardDraw,
-  playTap, playWin, playLose,
+  playTap, playWin, playBuzzer,
 } from "@/lib/sounds";
+import { burstConfetti } from "@/lib/confetti";
 import { ArrowLeft, Trophy, Skull, RefreshCw, Flag, Bot, Timer, Layers } from "lucide-react";
 
 const SUITS: WhotSuit[] = ["Circle", "Triangle", "Cross", "Square", "Star"];
@@ -328,7 +329,7 @@ export default function WhotGame() {
             );
             setSelectedCardIdx(null);
             if (event.state.status === "completed") {
-              if (event.state.winnerId === myUserId) playWin(); else playLose();
+              if (event.state.winnerId === myUserId) { playWin(); burstConfetti(); } else playBuzzer();
               setShowResult(true);
               queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
             }
@@ -385,7 +386,7 @@ export default function WhotGame() {
       setSelectedCardIdx(null);
       setPendingSuit(false);
       if (result.state.status === "completed") {
-        if (result.state.winnerId === myUserId) playWin(); else playLose();
+        if (result.state.winnerId === myUserId) { playWin(); burstConfetti(); } else playBuzzer();
         setShowResult(true);
         queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
       }

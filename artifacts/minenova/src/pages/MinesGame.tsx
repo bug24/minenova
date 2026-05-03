@@ -10,6 +10,11 @@ import {
   ArrowLeft, Bomb, Gem, TrendingUp, TrendingDown, Minus,
   RefreshCw, DollarSign, History,
 } from "lucide-react";
+import {
+  unlockAudio, playMinesTileClick, playMinesGemReveal,
+  playMinesExplosion, playMinesCashout, playWin, playBuzzer,
+} from "@/lib/sounds";
+import { burstConfetti } from "@/lib/confetti";
 
 // ---------------------------------------------------------------------------
 // API helpers
@@ -254,6 +259,8 @@ export default function MinesGame() {
 
   const handleReveal = useCallback(async (tileIndex: number) => {
     if (revealing || phase !== "playing" || !gameId) return;
+    unlockAudio();
+    playMinesTileClick();
     setRevealing(true);
     try {
       const data = await minesApi<{
@@ -274,6 +281,8 @@ export default function MinesGame() {
       setLastNewTile(tileIndex);
 
       if (data.result === "mine") {
+        playMinesExplosion();
+        playBuzzer();
         setHitMine(tileIndex);
         setMineTiles(data.minePositions);
         setRevealedTiles(data.revealedTiles);
@@ -283,11 +292,15 @@ export default function MinesGame() {
         queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
         loadHistory();
       } else {
+        playMinesGemReveal();
         setRevealedTiles(data.revealedTiles);
         setMultiplier(data.multiplier);
         setPotentialPayout(data.potentialPayout ?? data.payout ?? 0);
 
         if (data.status === "won") {
+          playMinesCashout();
+          playWin();
+          burstConfetti();
           setMineTiles(data.minePositions);
           setFinalPayout(data.payout ?? 0);
           setPhase("ended");
@@ -311,6 +324,9 @@ export default function MinesGame() {
         "/mines/cashout",
         { method: "POST", body: JSON.stringify({ gameId }) },
       );
+      playMinesCashout();
+      playWin();
+      burstConfetti();
       setMineTiles(data.minePositions);
       setFinalPayout(data.payout);
       setMultiplier(data.multiplier);
