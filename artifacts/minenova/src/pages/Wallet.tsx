@@ -17,7 +17,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Wallet, ArrowUpRight, Clock, CheckCircle2, XCircle, Copy, AlertCircle, TrendingUp, Zap, Twitter, Facebook, MessageCircle, Share2, MailWarning } from "lucide-react";
+import { Wallet, ArrowUpRight, Clock, CheckCircle2, XCircle, AlertCircle, TrendingUp, Zap, Twitter, Facebook, MessageCircle, Share2, MailWarning } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -70,7 +70,6 @@ export default function WalletPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [step, setStep] = useState<WithdrawStep>("choose");
   const [withdrawalResult, setWithdrawalResult] = useState<WithdrawalResult | null>(null);
-  const [hasSentWithdrawal, setHasSentWithdrawal] = useState(false);
 
   const { user } = useAuth();
   const coinBalance = wallet?.withdrawableBalance ?? 0;
@@ -94,7 +93,6 @@ export default function WalletPage() {
     setDialogOpen(false);
     setTimeout(() => {
       setStep("choose");
-      setHasSentWithdrawal(false);
       form.reset();
     }, 300);
   };
@@ -438,125 +436,76 @@ export default function WalletPage() {
           {/* Step 3: Result */}
           {step === "result" && withdrawalResult && (
             <div className="space-y-4 pt-2">
-              {hasSentWithdrawal ? (
-                <>
-                  <div className="text-center py-2">
-                    <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
-                      <CheckCircle2 className="w-7 h-7 text-emerald-500" />
-                    </div>
-                    <p className="font-semibold text-foreground">Transfer Confirmed</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Your withdrawal of <strong>${withdrawalResult.amount.toFixed(2)} USDT</strong> is being processed.
-                      {withdrawalResult.feeDeducted > 0 && (
-                        <span className="block text-xs text-rose-400 mt-1">${withdrawalResult.feeDeducted.toFixed(2)} USDT fee was deducted from your requested ${withdrawalResult.grossAmount.toFixed(2)} USDT.</span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="bg-primary/10 border border-primary/20 rounded-xl p-4">
-                    <p className="text-sm font-semibold text-primary mb-1">⏱ Please allow 2–12 hours</p>
-                    <p className="text-xs text-muted-foreground">
-                      Our team will verify your payment and process your withdrawal within 2–12 hours. Check your transaction history for updates.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground text-center flex items-center gap-1 justify-center">
-                      <Share2 className="w-3 h-3" /> Share your withdrawal with friends
-                    </p>
-                    {(() => {
-                      const shareMsg = encodeURIComponent(`I just withdrew $${withdrawalResult.amount} USDT from MineNova! 💰\n\nThis platform actually pays — mine crypto and cash out as USDT with no delays.\n\nTry it free and start earning today!`);
-                      return (
-                        <div className="grid grid-cols-3 gap-2">
-                          <button
-                            onClick={() => window.open(`https://twitter.com/intent/tweet?text=${shareMsg}`, "_blank")}
-                            className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 transition-colors"
-                          >
-                            <Twitter className="w-4 h-4 text-sky-400" />
-                            <span className="text-xs text-sky-400 font-medium">Twitter</span>
-                          </button>
-                          <button
-                            onClick={() => window.open(`https://api.whatsapp.com/send?text=${shareMsg}`, "_blank")}
-                            className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
-                          >
-                            <MessageCircle className="w-4 h-4 text-emerald-500" />
-                            <span className="text-xs text-emerald-500 font-medium">WhatsApp</span>
-                          </button>
-                          <button
-                            onClick={() => window.open(`https://www.facebook.com/sharer/sharer.php?quote=${shareMsg}`, "_blank")}
-                            className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
-                          >
-                            <Facebook className="w-4 h-4 text-blue-500" />
-                            <span className="text-xs text-blue-500 font-medium">Facebook</span>
-                          </button>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  <Button className="w-full" onClick={closeDialog}>Got it</Button>
-                </>
-              ) : (
-                <>
-                  <div className="text-center">
-                    <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
-                      <CheckCircle2 className="w-7 h-7 text-emerald-500" />
-                    </div>
-                    <p className="font-semibold text-foreground">Withdrawal Request Submitted</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Send USDT to the address below via BEP20 (BSC) network with your payment tag.
-                    </p>
-                  </div>
+              <div className="text-center py-2">
+                <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
+                  <CheckCircle2 className="w-7 h-7 text-emerald-500" />
+                </div>
+                <p className="font-semibold text-foreground">Withdrawal Request Submitted</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Your request is being reviewed. You will receive your USDT once approved.
+                </p>
+              </div>
 
-                  {/* Payout breakdown receipt */}
-                  <div className="bg-muted rounded-xl px-4 py-3 space-y-2 text-sm">
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>Amount requested</span>
-                      <span>${withdrawalResult.grossAmount.toFixed(2)} USDT</span>
-                    </div>
-                    {withdrawalResult.feeDeducted > 0 && (
-                      <div className="flex justify-between text-rose-500">
-                        <span>Fee deducted ({feePct}%)</span>
-                        <span>−${withdrawalResult.feeDeducted.toFixed(2)} USDT</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between font-bold text-emerald-500 border-t border-border pt-2">
-                      <span>You will receive</span>
-                      <span>${withdrawalResult.amount.toFixed(2)} USDT</span>
-                    </div>
+              {/* Payout breakdown receipt */}
+              <div className="bg-muted rounded-xl px-4 py-3 space-y-2 text-sm">
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Amount requested</span>
+                  <span>${withdrawalResult.grossAmount.toFixed(2)} USDT</span>
+                </div>
+                {withdrawalResult.feeDeducted > 0 && (
+                  <div className="flex justify-between text-rose-500">
+                    <span>Fee deducted ({feePct}%)</span>
+                    <span>−${withdrawalResult.feeDeducted.toFixed(2)} USDT</span>
                   </div>
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground mb-1">USDT Address (BEP20)</p>
-                      <div className="flex gap-2">
-                        <div className="flex-1 bg-muted rounded-lg px-3 py-2 text-xs font-mono break-all">
-                          {withdrawalResult.usdtAddress}
-                        </div>
-                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(withdrawalResult.usdtAddress, "USDT address")}>
-                          <Copy className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
+                )}
+                <div className="flex justify-between font-bold text-emerald-500 border-t border-border pt-2">
+                  <span>You will receive</span>
+                  <span>${withdrawalResult.amount.toFixed(2)} USDT</span>
+                </div>
+              </div>
+
+              <div className="bg-primary/10 border border-primary/20 rounded-xl p-4">
+                <p className="text-sm font-semibold text-primary mb-1">⏱ Please allow 2–12 hours</p>
+                <p className="text-xs text-muted-foreground">
+                  Our team will review and process your withdrawal within 2–12 hours. Check your transaction history for updates.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground text-center flex items-center gap-1 justify-center">
+                  <Share2 className="w-3 h-3" /> Share your withdrawal with friends
+                </p>
+                {(() => {
+                  const shareMsg = encodeURIComponent(`I just withdrew $${withdrawalResult.amount} USDT from MineNova! 💰\n\nThis platform actually pays — mine crypto and cash out as USDT with no delays.\n\nTry it free and start earning today!`);
+                  return (
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => window.open(`https://twitter.com/intent/tweet?text=${shareMsg}`, "_blank")}
+                        className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 transition-colors"
+                      >
+                        <Twitter className="w-4 h-4 text-sky-400" />
+                        <span className="text-xs text-sky-400 font-medium">Twitter</span>
+                      </button>
+                      <button
+                        onClick={() => window.open(`https://api.whatsapp.com/send?text=${shareMsg}`, "_blank")}
+                        className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                      >
+                        <MessageCircle className="w-4 h-4 text-emerald-500" />
+                        <span className="text-xs text-emerald-500 font-medium">WhatsApp</span>
+                      </button>
+                      <button
+                        onClick={() => window.open(`https://www.facebook.com/sharer/sharer.php?quote=${shareMsg}`, "_blank")}
+                        className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
+                      >
+                        <Facebook className="w-4 h-4 text-blue-500" />
+                        <span className="text-xs text-blue-500 font-medium">Facebook</span>
+                      </button>
                     </div>
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground mb-1">Payment Tag (Required)</p>
-                      <div className="flex gap-2">
-                        <div className="flex-1 bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 text-sm font-mono font-bold text-primary">
-                          {withdrawalResult.paymentTag}
-                        </div>
-                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(withdrawalResult.paymentTag, "Payment tag")}>
-                          <Copy className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
-                    <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                      Always include your payment tag in the memo/note field. Without it we cannot process your withdrawal.
-                    </p>
-                  </div>
-                  <Button className="w-full gap-2" onClick={() => setHasSentWithdrawal(true)}>
-                    <CheckCircle2 className="w-4 h-4" />
-                    I have sent ${withdrawalResult.amount} USDT
-                  </Button>
-                </>
-              )}
+                  );
+                })()}
+              </div>
+
+              <Button className="w-full" onClick={closeDialog}>Got it</Button>
             </div>
           )}
         </DialogContent>

@@ -766,14 +766,21 @@ router.post("/admin/withdrawals/:id/reject", requireAdmin, requirePermission("wi
       .returning({ id: transactionsTable.id });
     if (!updated) { res.status(409).json({ error: "Withdrawal was already processed" }); return; }
 
-    const refundCoins = tx.amount * COINS_PER_USDT;
+    // The transaction stores the net payout (after fee). To fully refund the user
+    // we must restore the gross amount that was originally deducted from their
+    // coin balance. The fee that was deducted is recorded in the description
+    // as "($X.XX deducted)", so we parse it back out here.
+    const feeMatch = (tx.description ?? "").match(/\$(\d+(?:\.\d+)?)\s+deducted\)/);
+    const feeDeducted = feeMatch ? parseFloat(feeMatch[1]) : 0;
+    const grossUsdt = tx.amount + feeDeducted;
+    const refundCoins = Math.round(grossUsdt * COINS_PER_USDT);
     await trx.update(usersTable).set({ coinBalance: sql`coin_balance + ${refundCoins}`, totalWithdrawn: sql`total_withdrawn - ${tx.amount}` }).where(eq(usersTable.id, tx.userId));
     await trx.insert(transactionsTable).values({
       userId: tx.userId,
       type: "adjustment",
       amount: refundCoins,
       status: "completed",
-      description: `Refund for rejected withdrawal #${id}`,
+      description: `Refund for rejected withdrawal #${id}${feeDeducted > 0 ? ` (includes $${feeDeducted.toFixed(2)} fee refund)` : ""}`,
     });
     res.json({ success: true });
   });
