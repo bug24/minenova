@@ -372,9 +372,9 @@ export default function WalletPage() {
                     name="walletAddress"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>USDT Wallet Address (TRC20)</FormLabel>
+                        <FormLabel>USDT Wallet Address (BEP20)</FormLabel>
                         <FormControl>
-                          <Input placeholder="TRC20 address (TRX...)" data-testid="input-wallet-address" {...field} />
+                          <Input placeholder="BEP20 address (0x...)" data-testid="input-wallet-address" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -501,7 +501,7 @@ export default function WalletPage() {
                     </div>
                     <p className="font-semibold text-foreground">Withdrawal Request Submitted</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Send USDT to the address below via TRC20 network with your payment tag.
+                      Send USDT to the address below via BEP20 (BSC) network with your payment tag.
                     </p>
                   </div>
 
@@ -524,7 +524,7 @@ export default function WalletPage() {
                   </div>
                   <div className="space-y-3">
                     <div>
-                      <p className="text-xs font-medium text-muted-foreground mb-1">USDT Address (TRC20)</p>
+                      <p className="text-xs font-medium text-muted-foreground mb-1">USDT Address (BEP20)</p>
                       <div className="flex gap-2">
                         <div className="flex-1 bg-muted rounded-lg px-3 py-2 text-xs font-mono break-all">
                           {withdrawalResult.usdtAddress}

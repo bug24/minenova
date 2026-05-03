@@ -8,7 +8,7 @@ import { sendAdminNotification } from "../lib/pushNotifications";
 
 const router: IRouter = Router();
 
-const USDT_DEPOSIT_ADDRESS = "TRX_PLACEHOLDER_ADDRESS_CONFIGURE_ME";
+const USDT_DEPOSIT_ADDRESS = "BSC_PLACEHOLDER_ADDRESS_CONFIGURE_ME";
 const MINIMUM_WITHDRAWAL = 5;
 const COINS_PER_USDT = 1000;
 const MINIMUM_COINS = MINIMUM_WITHDRAWAL * COINS_PER_USDT;

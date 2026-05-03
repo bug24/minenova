@@ -938,7 +938,7 @@ function WithdrawalsTab({ secret }: { secret: string }) {
                     <div className="space-y-2 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3">
                       <p className="text-xs text-emerald-400 font-medium">Add approval note (optional)</p>
                       <Input
-                        placeholder="e.g. Payment verified via TRC20"
+                        placeholder="e.g. Payment verified via BEP20"
                         value={noteInput[w.id] ?? ""}
                         onChange={e => setNoteInput(prev => ({ ...prev, [w.id]: e.target.value }))}
                         className="h-9"
@@ -2317,11 +2317,11 @@ function SettingsTab({ secret }: { secret: string }) {
 
       {/* ── USDT Wallet Address ── */}
       <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
-        <h3 className="font-semibold text-sm text-purple-400">USDT Wallet Address (TRC20)</h3>
+        <h3 className="font-semibold text-sm text-purple-400">USDT Wallet Address (BEP20)</h3>
         <p className="text-xs text-muted-foreground">This address is shown to users when they pay for upgrades via USDT.</p>
         <div className="flex gap-2">
           <Input
-            placeholder="T… (TRC20 wallet address)"
+            placeholder="0x… (BEP20 wallet address)"
             value={usdtAddress}
             onChange={e => setUsdtAddress(e.target.value)}
             className="font-mono text-sm"
@@ -4043,7 +4043,7 @@ const MODULE_LABELS: Record<string, string> = {
   dashboard: "Dashboard", reports: "Reports", users: "Users",
   withdrawals: "Withdrawals", transactions: "Transactions", mining: "Mining Control",
   referrals: "Referrals", upgrades: "Upgrades", settings: "Settings",
-  share: "Share Links", ads: "Ads", scripts: "Scripts",
+  share: "Share Links", ads: "Ads", scripts: "Scripts", trivia: "Trivia",
 };
 
 function PermissionMatrix({ perms, onChange }: { perms: PermMap; onChange: (p: PermMap) => void }) {
