@@ -540,14 +540,23 @@ export default function WhotGame() {
       </div>
 
       {/* Opponent section */}
-      <div className={`rounded-xl border p-3 transition-all ${!isMyTurn ? "border-amber-400/40 bg-amber-400/5" : "border-card-border bg-card"} ${voiceChat.isRemoteSpeaking ? "ring-2 ring-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.3)]" : ""}`}>
+      <div className={`rounded-xl border p-3 transition-all ${!isMyTurn ? "border-amber-400/40 bg-amber-400/5" : "border-card-border bg-card"}`}>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <div
-              className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-              style={{ background: isBotOpponent ? "#d97706" : "linear-gradient(135deg, #7c3aed, #ec4899)" }}
-            >
-              {isBotOpponent ? <Bot className="w-3.5 h-3.5" /> : opponentUsername[0]?.toUpperCase()}
+            {/* Avatar with animated speaking ring */}
+            <div className="relative flex-shrink-0">
+              {voiceChat.isRemoteSpeaking && (
+                <>
+                  <div className="absolute inset-[-4px] rounded-full border-2 border-emerald-400 animate-ping opacity-70 pointer-events-none" />
+                  <div className="absolute inset-[-3px] rounded-full border-2 border-emerald-400/50 pointer-events-none" />
+                </>
+              )}
+              <div
+                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white transition-shadow ${voiceChat.isRemoteSpeaking ? "shadow-[0_0_8px_rgba(52,211,153,0.7)]" : ""}`}
+                style={{ background: isBotOpponent ? "#d97706" : "linear-gradient(135deg, #7c3aed, #ec4899)" }}
+              >
+                {isBotOpponent ? <Bot className="w-3.5 h-3.5" /> : opponentUsername[0]?.toUpperCase()}
+              </div>
             </div>
             <span className="text-xs font-semibold">{isBotOpponent ? "Bot (AI)" : opponentUsername}</span>
           </div>

@@ -133,13 +133,22 @@ interface PlayerBadgeProps {
 }
 
 function PlayerBadge({ username, color, isMyTurn, isMe, piecesHome, isBot, isSpeaking }: PlayerBadgeProps) {
-  const dot   = color === "red" ? "bg-red-500"  : "bg-blue-500";
-  const text  = color === "red" ? "text-red-400" : "text-blue-400";
-  const ring  = isSpeaking && !isMe ? "ring-2 ring-emerald-400" : "";
+  const dot  = color === "red" ? "bg-red-500"  : "bg-blue-500";
+  const text = color === "red" ? "text-red-400" : "text-blue-400";
+  const showSpeakingRing = isSpeaking && !isMe;
   return (
-    <div className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-card border border-card-border transition-all ${isMyTurn ? "ring-2 ring-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.25)]" : ""} ${ring}`}>
-      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${dot}`}>
-        {isBot ? <Bot className="w-3.5 h-3.5" /> : username[0]?.toUpperCase()}
+    <div className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-card border border-card-border transition-all ${isMyTurn ? "ring-2 ring-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.25)]" : ""}`}>
+      {/* Avatar with speaking ring */}
+      <div className="relative flex-shrink-0">
+        {showSpeakingRing && (
+          <>
+            <div className="absolute inset-[-4px] rounded-full border-2 border-emerald-400 animate-ping opacity-70 pointer-events-none" />
+            <div className="absolute inset-[-3px] rounded-full border-2 border-emerald-400/50 pointer-events-none" />
+          </>
+        )}
+        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white transition-shadow ${dot} ${showSpeakingRing ? "shadow-[0_0_8px_rgba(52,211,153,0.7)]" : ""}`}>
+          {isBot ? <Bot className="w-3.5 h-3.5" /> : username[0]?.toUpperCase()}
+        </div>
       </div>
       <div className="flex-1 min-w-0">
         <p className={`text-xs font-bold truncate ${text}`}>
