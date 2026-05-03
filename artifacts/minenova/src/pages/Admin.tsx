@@ -2103,8 +2103,8 @@ function SettingsTab({ secret }: { secret: string }) {
     withdrawal_ticker_enabled: "true",
     voice_chat_enabled: "true",
     auto_miner_interval_minutes: "15",
-    withdrawal_fee_enabled: "false",
-    withdrawal_fee_pct: "0",
+    withdrawal_fee_enabled: "true",
+    withdrawal_fee_pct: "10",
   };
 
   const [settings, setSettings] = useState<Settings>(DEFAULTS);

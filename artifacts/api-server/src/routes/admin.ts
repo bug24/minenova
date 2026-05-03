@@ -89,8 +89,8 @@ async function seedAdminConfig() {
     trivia_min_fee: "50",
     trivia_max_fee: "50000",
     trivia_fee_pct: "5",
-    withdrawal_fee_enabled: "false",
-    withdrawal_fee_pct: "0",
+    withdrawal_fee_enabled: "true",
+    withdrawal_fee_pct: "10",
   };
   for (const [key, value] of Object.entries(defaults)) {
     const [existing] = await db
