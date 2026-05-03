@@ -292,6 +292,19 @@
 .spin-very-slow { animation: spin-very-slow 22s linear infinite; }
 .spin-reverse-slow { animation: spin-reverse-slow 30s linear infinite; }
 
+@keyframes card-land {
+  0%   { transform: scale(0.7) translateY(-18px) rotate(-6deg); opacity: 0; }
+  60%  { transform: scale(1.06) translateY(2px) rotate(1deg); opacity: 1; }
+  100% { transform: scale(1) translateY(0) rotate(0deg); opacity: 1; }
+}
+@keyframes card-draw {
+  0%   { transform: translateX(22px) scale(0.82); opacity: 0; }
+  70%  { transform: translateX(-3px) scale(1.04); opacity: 1; }
+  100% { transform: translateX(0) scale(1); opacity: 1; }
+}
+.card-land { animation: card-land 0.3s cubic-bezier(.175,.885,.32,1.275) both; }
+.card-draw { animation: card-draw 0.28s cubic-bezier(.175,.885,.32,1.275) both; }
+
 @layer utilities {
   input[type="search"]::-webkit-search-cancel-button { @apply hidden; }
   .hover-elevate:not(.no-default-hover-elevate) { position: relative; z-index: 0; }

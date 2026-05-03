@@ -154,7 +154,8 @@ function ResultModal({ game, myUserId, isSolo, settings, onGoLobby }: ResultModa
 }
 
 // ---------------------------------------------------------------------------
-// Discard pile display
+// Discard pile display — top card re-mounts (via key) each time pile grows,
+// triggering the card-land entrance animation.
 // ---------------------------------------------------------------------------
 function DiscardDisplay({ state }: { state: WhotGameState }) {
   const top = topCard(state);
@@ -166,11 +167,17 @@ function DiscardDisplay({ state }: { state: WhotGameState }) {
       <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Discard</p>
       <div className="relative">
         {state.discardPile.length > 1 && (
-          <div className="absolute top-0.5 left-0.5 opacity-40 pointer-events-none">
+          <div className="absolute top-0.5 left-0.5 opacity-35 pointer-events-none">
             <WhotCard card={state.discardPile[state.discardPile.length - 2]} size="lg" />
           </div>
         )}
-        <WhotCard card={top} size="lg" />
+        {/* key re-mounts the component whenever pile grows → triggers card-land */}
+        <WhotCard
+          key={state.discardPile.length}
+          card={top}
+          size="lg"
+          animate="land"
+        />
       </div>
       {top.suit === "WHOT" && state.calledSuit && (
         <p className="text-[10px] font-bold" style={{ color: suitColor }}>
@@ -228,6 +235,9 @@ export default function WhotGame() {
   const [selectedCardIdx, setSelectedCardIdx] = useState<number | null>(null);
   const [pendingSuit, setPendingSuit] = useState(false);
   const [opponentUsername, setOpponentUsername] = useState("Opponent");
+  // Tracks which card indices in myHand should animate as newly-drawn
+  const [drawnIndices, setDrawnIndices] = useState<Set<number>>(new Set());
+  const prevHandSizeRef = useRef<number>(0);
 
   const myUserId = user?.id ?? 0;
   const gameState = game?.gameState ?? null;
@@ -262,6 +272,19 @@ export default function WhotGame() {
     if (game?.status === "completed") voiceChat.stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game?.status]);
+
+  // Detect newly added cards in myHand and mark them for draw animation
+  useEffect(() => {
+    const prev = prevHandSizeRef.current;
+    const curr = myHand.length;
+    prevHandSizeRef.current = curr;
+    if (curr <= prev) return;
+    const newIndices = new Set<number>();
+    for (let i = prev; i < curr; i++) newIndices.add(i);
+    setDrawnIndices(newIndices);
+    const tid = setTimeout(() => setDrawnIndices(new Set()), 450);
+    return () => clearTimeout(tid);
+  }, [myHand.length]);
 
   const playableIndices = gameState && isMyTurn
     ? myHand.map((_, i) => isCardPlayable(myHand[i], gameState) ? i : -1).filter(i => i >= 0)
@@ -633,6 +656,7 @@ export default function WhotGame() {
           {myHand.map((card, i) => {
             const playable = isMyTurn && isCardPlayable(card, gameState);
             const selected = selectedCardIdx === i;
+            const isNewlyDrawn = drawnIndices.has(i);
             return (
               <div key={i} className="relative flex-shrink-0">
                 {playable && !selected && (
@@ -651,6 +675,7 @@ export default function WhotGame() {
                   onClick={() => handleCardClick(i)}
                   size="md"
                   dimmed={isMyTurn && !playable && !selected}
+                  animate={isNewlyDrawn ? "draw" : undefined}
                 />
               </div>
             );
