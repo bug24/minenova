@@ -50,6 +50,7 @@ export default function TriviaGame() {
   const [timeLeft, setTimeLeft] = useState(QUESTION_TIME);
   const [myScore, setMyScore] = useState(0);
   const [answeredIndexes, setAnsweredIndexes] = useState<(number | null)[]>([]);
+  const [revealCorrectIndex, setRevealCorrectIndex] = useState<number | null>(null);
   const [result, setResult] = useState<TriviaGameResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -84,7 +85,7 @@ export default function TriviaGame() {
 
           const myAnswersSafe = Array.isArray(myAnswers) ? (myAnswers as (number | null)[]) : [];
           setAnsweredIndexes(myAnswersSafe);
-          setMyScore(myAnswersSafe.length);
+          setMyScore(0);
           setCurrentQ(startFromQ);
 
           if (startFromQ >= TOTAL_QUESTIONS) {
@@ -119,31 +120,49 @@ export default function TriviaGame() {
     return interval;
   }, [queryClient]);
 
-  // SSE for PvP game completion
+  // SSE for PvP game completion — uses ?token= since EventSource cannot set headers
   useEffect(() => {
     if (!gameId || phase === "result" || phase === "loading") return;
     if (!game || game.mode !== "pvp") return;
 
     const token = localStorage.getItem("minenova_token");
-    const url = `/api/trivia/events/${gameId}`;
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+    if (!token) return;
 
-    // SSE doesn't support custom headers in browser, use polling for PvP
-    // (SSE is mainly used for server-side push; polling is reliable here)
-  }, [gameId, phase, game]);
+    const es = new EventSource(`/api/trivia/events/${gameId}?token=${encodeURIComponent(token)}`);
+    es.onmessage = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data as string) as { event?: string };
+        if (data.event === "game_over") {
+          es.close();
+          const id = pollForResult(gameId);
+          setTimeout(() => clearInterval(id), 120_000);
+        }
+      } catch { /* ignore parse errors */ }
+    };
+    es.onerror = () => { es.close(); };
+    return () => { es.close(); };
+  }, [gameId, phase, game, pollForResult]);
 
   const submitAnswer = useCallback(async (answerIdx: number | null, qIdx: number) => {
     if (submitting) return;
     setSubmitting(true);
     try {
-      const resp = await triviaApi<{ recorded: boolean; answeredCount: number; done: boolean }>(
+      const resp = await triviaApi<{ recorded: boolean; answeredCount: number; done: boolean; correctIndex: number | null }>(
         "/trivia/answer",
         {
           method: "POST",
           body: JSON.stringify({ gameId, questionIndex: qIdx, answerIndex: answerIdx }),
         },
       );
+
+      // Reveal the correct answer for this question immediately
+      if (resp.correctIndex !== null && resp.correctIndex !== undefined) {
+        setRevealCorrectIndex(resp.correctIndex);
+      }
+      // Increment score only if the player's answer was correct
+      if (answerIdx !== null && resp.correctIndex !== null && resp.correctIndex !== undefined && answerIdx === resp.correctIndex) {
+        setMyScore(prev => prev + 1);
+      }
 
       if (resp.done) {
         // Poll for result (waiting for opponent in PvP)
@@ -159,6 +178,7 @@ export default function TriviaGame() {
 
   const advanceQuestion = useCallback(() => {
     const nextQ = currentQ + 1;
+    setRevealCorrectIndex(null);
     if (nextQ >= TOTAL_QUESTIONS) {
       // All questions done — show waiting for opponent if PvP
       setPhase("question");
@@ -415,13 +435,10 @@ export default function TriviaGame() {
         {(currentQuestion.options as string[]).map((option, i) => {
           let btnStyle = "bg-card border border-border text-foreground hover:border-indigo-500/50 hover:bg-indigo-500/5";
           if (phase === "answer-reveal") {
-            const revealQuestion = questions[currentQ] as (TriviaQuestion & { correctIndex?: number });
-            const gameResult = result;
-            if (gameResult && gameResult.questions) {
-              const fullQ = gameResult.questions.find(q => q.id === currentQuestion.id);
-              if (fullQ && i === fullQ.correctIndex) {
+            if (revealCorrectIndex !== null) {
+              if (i === revealCorrectIndex) {
                 btnStyle = "bg-emerald-500/20 border border-emerald-500/60 text-emerald-400";
-              } else if (i === selectedAnswer && i !== (fullQ?.correctIndex ?? -1)) {
+              } else if (i === selectedAnswer) {
                 btnStyle = "bg-red-500/20 border border-red-500/60 text-red-400";
               }
             } else if (i === selectedAnswer) {

@@ -553,8 +553,13 @@ router.post("/trivia/answer", requireAuth, async (req: Request, res: Response): 
     const updateField = isP1 ? { player1Answers: newAnswers as unknown as Record<string, unknown> } : { player2Answers: newAnswers as unknown as Record<string, unknown> };
     await db.update(triviaGamesTable).set(updateField).where(eq(triviaGamesTable.id, gid));
 
+    // Fetch correct answer for per-question reveal on the client
+    const questionId = questionIds[qIdx];
+    const [qRow] = await db.select({ correctIndex: triviaQuestionsTable.correctIndex })
+      .from(triviaQuestionsTable).where(eq(triviaQuestionsTable.id, questionId)).limit(1);
+
     const done = newAnswers.length >= questionIds.length;
-    res.json({ recorded: true, answeredCount: newAnswers.length, done });
+    res.json({ recorded: true, answeredCount: newAnswers.length, done, correctIndex: qRow?.correctIndex ?? null });
 
     // Settle if applicable
     if (done) {
@@ -624,9 +629,14 @@ router.get("/trivia/game/:id", requireAuth, async (req: Request, res: Response):
       opponentUsername = opp?.username ?? "Unknown";
     }
 
+    // Only include correctIndex when game is completed — prevents answer leakage during active play
+    const safeQuestions = game.status === "completed"
+      ? ordered.map(q => ({ ...q, options: q.options as string[] }))
+      : ordered.map(({ correctIndex: _ci, ...rest }) => ({ ...rest, options: rest.options as string[] }));
+
     res.json({
       ...game,
-      questions: ordered.map(q => ({ ...q, options: q.options as string[] })),
+      questions: safeQuestions,
       payout,
       profit,
       opponentUsername,
@@ -689,14 +699,34 @@ router.get("/trivia/challenges/:id", requireAuth, async (req: Request, res: Resp
 
 // ---------------------------------------------------------------------------
 // GET /api/trivia/events/:id — SSE for game completion
+// EventSource cannot set custom headers, so we also accept ?token=<jwt>
 // ---------------------------------------------------------------------------
-router.get("/trivia/events/:id", requireAuth, (req: Request, res: Response): void => {
+router.get("/trivia/events/:id", async (req: Request, res: Response): Promise<void> => {
+  // Promote ?token= query param to Authorization header so inline auth works
+  if (!req.headers.authorization && req.query.token) {
+    req.headers.authorization = `Bearer ${req.query.token as string}`;
+  }
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const { verifyToken } = await import("../lib/auth");
+  const uid = verifyToken(authHeader.replace("Bearer ", ""));
+  if (!uid) { res.status(401).json({ error: "Invalid or expired token" }); return; }
+  req.userId = uid;
+
   const gameId = Number(req.params.id);
   if (Number.isNaN(gameId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [game] = await db.select({ player1Id: triviaGamesTable.player1Id, player2Id: triviaGamesTable.player2Id })
+    .from(triviaGamesTable).where(eq(triviaGamesTable.id, gameId)).limit(1);
+  if (!game) { res.status(404).json({ error: "Game not found" }); return; }
+  if (game.player1Id !== uid && game.player2Id !== uid) {
+    res.status(403).json({ error: "Not a participant" }); return;
+  }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
   const remove = addSseListener(gameId, data => {
