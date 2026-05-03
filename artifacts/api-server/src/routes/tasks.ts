@@ -39,7 +39,7 @@ router.get("/tasks", requireAuth, async (req, res): Promise<void> => {
   const referralCode = user[0]?.referralCode ?? "";
 
   const baseUrl = `${req.protocol}://${req.get("host")}`;
-  const shareLink = `${baseUrl}/?ref=${referralCode}`;
+  const shareLink = `${baseUrl}/register?ref=${referralCode}`;
 
   const activeMessages = await db.select().from(shareMessagesTable).where(eq(shareMessagesTable.isActive, true));
 

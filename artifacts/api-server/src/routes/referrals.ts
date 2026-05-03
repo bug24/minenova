@@ -45,7 +45,7 @@ router.get("/referrals", requireAuth, async (req, res): Promise<void> => {
 
   res.json(GetReferralsResponse.parse({
     referralCode: user.referralCode,
-    referralLink: `${baseUrl}/?ref=${user.referralCode}`,
+    referralLink: `${baseUrl}/register?ref=${user.referralCode}`,
     totalReferrals: referralsList.length,
     totalEarnedFromReferrals: referralsList.reduce((sum, r) => sum + r.earnedFromUser, 0),
     tier1Count: referralsList.length,
