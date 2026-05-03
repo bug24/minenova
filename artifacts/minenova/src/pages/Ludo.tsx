@@ -50,7 +50,7 @@ export default function Ludo() {
   const { data: ludoSettings } = useQuery<LudoSettings>({
     queryKey: ["/api/ludo/settings"],
     queryFn: fetchLudoSettings,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
   });
 
   const winPct = ludoSettings?.winPct ?? 90;

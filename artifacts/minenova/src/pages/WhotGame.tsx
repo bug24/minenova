@@ -270,7 +270,7 @@ export default function WhotGame() {
   const { data: whotSettings = null } = useQuery<WhotSettings>({
     queryKey: ["/api/whot/settings"],
     queryFn: fetchWhotSettings,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
   });
 
   // Load initial game

@@ -53,7 +53,7 @@ export default function Whot() {
   const { data: whotSettings } = useQuery<WhotSettings>({
     queryKey: ["/api/whot/settings"],
     queryFn: fetchWhotSettings,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
   });
 
   const winPct = whotSettings?.winPct ?? 90;

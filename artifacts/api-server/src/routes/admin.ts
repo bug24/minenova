@@ -1350,6 +1350,7 @@ router.get("/admin/settings", requireAdmin, async (_req, res): Promise<void> => 
     "voice_chat_enabled",
     "auto_miner_interval_minutes",
     "trivia_enabled", "trivia_min_fee", "trivia_max_fee", "trivia_fee_pct",
+    "mines_enabled", "mines_min_bet", "mines_max_bet", "mines_fee_pct",
   ];
   const rows = await db.select().from(adminConfigTable).where(sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`);
   const settings: Record<string, string> = {};
@@ -1399,6 +1400,10 @@ router.put("/admin/settings", requireAdmin, async (req, res): Promise<void> => {
     trivia_min_fee: strictNum(1).optional(),
     trivia_max_fee: strictNum(1).optional(),
     trivia_fee_pct: strictNum(0, 99).optional(),
+    mines_enabled: boolStr.optional(),
+    mines_min_bet: strictNum(1).optional(),
+    mines_max_bet: strictNum(1).optional(),
+    mines_fee_pct: strictNum(0, 99).optional(),
   });
   const data = schema.safeParse(req.body);
   if (!data.success) {
