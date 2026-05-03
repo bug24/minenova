@@ -5202,7 +5202,7 @@ export default function Admin() {
           )}
           {isSubAdmin && (
             <button
-              onClick={() => { setShowSubChangePw(v => !v); setSubCurPw(""); setSubNewPw(""); setSubConfirmPw(""); }}
+              onClick={() => { setShowSubChangePw(v => !v); setSubCurPw(""); setSubNewPw(""); setSubConfirmPw(""); setSubPwError(""); }}
               title="Change my password"
               className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors w-full ${!sidebarOpen ? "justify-center" : ""}`}
             >
