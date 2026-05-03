@@ -1,5 +1,12 @@
+import DOMPurify from "dompurify";
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, MonitorPlay } from "lucide-react";
+
+const AD_PURIFY_CONFIG = {
+  FORCE_BODY: true as const,
+  ADD_TAGS: ["script"] as string[],
+  ADD_ATTR: ["type", "src", "async", "defer", "id", "nonce", "crossorigin", "integrity", "charset"] as string[],
+};
 
 export interface AdData {
   id: number;
@@ -47,8 +54,9 @@ function resolveExternalUrl(raw: string | null | undefined): string {
 
 function injectAdHtml(container: HTMLElement, providerScript: string, body: string) {
   container.innerHTML = "";
+  const sanitized = DOMPurify.sanitize(`${providerScript}${body}`, AD_PURIFY_CONFIG) as unknown as string;
   const wrapper = document.createElement("div");
-  wrapper.innerHTML = `${providerScript}${body}`;
+  wrapper.innerHTML = sanitized;
 
   const allScripts = Array.from(wrapper.querySelectorAll("script"));
   for (const oldScript of allScripts) {

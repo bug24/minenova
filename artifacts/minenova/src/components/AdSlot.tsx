@@ -1,4 +1,11 @@
+import DOMPurify from "dompurify";
 import { useEffect, useRef } from "react";
+
+const SLOT_PURIFY_CONFIG = {
+  FORCE_BODY: true as const,
+  ADD_TAGS: ["script"] as string[],
+  ADD_ATTR: ["type", "src", "async", "defer", "id", "nonce", "crossorigin", "integrity", "charset"] as string[],
+};
 
 type AdSlotZone = "top" | "bottom" | "floating";
 
@@ -30,10 +37,10 @@ function getAdSlots(): Promise<AdSlots> {
 function injectSlotHtml(container: HTMLElement, html: string) {
   container.innerHTML = "";
   if (!html.trim()) return;
-  html = html.trim();
+  const sanitized = DOMPurify.sanitize(html.trim(), SLOT_PURIFY_CONFIG) as unknown as string;
 
   const wrapper = document.createElement("div");
-  wrapper.innerHTML = html;
+  wrapper.innerHTML = sanitized;
 
   Array.from(wrapper.childNodes).forEach(node => container.appendChild(node.cloneNode(true)));
 
