@@ -23,6 +23,8 @@ import Whot from "@/pages/Whot";
 import WhotGame from "@/pages/WhotGame";
 import Games from "@/pages/Games";
 import MinesGame from "@/pages/MinesGame";
+import Trivia from "@/pages/Trivia";
+import TriviaGame from "@/pages/TriviaGame";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/not-found";
@@ -104,6 +106,8 @@ function Router() {
       <Route path="/whot" component={() => <ProtectedRoute component={Whot} />} />
       <Route path="/whot/game/:id" component={() => <ProtectedRoute component={WhotGame} />} />
       <Route path="/mines" component={() => <ProtectedRoute component={MinesGame} />} />
+      <Route path="/trivia" component={() => <ProtectedRoute component={Trivia} />} />
+      <Route path="/trivia/game/:id" component={() => <ProtectedRoute component={TriviaGame} />} />
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/admin" component={Admin} />

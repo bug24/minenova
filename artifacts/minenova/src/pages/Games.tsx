@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Dices, Layers, Bomb, ChevronRight, Trophy } from "lucide-react";
+import { Dices, Layers, Bomb, BookOpen, ChevronRight, Trophy } from "lucide-react";
 
 const games = [
   {
@@ -31,6 +31,16 @@ const games = [
     gradient: "from-emerald-500 to-teal-600",
     badge: "Solo",
     testId: "game-card-mines",
+  },
+  {
+    href: "/trivia",
+    name: "Trivia",
+    tagline: "Crypto Knowledge Quiz",
+    description: "Answer 10 crypto questions, outscore your opponent and claim the pot. Test your blockchain knowledge.",
+    icon: BookOpen,
+    gradient: "from-indigo-500 to-blue-600",
+    badge: "vs Bot / PvP",
+    testId: "game-card-trivia",
   },
 ] as const;
 

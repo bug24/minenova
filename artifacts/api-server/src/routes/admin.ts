@@ -84,6 +84,10 @@ async function seedAdminConfig() {
     whot_pvp_enabled: "true",
     whot_pvp_min_fee: "10",
     whot_pvp_max_fee: "10000",
+    trivia_enabled: "true",
+    trivia_min_fee: "50",
+    trivia_max_fee: "50000",
+    trivia_fee_pct: "5",
   };
   for (const [key, value] of Object.entries(defaults)) {
     const [existing] = await db
@@ -380,6 +384,8 @@ seedAdminConfig().catch(console.error);
 seedDefaultMessages().catch(console.error);
 seedUpgrades().catch(console.error);
 seedTasks().catch(console.error);
+
+import("./trivia").then(m => m.seedTriviaQuestions()).catch(console.error);
 
 // ─── Share Messages ────────────────────────────────────────────────────────────
 

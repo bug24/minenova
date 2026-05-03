@@ -87,6 +87,19 @@ A full-stack gamified crypto mining engagement web app.
 - **API**: plain fetch (not OpenAPI-generated) via `src/lib/ludoApi.ts`
 - **SSE auth fix**: `ludo.ts` SSE route promotes `?token=` query param to `Authorization` header before inline auth
 
+### Trivia Quiz Game
+
+- **Lobby** (`/trivia`) — mode selector (vs Bot / vs Player), entry fee input with presets, open PvP challenges list, How to Play section, recent history
+- **Game screen** (`/trivia/game/:id`) — 10 questions per game, 15-second countdown timer per question, A/B/C/D answer buttons, score counter
+- **Bot mode**: starts immediately, bot pre-programmed at ~65% accuracy (answers generated at game creation)
+- **PvP mode**: creator deducts entry fee → challenge created → opponent accepts (deducts fee) → both answer independently → scores compared at end
+- **Settlement**: winner gets full pot minus platform fee (5% default); ties refund both minus fee
+- **SSE**: `GET /api/trivia/events/:id` — notifies players when game completes
+- **Admin config keys**: `trivia_enabled`, `trivia_min_fee` (50), `trivia_max_fee` (50000), `trivia_fee_pct` (5)
+- **Questions**: 48 seeded across 8 categories: Bitcoin, Ethereum, DeFi, Mining, Altcoins, Blockchain Basics, NFTs, Exchanges
+- **API routes**: all in `artifacts/api-server/src/routes/trivia.ts`
+- **Frontend helpers**: `artifacts/minenova/src/lib/triviaApi.ts`
+
 ### WHOT Game
 
 - **Lobby** (`/whot`) — same challenge/lobby pattern as Ludo
@@ -115,3 +128,6 @@ A full-stack gamified crypto mining engagement web app.
 - `ludo_challenges` — open/matched/cancelled challenges with entry fees
 - `ludo_games` — active/completed games with full board state (JSONB)
 - `ludo_moves` — individual move log per game
+- `trivia_questions` — crypto trivia question bank (48+ questions seeded at startup)
+- `trivia_challenges` — open PvP challenges with entry fee
+- `trivia_games` — bot/pvp games with question IDs, answers (JSONB), scores, winner
