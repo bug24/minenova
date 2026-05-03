@@ -247,7 +247,9 @@ export default function TriviaGame() {
   }, [currentQ, phase]);
 
   // ─── Loading ───────────────────────────────────────────────────────────────
-  if (phase === "loading" || !game || questions.length === 0) {
+  // Allow "result" phase to bypass the loading guard — game/questions stay null
+  // when a completed game is loaded directly (they are not needed for the result view).
+  if (phase !== "result" && (phase === "loading" || !game || questions.length === 0)) {
     return (
       <div className="flex flex-col gap-4 px-4 pb-6 pt-2 max-w-lg mx-auto">
         <div className="flex items-center justify-center h-40">

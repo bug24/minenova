@@ -196,13 +196,18 @@ async function settleGame(gameId: number): Promise<void> {
   // tie: no winner, both refunded minus fee
 
   await db.transaction(async tx => {
-    await tx.update(triviaGamesTable).set({
+    // Atomic status transition — only proceed if we own the active→completed update.
+    // If another concurrent call already settled this game, rows will be empty and
+    // we skip all payouts, preventing double crediting.
+    const settled = await tx.update(triviaGamesTable).set({
       status: "completed",
       player1Score: p1Score,
       player2Score: p2Score,
       winnerId,
       endedAt: new Date(),
-    }).where(and(eq(triviaGamesTable.id, gameId), eq(triviaGamesTable.status, "active")));
+    }).where(and(eq(triviaGamesTable.id, gameId), eq(triviaGamesTable.status, "active")))
+      .returning({ id: triviaGamesTable.id });
+    if (settled.length === 0) return; // already settled by a concurrent call — skip all payouts
 
     if (winnerId) {
       await tx.update(usersTable)
