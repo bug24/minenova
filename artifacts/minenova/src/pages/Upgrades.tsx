@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useGetUpgrades, usePurchaseUpgrade, getGetUpgradesQueryKey, getGetWalletQueryKey, getGetMiningStatusQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetWallet } from "@workspace/api-client-react";
@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Zap, CheckCircle2, Cpu, TrendingUp, Lock, Copy, DollarSign, Clock } from "lucide-react";
+import { Zap, CheckCircle2, Cpu, TrendingUp, Lock, Copy, DollarSign, Clock, MessageCircle } from "lucide-react";
+import SupportChat from "@/components/SupportChat";
 
 const BASE_COINS_PER_HOUR = 10;
 const SESSION_HOURS = 12;
@@ -39,6 +40,8 @@ export default function Upgrades() {
   const [resultOpen, setResultOpen] = useState(false);
   const [hasSent, setHasSent] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
+  const [supportInitialMessage, setSupportInitialMessage] = useState<string | undefined>(undefined);
+  const supportChatTriggerRef = useRef<number>(0);
 
   const selectedUpgradeData = upgrades?.find(u => u.id === selectedUpgrade);
   const coinBalance = wallet?.totalBalance ?? 0;
@@ -99,6 +102,23 @@ export default function Upgrades() {
       setHasSent(true);
       setMarkingPaid(false);
     }
+  };
+
+  const handleSendPOP = () => {
+    const upgradeName = purchaseResult?.upgradeName ?? "upgrade";
+    const paymentTag = purchaseResult?.paymentTag;
+    const usdtCost = purchaseResult?.usdtCost;
+    const msg = paymentTag
+      ? `Hi, I just paid $${usdtCost} USDT for the ${upgradeName}. My payment tag is: ${paymentTag}. Please verify my payment.`
+      : `Hi, I just purchased the ${upgradeName} upgrade with coins. Please confirm the activation.`;
+    setSupportInitialMessage(msg);
+    supportChatTriggerRef.current += 1;
+    setResultOpen(false);
+    // Trigger the floating support chat button
+    setTimeout(() => {
+      const btn = document.querySelector<HTMLButtonElement>("[data-testid='button-support-chat-open']");
+      btn?.click();
+    }, 100);
   };
 
   return (
@@ -280,12 +300,20 @@ export default function Upgrades() {
                     Your payment will be reviewed and your <strong>{purchaseResult?.upgradeName}</strong> upgrade will be activated once confirmed. You'll receive an email notification.
                   </p>
                 </div>
+                <button
+                  onClick={handleSendPOP}
+                  className="w-full flex items-center justify-center gap-2 border border-primary/30 text-primary rounded-xl py-2.5 text-sm font-medium hover:bg-primary/10 transition-colors"
+                  data-testid="button-send-pop"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Send POP to Admin
+                </button>
                 <Button className="w-full" onClick={() => setResultOpen(false)}>Got it</Button>
               </div>
             ) : (
               <>
                 <p className="text-sm text-muted-foreground">{purchaseResult?.message} BEP20 (BSC) network.</p>
-                {purchaseResult?.usdtAddress && (
+                {purchaseResult?.usdtAddress ? (
                   <div className="space-y-3">
                     <div>
                       <p className="text-xs font-medium text-muted-foreground mb-1">Send USDT to (BEP20)</p>
@@ -317,12 +345,39 @@ export default function Upgrades() {
                       {markingPaid ? "Notifying admin..." : `I have sent $${purchaseResult.usdtCost} USDT`}
                     </Button>
                   </div>
+                ) : (
+                  /* Coin purchase success */
+                  <div className="space-y-4">
+                    <div className="text-center py-2">
+                      <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
+                        <CheckCircle2 className="w-7 h-7 text-emerald-500" />
+                      </div>
+                      <p className="font-semibold text-foreground">Upgrade Activated!</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Your <strong>{purchaseResult?.upgradeName}</strong> upgrade is now active.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleSendPOP}
+                      className="w-full flex items-center justify-center gap-2 border border-primary/30 text-primary rounded-xl py-2.5 text-sm font-medium hover:bg-primary/10 transition-colors"
+                      data-testid="button-send-pop-coins"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      Send POP to Admin
+                    </button>
+                    <Button className="w-full" onClick={() => setResultOpen(false)}>Got it</Button>
+                  </div>
                 )}
               </>
             )}
           </div>
         </DialogContent>
       </Dialog>
+
+      <SupportChat
+        key={supportChatTriggerRef.current}
+        initialMessage={supportInitialMessage}
+      />
     </div>
   );
 }

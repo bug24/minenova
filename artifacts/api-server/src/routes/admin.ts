@@ -22,6 +22,14 @@ import {
   chatMessagesTable,
   ADMIN_MODULES,
 } from "@workspace/db";
+import {
+  getSupportThreads,
+  getSupportThread,
+  postAdminReply,
+  patchSupportResolve,
+  getSupportUnreadCount,
+  requestAdminUploadUrl,
+} from "./support";
 import { eq, and, isNull, or, ilike, sql, desc, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { hashPassword, verifyPassword, generateSubAdminToken, verifySubAdminToken, isSubAdminToken } from "../lib/auth";
@@ -2273,5 +2281,14 @@ router.delete("/admin/trivia/questions/:id", requireAdmin, requirePermission("tr
   await db.delete(triviaQuestionsTable).where(eq(triviaQuestionsTable.id, id));
   res.json({ success: true });
 });
+
+// ─── Support ──────────────────────────────────────────────────────────────────
+
+router.get("/admin/support/threads", requireAdmin, requirePermission("users", "read"), getSupportThreads);
+router.get("/admin/support/threads/:userId", requireAdmin, requirePermission("users", "read"), getSupportThread);
+router.post("/admin/support/threads/:userId/reply", requireAdmin, requirePermission("users", "write"), postAdminReply);
+router.patch("/admin/support/threads/:userId/resolve", requireAdmin, requirePermission("users", "write"), patchSupportResolve);
+router.get("/admin/support/unread-count", requireAdmin, requirePermission("users", "read"), getSupportUnreadCount);
+router.post("/admin/support/uploads/request-url", requireAdmin, requirePermission("users", "write"), requestAdminUploadUrl);
 
 export default router;

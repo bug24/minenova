@@ -15,6 +15,7 @@ import whotRouter from "./whot";
 import minesRouter from "./mines";
 import triviaRouter from "./trivia";
 import storageRouter from "./storage";
+import supportRouter from "./support";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(whotRouter);
 router.use(minesRouter);
 router.use(triviaRouter);
 router.use(storageRouter);
+router.use(supportRouter);
 
 export default router;

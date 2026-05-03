@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,7 @@ import {
   Play, Zap, AlertTriangle, ToggleLeft, ToggleRight, Menu, ChevronLeft,
   Film, Link, Clock, MonitorPlay, Code, Bell, Layers, ArrowUp, ArrowDown,
   TrendingUp, TrendingDown, DollarSign, LineChart, UserPlus, ShieldCheck, Lock,
-  Mail, Send, BookOpen, ChevronDown, Filter,
+  Mail, Send, BookOpen, ChevronDown, Filter, MessageCircle, Image,
 } from "lucide-react";
 
 function apiFetch(path: string, options?: RequestInit) {
@@ -189,9 +189,9 @@ interface UserProfile extends AdminUser {
   transactions: UserTransaction[];
 }
 
-type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads" | "scripts" | "reports" | "sub-admins" | "trivia" | "audit-log";
+type Tab = "dashboard" | "users" | "withdrawals" | "transactions" | "mining" | "referrals" | "upgrades" | "settings" | "share" | "ads" | "scripts" | "reports" | "sub-admins" | "trivia" | "audit-log" | "support";
 
-const ALL_MODULES: Tab[] = ["dashboard","reports","users","withdrawals","transactions","mining","referrals","upgrades","settings","share","ads","scripts","trivia"];
+const ALL_MODULES: Tab[] = ["dashboard","reports","users","withdrawals","transactions","mining","referrals","upgrades","settings","share","ads","scripts","trivia","support"];
 
 interface SubAdminRecord {
   id: number; username: string; email: string; isActive: boolean; createdAt: string;
@@ -4155,6 +4155,306 @@ function ReportsTab({ secret }: { secret: string }) {
   );
 }
 
+// ─── Support Tab ─────────────────────────────────────────────────────────────
+
+interface SupportMessage {
+  id: number;
+  userId: number;
+  senderRole: "user" | "admin";
+  message: string | null;
+  imageUrl: string | null;
+  isRead: boolean;
+  isResolved: boolean;
+  createdAt: string;
+}
+
+interface SupportThread {
+  userId: number;
+  username: string;
+  avatarUrl: string | null;
+  latestAt: string;
+  latestMessage: string | null;
+  unreadCount: number;
+  isResolved: boolean;
+}
+
+function SupportTab({ secret, onUnreadChange }: { secret: string; onUnreadChange?: (n: number) => void }) {
+  const h = { "x-admin-secret": secret, "Content-Type": "application/json" };
+  const [threads, setThreads] = useState<SupportThread[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [messages, setMessages] = useState<SupportMessage[]>([]);
+  const [replyText, setReplyText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [loadingThreads, setLoadingThreads] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [pendingImageUrl, setPendingImageUrl] = useState<string | null>(null);
+  const [pendingObjectPath, setPendingObjectPath] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
+
+  const fetchThreads = useCallback(async () => {
+    setLoadingThreads(true);
+    try {
+      const res = await apiFetch("/admin/support/threads", { headers: h });
+      if (res.ok) {
+        const data: SupportThread[] = await res.json();
+        setThreads(data);
+        const total = data.reduce((acc, t) => acc + Number(t.unreadCount), 0);
+        onUnreadChange?.(total);
+      }
+    } finally { setLoadingThreads(false); }
+  }, [secret]); // eslint-disable-line
+
+  const fetchMessages = useCallback(async (userId: number) => {
+    setLoadingMessages(true);
+    try {
+      const res = await apiFetch(`/admin/support/threads/${userId}`, { headers: h });
+      if (res.ok) {
+        const data: SupportMessage[] = await res.json();
+        setMessages(data);
+        // Re-fetch threads to update unread counts
+        fetchThreads();
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 80);
+      }
+    } finally { setLoadingMessages(false); }
+  }, [secret, fetchThreads]); // eslint-disable-line
+
+  useEffect(() => { fetchThreads(); }, [fetchThreads]);
+
+  useEffect(() => {
+    if (selectedUserId) fetchMessages(selectedUserId);
+  }, [selectedUserId, fetchMessages]);
+
+  const handleSend = async () => {
+    if (!selectedUserId || (!replyText.trim() && !pendingObjectPath)) return;
+    setSending(true);
+    try {
+      const body: Record<string, string> = {};
+      if (replyText.trim()) body.message = replyText.trim();
+      if (pendingObjectPath) body.objectPath = pendingObjectPath;
+      const res = await apiFetch(`/admin/support/threads/${selectedUserId}/reply`, {
+        method: "POST",
+        headers: h,
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const msg: SupportMessage = await res.json();
+        setMessages(prev => [...prev, msg]);
+        setReplyText("");
+        setPendingImageUrl(null);
+        setPendingObjectPath(null);
+        fetchThreads();
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 80);
+      }
+    } finally { setSending(false); }
+  };
+
+  const handleResolve = async (userId: number) => {
+    await apiFetch(`/admin/support/threads/${userId}/resolve`, { method: "PATCH", headers: h });
+    fetchThreads();
+    if (selectedUserId === userId) {
+      setMessages(prev => prev.map(m => ({ ...m, isResolved: true })));
+    }
+    toast({ title: "Thread resolved" });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!["image/jpeg", "image/png"].includes(file.type) || file.size > 5 * 1024 * 1024) return;
+    setUploading(true);
+    try {
+      const urlRes = await apiFetch("/admin/support/uploads/request-url", {
+        method: "POST",
+        headers: h,
+        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+      });
+      if (!urlRes.ok) throw new Error();
+      const { uploadURL, objectPath } = await urlRes.json() as { uploadURL: string; objectPath: string };
+      const putRes = await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      if (!putRes.ok) throw new Error();
+      setPendingImageUrl(URL.createObjectURL(file));
+      setPendingObjectPath(objectPath);
+    } catch {
+      toast({ variant: "destructive", title: "Upload failed" });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const selectedThread = threads.find(t => t.userId === selectedUserId);
+
+  return (
+    <div className="flex h-full gap-4" style={{ minHeight: "calc(100vh - 140px)" }}>
+      {/* Thread list */}
+      <div className="w-72 shrink-0 border border-border rounded-xl overflow-hidden flex flex-col bg-card">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+          <h3 className="font-semibold text-sm">Conversations</h3>
+          <button onClick={fetchThreads} className="text-muted-foreground hover:text-foreground" title="Refresh">
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingThreads ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {threads.length === 0 && !loadingThreads && (
+            <div className="text-center py-10 text-xs text-muted-foreground">No support conversations yet</div>
+          )}
+          {threads.map(t => (
+            <button
+              key={t.userId}
+              onClick={() => setSelectedUserId(t.userId)}
+              className={`w-full flex items-start gap-3 px-3 py-3 border-b border-border/50 text-left hover:bg-muted/50 transition-colors ${selectedUserId === t.userId ? "bg-primary/10 border-l-2 border-l-primary" : ""}`}
+            >
+              <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                {t.avatarUrl ? (
+                  <img src={t.avatarUrl} alt={t.username} className="w-full h-full rounded-full object-cover" />
+                ) : (
+                  <span className="text-xs font-bold text-primary">{t.username[0]?.toUpperCase()}</span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-sm font-medium truncate">{t.username}</span>
+                  {Number(t.unreadCount) > 0 && (
+                    <span className="shrink-0 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+                      {Number(t.unreadCount) > 9 ? "9+" : t.unreadCount}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground truncate mt-0.5">{t.latestMessage ?? "Image"}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {new Date(t.latestAt).toLocaleDateString()}
+                </p>
+              </div>
+              {t.isResolved && <span className="text-[9px] text-emerald-500 font-semibold shrink-0 mt-0.5">Resolved</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Message panel */}
+      <div className="flex-1 border border-border rounded-xl overflow-hidden flex flex-col bg-card min-w-0">
+        {!selectedUserId ? (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            <div className="text-center">
+              <MessageCircle className="w-10 h-10 mx-auto mb-2 opacity-20" />
+              <p className="text-sm">Select a conversation</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Thread header */}
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-sm">{selectedThread?.username}</span>
+                {selectedThread?.isResolved && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-500 font-medium">Resolved</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => fetchMessages(selectedUserId)}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Refresh"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingMessages ? "animate-spin" : ""}`} />
+                </button>
+                {!selectedThread?.isResolved && (
+                  <button
+                    onClick={() => handleResolve(selectedUserId)}
+                    className="text-xs px-2 py-1 rounded bg-emerald-500/20 text-emerald-500 hover:bg-emerald-500/30 transition-colors font-medium"
+                  >
+                    Mark Resolved
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+              {messages.map(msg => {
+                const isAdmin = msg.senderRole === "admin";
+                return (
+                  <div key={msg.id} className={`flex gap-2 ${isAdmin ? "flex-row-reverse" : "flex-row"}`}>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold ${isAdmin ? "bg-amber-500/20 text-amber-500" : "bg-primary/20 text-primary"}`}>
+                      {isAdmin ? "A" : (selectedThread?.username?.[0]?.toUpperCase() ?? "U")}
+                    </div>
+                    <div className={`max-w-[70%] space-y-1 flex flex-col ${isAdmin ? "items-end" : "items-start"}`}>
+                      {msg.imageUrl && (
+                        <a href={msg.imageUrl} target="_blank" rel="noopener noreferrer">
+                          <img src={msg.imageUrl} alt="attachment" className="rounded-xl max-w-xs max-h-48 object-cover border border-card-border" />
+                        </a>
+                      )}
+                      {msg.message && (
+                        <div className={`px-3 py-2 rounded-2xl text-sm ${isAdmin ? "bg-primary text-primary-foreground rounded-tr-sm" : "bg-muted text-foreground rounded-tl-sm"}`}>
+                          {msg.message}
+                        </div>
+                      )}
+                      <span className="text-[10px] text-muted-foreground">
+                        {new Date(msg.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={bottomRef} />
+            </div>
+
+            {/* Pending image preview */}
+            {pendingImageUrl && (
+              <div className="px-3 pb-1 flex items-center gap-2 border-t border-border pt-2">
+                <div className="relative inline-block">
+                  <img src={pendingImageUrl} alt="preview" className="h-14 w-14 object-cover rounded-lg border border-card-border" />
+                  <button
+                    onClick={() => { setPendingImageUrl(null); setPendingObjectPath(null); }}
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-white flex items-center justify-center"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+                <span className="text-xs text-muted-foreground">Image ready to send</span>
+              </div>
+            )}
+
+            {/* Reply area */}
+            <div className="border-t border-border p-3 flex items-end gap-2">
+              <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.png" className="sr-only" onChange={handleFileChange} />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="text-muted-foreground hover:text-foreground transition-colors shrink-0 mb-1"
+                title="Attach image"
+              >
+                {uploading ? <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" /> : <Image className="w-4 h-4" />}
+              </button>
+              <textarea
+                value={replyText}
+                onChange={e => setReplyText(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                placeholder="Type a reply…"
+                rows={1}
+                className="resize-none flex-1 bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary min-h-9"
+                disabled={sending}
+              />
+              <Button
+                size="sm"
+                onClick={handleSend}
+                disabled={sending || (!replyText.trim() && !pendingObjectPath)}
+                className="h-9 gap-1.5"
+              >
+                {sending ? <div className="w-3.5 h-3.5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                Reply
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Sub Admins Tab ───────────────────────────────────────────────────────────
 
 const MODULE_LABELS: Record<string, string> = {
@@ -4952,6 +5252,7 @@ export default function Admin() {
   const [upgradeSubTab, setUpgradeSubTab] = useState<UpgradeSubTab>("manage");
   const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
   const [pendingWithdrawalsCount, setPendingWithdrawalsCount] = useState(0);
+  const [supportUnreadCount, setSupportUnreadCount] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [needs2FA, setNeeds2FA] = useState(false);
   const [totpLoginCode, setTotpLoginCode] = useState("");
@@ -5054,7 +5355,7 @@ export default function Admin() {
 
   const handleLogout = () => {
     setAuthed(false); setSecret(""); setNeeds2FA(false); setTotpLoginCode(""); setShowChangePassword(false);
-    setPendingPaymentsCount(0); setPendingWithdrawalsCount(0); setUpgradeSubTab("manage");
+    setPendingPaymentsCount(0); setPendingWithdrawalsCount(0); setSupportUnreadCount(0); setUpgradeSubTab("manage");
     setIsSubAdmin(false); setSubAdminPermissions({}); setSubUsername(""); setSubPassword("");
   };
 
@@ -5077,6 +5378,10 @@ export default function Admin() {
             setPendingWithdrawalsCount(data.pendingCount ?? 0);
           })
           .catch(() => {}),
+        apiFetch("/admin/support/unread-count", { headers: { "x-admin-secret": secret } })
+          .then(r => r.json())
+          .then((data: { count: number }) => { setSupportUnreadCount(data.count ?? 0); })
+          .catch(() => {}),
       ]);
     };
     fetchPending();
@@ -5094,7 +5399,9 @@ export default function Admin() {
   }
 
   const handleBellClick = async () => {
-    if (pendingWithdrawalsCount >= pendingPaymentsCount && pendingWithdrawalsCount > 0) {
+    if (supportUnreadCount > 0 && supportUnreadCount >= pendingWithdrawalsCount && supportUnreadCount >= pendingPaymentsCount) {
+      setTab("support");
+    } else if (pendingWithdrawalsCount >= pendingPaymentsCount && pendingWithdrawalsCount > 0) {
       setTab("withdrawals");
     } else {
       setTab("upgrades");
@@ -5252,6 +5559,7 @@ export default function Admin() {
     { id: "ads", label: "Ads", icon: MonitorPlay },
     { id: "scripts", label: "Scripts", icon: Code },
     { id: "trivia", label: "Trivia", icon: BookOpen },
+    { id: "support", label: "Support", icon: MessageCircle },
     { id: "sub-admins", label: "Sub Admins", icon: UserPlus, superAdminOnly: true },
     { id: "audit-log", label: "Audit Log", icon: Activity, superAdminOnly: true },
   ];
@@ -5290,7 +5598,14 @@ export default function Admin() {
                 title={!sidebarOpen ? t.label : undefined}
                 className={`w-full flex items-center gap-3 px-2.5 py-2.5 rounded-lg text-sm font-medium transition-colors ${tab === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"} ${!sidebarOpen ? "justify-center" : ""}`}
               >
-                <t.icon className="w-4 h-4 shrink-0" />
+                <div className="relative shrink-0">
+                  <t.icon className="w-4 h-4" />
+                  {t.id === "support" && supportUnreadCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+                      {supportUnreadCount > 9 ? "9+" : supportUnreadCount}
+                    </span>
+                  )}
+                </div>
                 {sidebarOpen && <span className="truncate flex-1 text-left">{t.label}</span>}
                 {sidebarOpen && readOnly && <Lock className="w-3 h-3 shrink-0 text-muted-foreground/50" />}
               </button>
@@ -5348,10 +5663,11 @@ export default function Admin() {
             <h2 className="font-bold">{currentTab?.label}</h2>
           </div>
           {(() => {
-            const totalPending = pendingPaymentsCount + pendingWithdrawalsCount;
+            const totalPending = pendingPaymentsCount + pendingWithdrawalsCount + supportUnreadCount;
             const parts: string[] = [];
             if (pendingWithdrawalsCount > 0) parts.push(`${pendingWithdrawalsCount} pending withdrawal${pendingWithdrawalsCount > 1 ? "s" : ""}`);
             if (pendingPaymentsCount > 0) parts.push(`${pendingPaymentsCount} upgrade payment${pendingPaymentsCount > 1 ? "s" : ""}`);
+            if (supportUnreadCount > 0) parts.push(`${supportUnreadCount} support message${supportUnreadCount > 1 ? "s" : ""}`);
             const tooltip = parts.length > 0 ? parts.join(" · ") : "Notifications";
             return (
               <button
@@ -5460,6 +5776,7 @@ export default function Admin() {
           {tab === "ads" && <AdsTab secret={secret} />}
           {tab === "scripts" && <ScriptsTab secret={secret} />}
           {tab === "trivia" && <TriviaTab secret={secret} />}
+          {tab === "support" && <SupportTab secret={secret} onUnreadChange={setSupportUnreadCount} />}
           {tab === "sub-admins" && <SubAdminsTab secret={secret} />}
           {tab === "audit-log" && <AuditLogTab secret={secret} />}
         </div>

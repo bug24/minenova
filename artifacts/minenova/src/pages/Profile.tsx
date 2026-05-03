@@ -4,10 +4,11 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Link } from "wouter";
-import { Camera, Sun, Moon, Wallet, Users, TrendingUp, LogOut, ExternalLink, Pickaxe } from "lucide-react";
+import { Camera, Sun, Moon, Wallet, Users, TrendingUp, LogOut, ExternalLink, Pickaxe, MessageCircle } from "lucide-react";
 import { useLogout } from "@workspace/api-client-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import SupportChat from "@/components/SupportChat";
 
 export default function Profile() {
   const { user, logout, updateUser } = useAuth();
@@ -218,6 +219,25 @@ export default function Profile() {
         </Link>
       </div>
 
+      {/* Support */}
+      <div className="bg-card border border-card-border rounded-xl p-5">
+        <h3 className="font-semibold mb-1">Need Help?</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Contact admin directly — attach screenshots or proof of payment if needed.
+        </p>
+        <button
+          onClick={() => {
+            const btn = document.querySelector<HTMLButtonElement>("[data-testid='button-support-chat-open']");
+            btn?.click();
+          }}
+          className="w-full flex items-center justify-center gap-2 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-xl py-2.5 text-sm font-medium transition-colors"
+          data-testid="button-contact-support"
+        >
+          <MessageCircle className="w-4 h-4" />
+          Chat with Support
+        </button>
+      </div>
+
       {/* Account Info */}
       <div className="bg-card border border-card-border rounded-xl p-5 space-y-3">
         <h3 className="font-semibold">Account Info</h3>
@@ -242,6 +262,8 @@ export default function Profile() {
         <LogOut className="w-4 h-4" />
         Logout
       </Button>
+
+      <SupportChat />
     </div>
   );
 }
