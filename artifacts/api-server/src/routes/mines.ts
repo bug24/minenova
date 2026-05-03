@@ -131,7 +131,7 @@ router.post("/mines/start", requireAuth, async (req: Request, res: Response): Pr
         type: "mines_bet",
         amount: -betNum,
         status: "completed",
-        description: `Mines bet (${mines} mines, ${betNum} coins)`,
+        description: `Mines wager (${mines} mines, ${betNum} coins)`,
       });
 
       const [game] = await tx.insert(minesGamesTable).values({

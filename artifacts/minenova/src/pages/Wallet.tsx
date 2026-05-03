@@ -6,6 +6,7 @@ import {
   useGetUpgrades,
   getGetWalletQueryKey,
   getGetTransactionsQueryKey,
+  type Transaction,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -17,7 +18,11 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Wallet, ArrowUpRight, Clock, CheckCircle2, XCircle, AlertCircle, TrendingUp, Zap, Twitter, Facebook, MessageCircle, Share2, MailWarning } from "lucide-react";
+import {
+  Wallet, ArrowUpRight, Clock, CheckCircle2, XCircle, AlertCircle,
+  TrendingUp, Zap, Twitter, Facebook, MessageCircle, Share2, MailWarning,
+  Pickaxe, Gift, Gamepad2, CreditCard, RefreshCcw, Hash, CalendarDays, Info,
+} from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -48,12 +53,47 @@ function getStatusBadge(status: string) {
   return <Badge variant="secondary" className="text-xs">{status}</Badge>;
 }
 
-function getTypeIcon(type: string) {
-  if (type === "withdrawal") return <ArrowUpRight className="w-4 h-4 text-rose-500" />;
-  if (type === "mining") return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
-  if (type === "task") return <CheckCircle2 className="w-4 h-4 text-primary" />;
-  if (type === "upgrade") return <XCircle className="w-4 h-4 text-orange-500" />;
-  return <Clock className="w-4 h-4 text-muted-foreground" />;
+const TYPE_LABELS: Record<string, string> = {
+  withdrawal: "Withdrawal",
+  mining: "Mining Reward",
+  task: "Task Reward",
+  referral: "Referral Bonus",
+  bonus: "Bonus",
+  upgrade: "Upgrade Purchase",
+  upgrade_payment: "Upgrade Payment",
+  mines_bet: "Mines Wager",
+  mines_win: "Mines Win",
+  mines_cashout: "Mines Cashout",
+  ludo_entry: "Ludo Entry Fee",
+  ludo_win: "Ludo Win",
+  ludo_fee: "Ludo Platform Fee",
+  ludo_refund: "Ludo Refund",
+  whot_entry: "Whot Entry Fee",
+  whot_win: "Whot Win",
+  whot_fee: "Whot Platform Fee",
+  whot_refund: "Whot Refund",
+  trivia_entry: "Trivia Entry Fee",
+  trivia_win: "Trivia Win",
+  trivia_fee: "Trivia Platform Fee",
+  trivia_refund: "Trivia Refund",
+};
+
+function getTypeLabel(type: string) {
+  return TYPE_LABELS[type] ?? type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function getTypeIcon(type: string, size = "w-4 h-4") {
+  if (type === "withdrawal") return <ArrowUpRight className={`${size} text-rose-500`} />;
+  if (type === "mining") return <Pickaxe className={`${size} text-emerald-500`} />;
+  if (type === "task") return <CheckCircle2 className={`${size} text-primary`} />;
+  if (type === "referral" || type === "bonus") return <Gift className={`${size} text-amber-500`} />;
+  if (type === "upgrade" || type === "upgrade_payment") return <CreditCard className={`${size} text-orange-500`} />;
+  if (type.startsWith("mines_") || type.startsWith("ludo_") || type.startsWith("whot_") || type.startsWith("trivia_")) {
+    if (type.endsWith("_win") || type.endsWith("_cashout")) return <CheckCircle2 className={`${size} text-emerald-500`} />;
+    if (type.endsWith("_refund")) return <RefreshCcw className={`${size} text-sky-400`} />;
+    return <Gamepad2 className={`${size} text-violet-400`} />;
+  }
+  return <Clock className={`${size} text-muted-foreground`} />;
 }
 
 type WithdrawStep = "choose" | "form" | "result";
@@ -70,6 +110,7 @@ export default function WalletPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [step, setStep] = useState<WithdrawStep>("choose");
   const [withdrawalResult, setWithdrawalResult] = useState<WithdrawalResult | null>(null);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
   const { user } = useAuth();
   const coinBalance = wallet?.withdrawableBalance ?? 0;
@@ -238,7 +279,12 @@ export default function WalletPage() {
         ) : transactions && transactions.length > 0 ? (
           <div className="space-y-2">
             {transactions.map(tx => (
-              <div key={tx.id} className="bg-card border border-card-border rounded-xl p-3 flex items-center gap-3" data-testid={`tx-${tx.id}`}>
+              <button
+                key={tx.id}
+                onClick={() => setSelectedTx(tx)}
+                className="w-full bg-card border border-card-border rounded-xl p-3 flex items-center gap-3 text-left hover:bg-accent/50 active:scale-[0.99] transition-all"
+                data-testid={`tx-${tx.id}`}
+              >
                 <div className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
                   {getTypeIcon(tx.type)}
                 </div>
@@ -246,13 +292,13 @@ export default function WalletPage() {
                   <p className="text-sm font-medium truncate">{tx.description}</p>
                   <p className="text-xs text-muted-foreground">{new Date(tx.createdAt).toLocaleDateString()}</p>
                 </div>
-                <div className="text-right flex-shrink-0">
+                <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
                   <p className={`text-sm font-bold ${tx.amount >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
                     {tx.amount >= 0 ? "+" : ""}{tx.amount.toFixed(2)}
                   </p>
                   {getStatusBadge(tx.status)}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         ) : (
@@ -508,6 +554,78 @@ export default function WalletPage() {
               <Button className="w-full" onClick={closeDialog}>Got it</Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Transaction Detail Modal */}
+      <Dialog open={!!selectedTx} onOpenChange={open => { if (!open) setSelectedTx(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Info className="w-4 h-4 text-primary" />
+              Transaction Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedTx && (() => {
+            const tx = selectedTx;
+            const dt = new Date(tx.createdAt);
+            const isCredit = tx.amount >= 0;
+            return (
+              <div className="space-y-4 pt-1">
+                {/* Icon + type header */}
+                <div className="flex items-center gap-3 p-4 bg-muted rounded-xl">
+                  <div className="w-11 h-11 rounded-xl bg-background flex items-center justify-center flex-shrink-0">
+                    {getTypeIcon(tx.type, "w-5 h-5")}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-foreground text-sm">{getTypeLabel(tx.type)}</p>
+                    <p className={`text-xl font-black ${isCredit ? "text-emerald-500" : "text-rose-500"}`}>
+                      {isCredit ? "+" : ""}{tx.amount.toFixed(2)} <span className="text-sm font-normal text-muted-foreground">coins</span>
+                    </p>
+                  </div>
+                  <div className="ml-auto flex-shrink-0">{getStatusBadge(tx.status)}</div>
+                </div>
+
+                {/* Details rows */}
+                <div className="space-y-0 divide-y divide-border rounded-xl border border-card-border overflow-hidden">
+                  <div className="flex justify-between items-start px-4 py-3 bg-card">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                      <Hash className="w-3 h-3" /> Transaction ID
+                    </span>
+                    <span className="text-xs font-mono text-foreground font-semibold">#{tx.id}</span>
+                  </div>
+
+                  <div className="flex justify-between items-start px-4 py-3 bg-card">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                      <CalendarDays className="w-3 h-3" /> Date &amp; Time
+                    </span>
+                    <div className="text-right">
+                      <p className="text-xs font-semibold text-foreground">{dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}</p>
+                      <p className="text-[11px] text-muted-foreground">{dt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-start px-4 py-3 bg-card">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                      <Info className="w-3 h-3" /> Description
+                    </span>
+                    <span className="text-xs text-foreground text-right max-w-[60%] leading-relaxed">{tx.description}</span>
+                  </div>
+
+                  {tx.amount !== 0 && (
+                    <div className="flex justify-between items-center px-4 py-3 bg-card">
+                      <span className="text-xs text-muted-foreground">USDT value</span>
+                      <span className="text-xs font-semibold text-foreground">
+                        {isCredit ? "+" : ""}${(Math.abs(tx.amount) / COINS_PER_USDT).toFixed(4)} USDT
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <Button className="w-full" variant="outline" onClick={() => setSelectedTx(null)}>Close</Button>
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
