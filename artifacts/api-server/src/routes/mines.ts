@@ -433,6 +433,7 @@ router.get("/mines/leaderboard", async (_req: Request, res: Response): Promise<v
     todayStart.setHours(0, 0, 0, 0);
 
     const baseSelect = {
+      id: minesGamesTable.id,
       username: usersTable.username,
       mineCount: minesGamesTable.mineCount,
       multiplier: minesGamesTable.currentMultiplier,
@@ -441,26 +442,29 @@ router.get("/mines/leaderboard", async (_req: Request, res: Response): Promise<v
       endedAt: minesGamesTable.endedAt,
     };
 
-    const [today, allTime] = await Promise.all([
-      db.select(baseSelect)
-        .from(minesGamesTable)
-        .innerJoin(usersTable, eq(minesGamesTable.userId, usersTable.id))
-        .where(and(
-          eq(minesGamesTable.status, "won"),
-          gte(minesGamesTable.endedAt, todayStart),
-        ))
-        .orderBy(desc(minesGamesTable.finalPayout))
-        .limit(10),
+    const wonToday = and(eq(minesGamesTable.status, "won"), gte(minesGamesTable.endedAt, todayStart));
+    const wonAllTime = eq(minesGamesTable.status, "won");
 
-      db.select(baseSelect)
-        .from(minesGamesTable)
+    const [
+      todayByPayout, allTimeByPayout,
+      todayByMultiplier, allTimeByMultiplier,
+    ] = await Promise.all([
+      db.select(baseSelect).from(minesGamesTable)
         .innerJoin(usersTable, eq(minesGamesTable.userId, usersTable.id))
-        .where(eq(minesGamesTable.status, "won"))
-        .orderBy(desc(minesGamesTable.finalPayout))
-        .limit(10),
+        .where(wonToday).orderBy(desc(minesGamesTable.finalPayout)).limit(10),
+      db.select(baseSelect).from(minesGamesTable)
+        .innerJoin(usersTable, eq(minesGamesTable.userId, usersTable.id))
+        .where(wonAllTime).orderBy(desc(minesGamesTable.finalPayout)).limit(10),
+      db.select(baseSelect).from(minesGamesTable)
+        .innerJoin(usersTable, eq(minesGamesTable.userId, usersTable.id))
+        .where(wonToday).orderBy(desc(minesGamesTable.currentMultiplier)).limit(10),
+      db.select(baseSelect).from(minesGamesTable)
+        .innerJoin(usersTable, eq(minesGamesTable.userId, usersTable.id))
+        .where(wonAllTime).orderBy(desc(minesGamesTable.currentMultiplier)).limit(10),
     ]);
 
-    const fmt = (rows: typeof today) => rows.map((r, idx) => ({
+    const fmt = (rows: typeof todayByPayout) => rows.map((r, idx) => ({
+      id: r.id,
       rank: idx + 1,
       username: r.username,
       mineCount: r.mineCount,
@@ -471,7 +475,10 @@ router.get("/mines/leaderboard", async (_req: Request, res: Response): Promise<v
       endedAt: r.endedAt,
     }));
 
-    res.json({ today: fmt(today), allTime: fmt(allTime) });
+    res.json({
+      today: { byPayout: fmt(todayByPayout), byMultiplier: fmt(todayByMultiplier) },
+      allTime: { byPayout: fmt(allTimeByPayout), byMultiplier: fmt(allTimeByMultiplier) },
+    });
   } catch (err) { handleErr(err, res); }
 });
 

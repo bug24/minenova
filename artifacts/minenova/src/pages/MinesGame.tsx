@@ -69,6 +69,7 @@ interface MinesSettings {
 }
 
 interface LeaderboardEntry {
+  id: number;
   rank: number;
   username: string;
   mineCount: number;
@@ -79,9 +80,14 @@ interface LeaderboardEntry {
   endedAt: string | null;
 }
 
+interface LeaderboardSlice {
+  byPayout: LeaderboardEntry[];
+  byMultiplier: LeaderboardEntry[];
+}
+
 interface Leaderboard {
-  today: LeaderboardEntry[];
-  allTime: LeaderboardEntry[];
+  today: LeaderboardSlice;
+  allTime: LeaderboardSlice;
 }
 
 const TOTAL_TILES = 25;
@@ -206,6 +212,7 @@ export default function MinesGame() {
   const [leaderboard, setLeaderboard] = useState<Leaderboard | null>(null);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [lbTab, setLbTab] = useState<"today" | "allTime">("today");
+  const [lbSort, setLbSort] = useState<"byPayout" | "byMultiplier">("byPayout");
   const [streak, setStreak] = useState<number>(0);
 
   const betNum = parseFloat(bet) || 0;
@@ -452,29 +459,41 @@ export default function MinesGame() {
       {/* Leaderboard panel */}
       {showLeaderboard && (
         <div className="bg-card border border-border rounded-2xl p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Trophy className="w-3.5 h-3.5 text-amber-400" />
-            <p className="text-xs font-bold flex-1">Top Wins</p>
+          <div className="flex items-center gap-2 mb-2">
+            <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <p className="text-xs font-bold flex-1">Leaderboard</p>
             <div className="flex rounded-lg overflow-hidden border border-border text-[10px] font-semibold">
-              <button
-                onClick={() => setLbTab("today")}
-                className={`px-2.5 py-1 transition-colors ${lbTab === "today" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
-              >Today</button>
-              <button
-                onClick={() => setLbTab("allTime")}
-                className={`px-2.5 py-1 transition-colors ${lbTab === "allTime" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
-              >All Time</button>
+              <button onClick={() => setLbTab("today")}
+                className={`px-2.5 py-1 transition-colors ${lbTab === "today" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}>
+                Today
+              </button>
+              <button onClick={() => setLbTab("allTime")}
+                className={`px-2.5 py-1 transition-colors ${lbTab === "allTime" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}>
+                All Time
+              </button>
             </div>
           </div>
+          {/* Sort row */}
+          <div className="flex gap-1.5 mb-3">
+            <button onClick={() => setLbSort("byPayout")}
+              className={`flex-1 py-1 rounded-md text-[10px] font-semibold transition-colors ${lbSort === "byPayout" ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-muted text-muted-foreground"}`}>
+              Biggest Win
+            </button>
+            <button onClick={() => setLbSort("byMultiplier")}
+              className={`flex-1 py-1 rounded-md text-[10px] font-semibold transition-colors ${lbSort === "byMultiplier" ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-muted text-muted-foreground"}`}>
+              Highest Multiplier
+            </button>
+          </div>
           {(() => {
-            const entries = lbTab === "today" ? (leaderboard?.today ?? []) : (leaderboard?.allTime ?? []);
+            const slice = lbTab === "today" ? leaderboard?.today : leaderboard?.allTime;
+            const entries = slice?.[lbSort] ?? [];
             if (entries.length === 0) {
               return <p className="text-xs text-muted-foreground text-center py-4">No wins recorded {lbTab === "today" ? "today" : "yet"}</p>;
             }
             return (
               <div className="space-y-1.5">
                 {entries.map(e => (
-                  <div key={`${e.rank}-${e.username}`} className="flex items-center gap-2.5 py-1.5">
+                  <div key={e.id} className="flex items-center gap-2.5 py-1.5">
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-black ${
                       e.rank === 1 ? "bg-amber-400/20 text-amber-400" :
                       e.rank === 2 ? "bg-slate-400/20 text-slate-300" :
@@ -485,11 +504,15 @@ export default function MinesGame() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold truncate">{e.username}</p>
-                      <p className="text-[10px] text-muted-foreground">{e.mineCount} mine{e.mineCount !== 1 ? "s" : ""} · {e.multiplier.toFixed(2)}×</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {e.mineCount} mine{e.mineCount !== 1 ? "s" : ""} · {e.multiplier.toFixed(2)}×
+                      </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-xs font-bold text-emerald-400">+{e.profit.toFixed(0)}</p>
-                      <p className="text-[10px] text-muted-foreground">{e.payout.toFixed(0)} out</p>
+                      <p className={`text-xs font-bold ${lbSort === "byMultiplier" ? "text-amber-400" : "text-emerald-400"}`}>
+                        {lbSort === "byMultiplier" ? `${e.multiplier.toFixed(2)}×` : `+${e.profit.toFixed(0)}`}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">{e.payout.toFixed(0)} coins</p>
                     </div>
                   </div>
                 ))}
