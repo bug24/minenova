@@ -44,7 +44,7 @@ function getActionBadge(suit: WhotCardSuit, value: number): { label: string; col
     case 2:  return { label: "+2",   color: "#dc2626" };
     case 5:  return { label: "+3",   color: "#ea580c" };
     case 8:  return { label: "SKIP", color: "#0284c7" };
-    case 14: return { label: "MKT",  color: "#16a34a" };
+    case 14: return { label: "MARKET", color: "#16a34a" };
     default: return null;
   }
 }
