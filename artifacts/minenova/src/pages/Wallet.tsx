@@ -154,19 +154,23 @@ export default function WalletPage() {
     } catch { /* non-fatal */ }
   }, [sharedWithdrawalIds, toast, queryClient]);
 
-  const captureAndDownloadReceipt = useCallback(async () => {
+  const captureAndDownloadReceipt = useCallback(async (amountUsdt?: number, withdrawalId?: number) => {
     if (!receiptRef.current) return;
     setScreenshotting(true);
     try {
       const canvas = await html2canvas(receiptRef.current, { backgroundColor: "#0f0f0f", scale: 2 });
       const url = canvas.toDataURL("image/png");
+      const shareText = amountUsdt != null
+        ? buildShareMsg(amountUsdt, "whatsapp")
+        : `I just withdrew USDT from MineNova! Mine crypto and get paid.\n\n${referralUrl}`;
 
       if (navigator.canShare && navigator.share) {
         try {
           const blob = await (await fetch(url)).blob();
           const file = new File([blob], "minenova-withdrawal.png", { type: "image/png" });
           if (navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: "MineNova Withdrawal", text: "I just withdrew USDT from MineNova!" });
+            await navigator.share({ files: [file], title: "MineNova Withdrawal", text: shareText });
+            if (withdrawalId != null) claimShareBonus(withdrawalId);
             return;
           }
         } catch { /* fallback to download */ }
@@ -182,7 +186,7 @@ export default function WalletPage() {
     } finally {
       setScreenshotting(false);
     }
-  }, [toast]);
+  }, [toast, buildShareMsg, referralUrl, claimShareBonus]);
 
   const handleShare = useCallback((platform: "twitter" | "whatsapp" | "facebook", amount: number, withdrawalId: number) => {
     const msg = encodeURIComponent(buildShareMsg(amount, platform));
@@ -360,10 +364,10 @@ export default function WalletPage() {
         ) : transactions && transactions.length > 0 ? (
           <div className="space-y-2">
             {transactions.map(tx => (
-              <div key={tx.id} className="relative group">
+              <div key={tx.id} className="flex items-stretch gap-1.5">
                 <button
                   onClick={() => setSelectedTx(tx)}
-                  className="w-full bg-card border border-card-border rounded-xl p-3 flex items-center gap-3 text-left hover:bg-accent/50 active:scale-[0.99] transition-all"
+                  className="flex-1 min-w-0 bg-card border border-card-border rounded-xl p-3 flex items-center gap-3 text-left hover:bg-accent/50 active:scale-[0.99] transition-all"
                   data-testid={`tx-${tx.id}`}
                 >
                   <div className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
@@ -382,11 +386,12 @@ export default function WalletPage() {
                 </button>
                 {tx.type === "withdrawal" && (
                   <button
-                    onClick={e => { e.stopPropagation(); setShareTx(tx); }}
-                    className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 rounded-lg bg-primary/10 hover:bg-primary/20 flex items-center justify-center"
+                    onClick={() => setShareTx(tx)}
+                    className="w-9 bg-card border border-card-border rounded-xl flex items-center justify-center hover:bg-primary/10 active:scale-95 transition-all flex-shrink-0"
                     title="Share withdrawal"
+                    aria-label="Share withdrawal"
                   >
-                    <Share2 className="w-3.5 h-3.5 text-primary" />
+                    <Share2 className="w-4 h-4 text-primary" />
                   </button>
                 )}
               </div>
@@ -638,7 +643,7 @@ export default function WalletPage() {
                     <Share2 className="w-3 h-3" /> Share with your referral link
                   </p>
                   <button
-                    onClick={captureAndDownloadReceipt}
+                    onClick={() => captureAndDownloadReceipt(withdrawalResult.amount, withdrawalResult.transactionId)}
                     disabled={screenshotting}
                     className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                   >
@@ -670,7 +675,7 @@ export default function WalletPage() {
                   </button>
                 </div>
                 <button
-                  onClick={captureAndDownloadReceipt}
+                  onClick={() => captureAndDownloadReceipt(withdrawalResult.amount, withdrawalResult.transactionId)}
                   disabled={screenshotting}
                   className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border border-border hover:bg-accent/50 transition-colors text-xs text-muted-foreground"
                 >

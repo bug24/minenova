@@ -253,10 +253,16 @@ router.post("/wallet/withdrawal-share-bonus", requireAuth, async (req, res): Pro
 
   const claimDescription = `share_bonus_withdrawal_${withdrawalId}: Share bonus for withdrawal #${withdrawalId}`;
 
-  // Atomic: check for existing bonus AND insert inside a single transaction
-  // so concurrent requests cannot both pass the duplicate check.
+  // Atomic: advisory lock keyed on (userId, withdrawalId) ensures only one
+  // concurrent request can execute the claim path for the same pair at once.
+  // After the lock is acquired, the existing-row check is authoritative.
   let awarded = false;
   await db.transaction(async (dbTx) => {
+    // pg_advisory_xact_lock is released automatically at transaction end.
+    // Two simultaneous requests for the same (userId, withdrawalId) will
+    // serialize here rather than both racing past the duplicate check.
+    await dbTx.execute(sql`SELECT pg_advisory_xact_lock(${req.userId!}::bigint, ${withdrawalId}::bigint)`);
+
     const [existing] = await dbTx
       .select({ id: transactionsTable.id })
       .from(transactionsTable)
@@ -265,8 +271,7 @@ router.post("/wallet/withdrawal-share-bonus", requireAuth, async (req, res): Pro
         eq(transactionsTable.type, "bonus"),
         sql`description = ${claimDescription}`,
       ))
-      .limit(1)
-      .for("update");
+      .limit(1);
 
     if (existing) return; // already claimed — skip
 
