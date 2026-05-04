@@ -104,6 +104,7 @@ async function seedAdminConfig() {
     withdrawal_fee_pct: "10",
     chat_enabled: "true",
     share_withdrawal_bonus_coins: "0",
+    watch_video_embed: `<iframe src="https://player.vimeo.com/video/1189038370?autoplay=1&muted=1" width="560" height="315" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen title="MineNova"></iframe>`,
   };
   for (const [key, value] of Object.entries(defaults)) {
     const [existing] = await db
@@ -1420,6 +1421,7 @@ router.get("/admin/settings", requireAdmin, requirePermission("settings", "read"
     "withdrawal_fee_enabled", "withdrawal_fee_pct",
     "chat_enabled",
     "share_withdrawal_bonus_coins",
+    "watch_video_embed",
   ];
   const rows = await db.select().from(adminConfigTable).where(sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`);
   const settings: Record<string, string> = {};
@@ -1477,6 +1479,7 @@ router.put("/admin/settings", requireAdmin, requirePermission("settings", "write
     withdrawal_fee_pct: strictNum(0, 99).optional(),
     chat_enabled: boolStr.optional(),
     share_withdrawal_bonus_coins: strictNum(0).optional(),
+    watch_video_embed: z.string().optional(),
   });
   const data = schema.safeParse(req.body);
   if (!data.success) {
@@ -1488,6 +1491,17 @@ router.put("/admin/settings", requireAdmin, requirePermission("settings", "write
     if (value !== undefined) await upsertSetting(key, value);
   }
   res.json({ success: true });
+});
+
+// ─── Public config endpoint ───────────────────────────────────────────────────
+
+router.get("/config/watch-video-embed", async (_req, res): Promise<void> => {
+  const [row] = await db
+    .select({ value: adminConfigTable.value })
+    .from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "watch_video_embed"))
+    .limit(1);
+  res.json({ embed: row?.value ?? "" });
 });
 
 // ─── Ads CRUD ────────────────────────────────────────────────────────────────

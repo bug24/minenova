@@ -178,6 +178,7 @@ interface Settings {
   withdrawal_fee_pct: string;
   chat_enabled: string;
   share_withdrawal_bonus_coins: string;
+  watch_video_embed: string;
 }
 interface ShareMessage { id: number; platform: string; message: string; isActive: boolean; sortOrder: number; }
 interface UserReferral { id: number; referredId: number; referredUsername: string; totalEarned: number; bonusPaid: boolean; createdAt: string; }
@@ -2205,6 +2206,7 @@ function SettingsTab({ secret }: { secret: string }) {
     withdrawal_fee_pct: "10",
     chat_enabled: "true",
     share_withdrawal_bonus_coins: "0",
+    watch_video_embed: "",
   };
 
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
