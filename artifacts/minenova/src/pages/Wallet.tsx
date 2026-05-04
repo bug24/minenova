@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
+import html2canvas from "html2canvas";
 import {
   useGetWallet,
   useRequestWithdrawal,
@@ -22,6 +23,7 @@ import {
   Wallet, ArrowUpRight, Clock, CheckCircle2, XCircle, AlertCircle,
   TrendingUp, Zap, Twitter, Facebook, MessageCircle, Share2, MailWarning,
   Pickaxe, Gift, Gamepad2, CreditCard, RefreshCcw, Hash, CalendarDays, Info,
+  Download, Camera,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
@@ -111,8 +113,87 @@ export default function WalletPage() {
   const [step, setStep] = useState<WithdrawStep>("choose");
   const [withdrawalResult, setWithdrawalResult] = useState<WithdrawalResult | null>(null);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [shareTx, setShareTx] = useState<Transaction | null>(null);
+  const [screenshotting, setScreenshotting] = useState(false);
+  const [sharedWithdrawalIds, setSharedWithdrawalIds] = useState<Set<number>>(new Set());
+  const receiptRef = useRef<HTMLDivElement>(null);
 
   const { user } = useAuth();
+
+  const referralCode = user?.referralCode ?? "";
+  const referralUrl = referralCode
+    ? `${window.location.origin}/register?ref=${referralCode}`
+    : window.location.origin;
+
+  const buildShareMsg = useCallback((amountUsdt: number, platform: "twitter" | "whatsapp" | "facebook") => {
+    const base = `I just withdrew $${amountUsdt.toFixed(2)} USDT from MineNova! 💰\n\nThis platform actually pays — mine crypto and cash out as USDT with no delays.\n\nJoin free with my link:\n${referralUrl}`;
+    if (platform === "twitter") {
+      return `Just withdrew $${amountUsdt.toFixed(2)} USDT from MineNova! 💸 Mine crypto & get paid — no stress, no delays.\n\nTry it free 👇\n${referralUrl}`;
+    }
+    return base;
+  }, [referralUrl]);
+
+  const claimShareBonus = useCallback(async (withdrawalId: number) => {
+    if (sharedWithdrawalIds.has(withdrawalId)) return;
+    setSharedWithdrawalIds(prev => new Set([...prev, withdrawalId]));
+    try {
+      const token = localStorage.getItem("minenova_token");
+      const res = await fetch("/api/wallet/withdrawal-share-bonus", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ withdrawalId }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { bonus: number; message: string };
+        if (data.bonus > 0) {
+          toast({ title: `+${data.bonus} coins bonus!`, description: data.message });
+          queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
+          queryClient.invalidateQueries({ queryKey: getGetTransactionsQueryKey() });
+        }
+      }
+    } catch { /* non-fatal */ }
+  }, [sharedWithdrawalIds, toast, queryClient]);
+
+  const captureAndDownloadReceipt = useCallback(async () => {
+    if (!receiptRef.current) return;
+    setScreenshotting(true);
+    try {
+      const canvas = await html2canvas(receiptRef.current, { backgroundColor: "#0f0f0f", scale: 2 });
+      const url = canvas.toDataURL("image/png");
+
+      if (navigator.canShare && navigator.share) {
+        try {
+          const blob = await (await fetch(url)).blob();
+          const file = new File([blob], "minenova-withdrawal.png", { type: "image/png" });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: "MineNova Withdrawal", text: "I just withdrew USDT from MineNova!" });
+            return;
+          }
+        } catch { /* fallback to download */ }
+      }
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "minenova-withdrawal-receipt.png";
+      link.click();
+      toast({ title: "Receipt downloaded!" });
+    } catch {
+      toast({ variant: "destructive", title: "Screenshot failed", description: "Try downloading manually." });
+    } finally {
+      setScreenshotting(false);
+    }
+  }, [toast]);
+
+  const handleShare = useCallback((platform: "twitter" | "whatsapp" | "facebook", amount: number, withdrawalId: number) => {
+    const msg = encodeURIComponent(buildShareMsg(amount, platform));
+    const urls: Record<string, string> = {
+      twitter: `https://twitter.com/intent/tweet?text=${msg}`,
+      whatsapp: `https://api.whatsapp.com/send?text=${msg}`,
+      facebook: `https://www.facebook.com/sharer/sharer.php?quote=${msg}`,
+    };
+    window.open(urls[platform], "_blank");
+    claimShareBonus(withdrawalId);
+  }, [buildShareMsg, claimShareBonus]);
   const coinBalance = wallet?.withdrawableBalance ?? 0;
   const usdtValue = coinBalance / COINS_PER_USDT;
   const canWithdraw = coinBalance >= MINIMUM_COINS;
@@ -279,26 +360,36 @@ export default function WalletPage() {
         ) : transactions && transactions.length > 0 ? (
           <div className="space-y-2">
             {transactions.map(tx => (
-              <button
-                key={tx.id}
-                onClick={() => setSelectedTx(tx)}
-                className="w-full bg-card border border-card-border rounded-xl p-3 flex items-center gap-3 text-left hover:bg-accent/50 active:scale-[0.99] transition-all"
-                data-testid={`tx-${tx.id}`}
-              >
-                <div className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
-                  {getTypeIcon(tx.type)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{tx.description}</p>
-                  <p className="text-xs text-muted-foreground">{new Date(tx.createdAt).toLocaleDateString()}</p>
-                </div>
-                <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
-                  <p className={`text-sm font-bold ${tx.amount >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                    {tx.amount >= 0 ? "+" : ""}{tx.amount.toFixed(2)}
-                  </p>
-                  {getStatusBadge(tx.status)}
-                </div>
-              </button>
+              <div key={tx.id} className="relative group">
+                <button
+                  onClick={() => setSelectedTx(tx)}
+                  className="w-full bg-card border border-card-border rounded-xl p-3 flex items-center gap-3 text-left hover:bg-accent/50 active:scale-[0.99] transition-all"
+                  data-testid={`tx-${tx.id}`}
+                >
+                  <div className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
+                    {getTypeIcon(tx.type)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{tx.description}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(tx.createdAt).toLocaleDateString()}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
+                    <p className={`text-sm font-bold ${tx.amount >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                      {tx.amount >= 0 ? "+" : ""}{tx.amount.toFixed(2)}
+                    </p>
+                    {getStatusBadge(tx.status)}
+                  </div>
+                </button>
+                {tx.type === "withdrawal" && (
+                  <button
+                    onClick={e => { e.stopPropagation(); setShareTx(tx); }}
+                    className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 rounded-lg bg-primary/10 hover:bg-primary/20 flex items-center justify-center"
+                    title="Share withdrawal"
+                  >
+                    <Share2 className="w-3.5 h-3.5 text-primary" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         ) : (
@@ -517,38 +608,75 @@ export default function WalletPage() {
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground text-center flex items-center gap-1 justify-center">
-                  <Share2 className="w-3 h-3" /> Share your withdrawal with friends
-                </p>
-                {(() => {
-                  const shareMsg = encodeURIComponent(`I just withdrew $${withdrawalResult.amount} USDT from MineNova! 💰\n\nThis platform actually pays — mine crypto and cash out as USDT with no delays.\n\nTry it free and start earning today!`);
-                  return (
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        onClick={() => window.open(`https://twitter.com/intent/tweet?text=${shareMsg}`, "_blank")}
-                        className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 transition-colors"
-                      >
-                        <Twitter className="w-4 h-4 text-sky-400" />
-                        <span className="text-xs text-sky-400 font-medium">Twitter</span>
-                      </button>
-                      <button
-                        onClick={() => window.open(`https://api.whatsapp.com/send?text=${shareMsg}`, "_blank")}
-                        className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
-                      >
-                        <MessageCircle className="w-4 h-4 text-emerald-500" />
-                        <span className="text-xs text-emerald-500 font-medium">WhatsApp</span>
-                      </button>
-                      <button
-                        onClick={() => window.open(`https://www.facebook.com/sharer/sharer.php?quote=${shareMsg}`, "_blank")}
-                        className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
-                      >
-                        <Facebook className="w-4 h-4 text-blue-500" />
-                        <span className="text-xs text-blue-500 font-medium">Facebook</span>
-                      </button>
+              {/* Receipt card (screenshottable) */}
+              <div ref={receiptRef} className="rounded-2xl overflow-hidden border border-emerald-500/30" style={{ background: "linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%)" }}>
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                     </div>
-                  );
-                })()}
+                    <div>
+                      <p className="text-xs font-bold text-emerald-400 uppercase tracking-wider">MineNova — Withdrawal</p>
+                      <p className="text-[10px] text-white/40">{new Date().toLocaleString()}</p>
+                    </div>
+                  </div>
+                  <div className="text-center py-2">
+                    <p className="text-3xl font-black text-white">${withdrawalResult.amount.toFixed(2)}</p>
+                    <p className="text-xs text-white/50">USDT requested</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[11px] text-white/40">Join free with my referral link:</p>
+                    <p className="text-xs font-mono text-emerald-400 break-all">{referralUrl}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Share section */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Share2 className="w-3 h-3" /> Share with your referral link
+                  </p>
+                  <button
+                    onClick={captureAndDownloadReceipt}
+                    disabled={screenshotting}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {screenshotting ? <RefreshCcw className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
+                    {screenshotting ? "Capturing…" : "Screenshot"}
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => handleShare("twitter", withdrawalResult.amount, withdrawalResult.transactionId)}
+                    className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 transition-colors"
+                  >
+                    <Twitter className="w-4 h-4 text-sky-400" />
+                    <span className="text-xs text-sky-400 font-medium">Twitter</span>
+                  </button>
+                  <button
+                    onClick={() => handleShare("whatsapp", withdrawalResult.amount, withdrawalResult.transactionId)}
+                    className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                  >
+                    <MessageCircle className="w-4 h-4 text-emerald-500" />
+                    <span className="text-xs text-emerald-500 font-medium">WhatsApp</span>
+                  </button>
+                  <button
+                    onClick={() => handleShare("facebook", withdrawalResult.amount, withdrawalResult.transactionId)}
+                    className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
+                  >
+                    <Facebook className="w-4 h-4 text-blue-500" />
+                    <span className="text-xs text-blue-500 font-medium">Facebook</span>
+                  </button>
+                </div>
+                <button
+                  onClick={captureAndDownloadReceipt}
+                  disabled={screenshotting}
+                  className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border border-border hover:bg-accent/50 transition-colors text-xs text-muted-foreground"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download Receipt
+                </button>
               </div>
 
               <Button className="w-full" onClick={closeDialog}>Got it</Button>
@@ -622,7 +750,81 @@ export default function WalletPage() {
                   )}
                 </div>
 
-                <Button className="w-full" variant="outline" onClick={() => setSelectedTx(null)}>Close</Button>
+                <div className="flex gap-2">
+                  {tx.type === "withdrawal" && (
+                    <Button
+                      className="flex-1 gap-1.5"
+                      variant="outline"
+                      onClick={() => { setSelectedTx(null); setShareTx(tx); }}
+                    >
+                      <Share2 className="w-3.5 h-3.5" /> Share
+                    </Button>
+                  )}
+                  <Button className="flex-1" variant="outline" onClick={() => setSelectedTx(null)}>Close</Button>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Share from History Modal */}
+      <Dialog open={!!shareTx} onOpenChange={open => { if (!open) setShareTx(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Share2 className="w-4 h-4 text-primary" />
+              Share Withdrawal
+            </DialogTitle>
+          </DialogHeader>
+          {shareTx && (() => {
+            const amountUsdt = Math.abs(shareTx.amount);
+            return (
+              <div className="space-y-4 pt-1">
+                <div className="rounded-2xl border border-emerald-500/30 p-4 space-y-3" style={{ background: "linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%)" }}>
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    </div>
+                    <p className="text-xs font-bold text-emerald-400 uppercase tracking-wider">MineNova — Withdrawal #{shareTx.id}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-black text-white">${amountUsdt.toFixed(2)} <span className="text-sm font-normal text-white/50">USDT</span></p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[11px] text-white/40">Join free with my referral link:</p>
+                    <p className="text-xs font-mono text-emerald-400 break-all">{referralUrl}</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground text-center flex items-center gap-1 justify-center">
+                    <Share2 className="w-3 h-3" /> Share with your referral link
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => handleShare("twitter", amountUsdt, shareTx.id)}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 transition-colors"
+                    >
+                      <Twitter className="w-4 h-4 text-sky-400" />
+                      <span className="text-xs text-sky-400 font-medium">Twitter</span>
+                    </button>
+                    <button
+                      onClick={() => handleShare("whatsapp", amountUsdt, shareTx.id)}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                    >
+                      <MessageCircle className="w-4 h-4 text-emerald-500" />
+                      <span className="text-xs text-emerald-500 font-medium">WhatsApp</span>
+                    </button>
+                    <button
+                      onClick={() => handleShare("facebook", amountUsdt, shareTx.id)}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
+                    >
+                      <Facebook className="w-4 h-4 text-blue-500" />
+                      <span className="text-xs text-blue-500 font-medium">Facebook</span>
+                    </button>
+                  </div>
+                </div>
+                <Button className="w-full" variant="outline" onClick={() => setShareTx(null)}>Done</Button>
               </div>
             );
           })()}

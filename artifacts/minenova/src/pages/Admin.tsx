@@ -177,6 +177,7 @@ interface Settings {
   withdrawal_fee_enabled: string;
   withdrawal_fee_pct: string;
   chat_enabled: string;
+  share_withdrawal_bonus_coins: string;
 }
 interface ShareMessage { id: number; platform: string; message: string; isActive: boolean; sortOrder: number; }
 interface UserReferral { id: number; referredId: number; referredUsername: string; totalEarned: number; bonusPaid: boolean; createdAt: string; }
@@ -2203,6 +2204,7 @@ function SettingsTab({ secret }: { secret: string }) {
     withdrawal_fee_enabled: "true",
     withdrawal_fee_pct: "10",
     chat_enabled: "true",
+    share_withdrawal_bonus_coins: "0",
   };
 
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
@@ -3049,6 +3051,21 @@ function SettingsTab({ secret }: { secret: string }) {
           </div>
           <p className="text-xs text-muted-foreground">
             Deducted from the payout amount. e.g. 2% on $10 → user receives $9.80.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Share bonus (coins)</label>
+          <div className="flex gap-2">
+            <Input
+              type="number" step="1" min="0"
+              value={settings.share_withdrawal_bonus_coins}
+              onChange={e => setSettings(p => ({ ...p, share_withdrawal_bonus_coins: e.target.value }))}
+            />
+            <SaveBtn k="share_withdrawal_bonus_coins" />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Coins awarded when a user shares their withdrawal receipt. Set to 0 to disable.
           </p>
         </div>
       </div>

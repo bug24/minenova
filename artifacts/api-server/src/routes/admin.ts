@@ -103,6 +103,7 @@ async function seedAdminConfig() {
     withdrawal_fee_enabled: "true",
     withdrawal_fee_pct: "10",
     chat_enabled: "true",
+    share_withdrawal_bonus_coins: "0",
   };
   for (const [key, value] of Object.entries(defaults)) {
     const [existing] = await db
@@ -1418,6 +1419,7 @@ router.get("/admin/settings", requireAdmin, requirePermission("settings", "read"
     "mines_enabled", "mines_min_bet", "mines_max_bet", "mines_fee_pct",
     "withdrawal_fee_enabled", "withdrawal_fee_pct",
     "chat_enabled",
+    "share_withdrawal_bonus_coins",
   ];
   const rows = await db.select().from(adminConfigTable).where(sql`key = ANY(ARRAY[${sql.join(keys.map(k => sql`${k}`), sql`, `)}])`);
   const settings: Record<string, string> = {};
@@ -1474,6 +1476,7 @@ router.put("/admin/settings", requireAdmin, requirePermission("settings", "write
     withdrawal_fee_enabled: boolStr.optional(),
     withdrawal_fee_pct: strictNum(0, 99).optional(),
     chat_enabled: boolStr.optional(),
+    share_withdrawal_bonus_coins: strictNum(0).optional(),
   });
   const data = schema.safeParse(req.body);
   if (!data.success) {

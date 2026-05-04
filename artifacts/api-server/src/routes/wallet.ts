@@ -217,6 +217,66 @@ router.post("/wallet/withdraw-usdt", requireAuth, async (req, res): Promise<void
   }));
 });
 
+router.post("/wallet/withdrawal-share-bonus", requireAuth, async (req, res): Promise<void> => {
+  const { withdrawalId } = req.body as { withdrawalId?: number };
+  if (!withdrawalId || typeof withdrawalId !== "number") {
+    res.status(400).json({ error: "withdrawalId required" });
+    return;
+  }
+
+  const [configRow] = await db
+    .select({ value: adminConfigTable.value })
+    .from(adminConfigTable)
+    .where(eq(adminConfigTable.key, "share_withdrawal_bonus_coins"))
+    .limit(1);
+  const bonusCoins = parseFloat(configRow?.value ?? "0") || 0;
+  if (bonusCoins <= 0) {
+    res.json({ bonus: 0, message: "No share bonus configured" });
+    return;
+  }
+
+  const [tx] = await db
+    .select({ id: transactionsTable.id, userId: transactionsTable.userId })
+    .from(transactionsTable)
+    .where(and(eq(transactionsTable.id, withdrawalId), eq(transactionsTable.userId, req.userId!)))
+    .limit(1);
+
+  if (!tx) {
+    res.status(404).json({ error: "Withdrawal not found" });
+    return;
+  }
+
+  const existing = await db
+    .select({ id: transactionsTable.id })
+    .from(transactionsTable)
+    .where(and(
+      eq(transactionsTable.userId, req.userId!),
+      eq(transactionsTable.type, "bonus"),
+      sql`description LIKE ${"share_bonus_withdrawal_" + withdrawalId + "%"}`,
+    ))
+    .limit(1);
+
+  if (existing.length > 0) {
+    res.json({ bonus: 0, message: "Share bonus already claimed for this withdrawal" });
+    return;
+  }
+
+  await db.insert(transactionsTable).values({
+    userId: req.userId!,
+    type: "bonus",
+    amount: bonusCoins,
+    status: "completed",
+    description: `share_bonus_withdrawal_${withdrawalId}: Share bonus for withdrawal #${withdrawalId}`,
+  });
+
+  await db
+    .update(usersTable)
+    .set({ coinBalance: sql`coin_balance + ${bonusCoins}`, totalEarned: sql`total_earned + ${bonusCoins}` })
+    .where(eq(usersTable.id, req.userId!));
+
+  res.json({ bonus: bonusCoins, message: `+${bonusCoins} coins bonus for sharing your withdrawal!` });
+});
+
 router.get("/wallet/transactions", requireAuth, async (req, res): Promise<void> => {
   const txs = await db
     .select()
