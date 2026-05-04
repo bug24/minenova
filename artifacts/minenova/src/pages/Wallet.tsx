@@ -135,7 +135,6 @@ export default function WalletPage() {
 
   const claimShareBonus = useCallback(async (withdrawalId: number) => {
     if (sharedWithdrawalIds.has(withdrawalId)) return;
-    setSharedWithdrawalIds(prev => new Set([...prev, withdrawalId]));
     try {
       const token = localStorage.getItem("minenova_token");
       const res = await fetch("/api/wallet/withdrawal-share-bonus", {
@@ -145,6 +144,7 @@ export default function WalletPage() {
       });
       if (res.ok) {
         const data = await res.json() as { bonus: number; message: string };
+        setSharedWithdrawalIds(prev => new Set([...prev, withdrawalId]));
         if (data.bonus > 0) {
           toast({ title: `+${data.bonus} coins bonus!`, description: data.message });
           queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
@@ -181,6 +181,7 @@ export default function WalletPage() {
       link.download = "minenova-withdrawal-receipt.png";
       link.click();
       toast({ title: "Receipt downloaded!" });
+      if (withdrawalId != null) claimShareBonus(withdrawalId);
     } catch {
       toast({ variant: "destructive", title: "Screenshot failed", description: "Try downloading manually." });
     } finally {

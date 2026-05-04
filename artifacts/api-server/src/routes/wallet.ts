@@ -3,6 +3,7 @@ import { db, usersTable, transactionsTable, adminConfigTable } from "@workspace/
 import { and, eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { RequestWithdrawalBody, GetWalletResponse, RequestWithdrawalResponse, GetTransactionsResponse } from "@workspace/api-zod";
+import { z } from "zod";
 import { generatePaymentTag } from "../lib/auth";
 import { sendAdminNotification } from "../lib/pushNotifications";
 
@@ -218,11 +219,13 @@ router.post("/wallet/withdraw-usdt", requireAuth, async (req, res): Promise<void
 });
 
 router.post("/wallet/withdrawal-share-bonus", requireAuth, async (req, res): Promise<void> => {
-  const { withdrawalId } = req.body as { withdrawalId?: number };
-  if (!withdrawalId || typeof withdrawalId !== "number") {
-    res.status(400).json({ error: "withdrawalId required" });
+  const bodySchema = z.object({ withdrawalId: z.number().int().positive() });
+  const parsed = bodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "withdrawalId must be a positive integer" });
     return;
   }
+  const { withdrawalId } = parsed.data;
 
   const [configRow] = await db
     .select({ value: adminConfigTable.value })
