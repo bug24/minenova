@@ -235,44 +235,61 @@ router.post("/wallet/withdrawal-share-bonus", requireAuth, async (req, res): Pro
     return;
   }
 
-  const [tx] = await db
-    .select({ id: transactionsTable.id, userId: transactionsTable.userId })
+  // Verify the transaction exists, belongs to this user, AND is a withdrawal
+  const [withdrawalTx] = await db
+    .select({ id: transactionsTable.id })
     .from(transactionsTable)
-    .where(and(eq(transactionsTable.id, withdrawalId), eq(transactionsTable.userId, req.userId!)))
+    .where(and(
+      eq(transactionsTable.id, withdrawalId),
+      eq(transactionsTable.userId, req.userId!),
+      eq(transactionsTable.type, "withdrawal"),
+    ))
     .limit(1);
 
-  if (!tx) {
+  if (!withdrawalTx) {
     res.status(404).json({ error: "Withdrawal not found" });
     return;
   }
 
-  const existing = await db
-    .select({ id: transactionsTable.id })
-    .from(transactionsTable)
-    .where(and(
-      eq(transactionsTable.userId, req.userId!),
-      eq(transactionsTable.type, "bonus"),
-      sql`description LIKE ${"share_bonus_withdrawal_" + withdrawalId + "%"}`,
-    ))
-    .limit(1);
+  const claimDescription = `share_bonus_withdrawal_${withdrawalId}: Share bonus for withdrawal #${withdrawalId}`;
 
-  if (existing.length > 0) {
+  // Atomic: check for existing bonus AND insert inside a single transaction
+  // so concurrent requests cannot both pass the duplicate check.
+  let awarded = false;
+  await db.transaction(async (dbTx) => {
+    const [existing] = await dbTx
+      .select({ id: transactionsTable.id })
+      .from(transactionsTable)
+      .where(and(
+        eq(transactionsTable.userId, req.userId!),
+        eq(transactionsTable.type, "bonus"),
+        sql`description = ${claimDescription}`,
+      ))
+      .limit(1)
+      .for("update");
+
+    if (existing) return; // already claimed — skip
+
+    await dbTx.insert(transactionsTable).values({
+      userId: req.userId!,
+      type: "bonus",
+      amount: bonusCoins,
+      status: "completed",
+      description: claimDescription,
+    });
+
+    await dbTx
+      .update(usersTable)
+      .set({ coinBalance: sql`coin_balance + ${bonusCoins}`, totalEarned: sql`total_earned + ${bonusCoins}` })
+      .where(eq(usersTable.id, req.userId!));
+
+    awarded = true;
+  });
+
+  if (!awarded) {
     res.json({ bonus: 0, message: "Share bonus already claimed for this withdrawal" });
     return;
   }
-
-  await db.insert(transactionsTable).values({
-    userId: req.userId!,
-    type: "bonus",
-    amount: bonusCoins,
-    status: "completed",
-    description: `share_bonus_withdrawal_${withdrawalId}: Share bonus for withdrawal #${withdrawalId}`,
-  });
-
-  await db
-    .update(usersTable)
-    .set({ coinBalance: sql`coin_balance + ${bonusCoins}`, totalEarned: sql`total_earned + ${bonusCoins}` })
-    .where(eq(usersTable.id, req.userId!));
 
   res.json({ bonus: bonusCoins, message: `+${bonusCoins} coins bonus for sharing your withdrawal!` });
 });
