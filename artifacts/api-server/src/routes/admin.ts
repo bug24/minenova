@@ -1495,12 +1495,35 @@ router.put("/admin/settings", requireAdmin, requirePermission("settings", "write
 
 // ─── Public config endpoint ───────────────────────────────────────────────────
 
-router.get("/config/watch-video-embed", async (_req, res): Promise<void> => {
+const embedRlMap = new Map<string, { count: number; resetAt: number }>();
+const EMBED_RL_MAX = 30;
+const EMBED_RL_WINDOW_MS = 60_000;
+
+function checkEmbedRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = embedRlMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    embedRlMap.set(ip, { count: 1, resetAt: now + EMBED_RL_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= EMBED_RL_MAX) return false;
+  entry.count++;
+  return true;
+}
+
+router.get("/config/watch-video-embed", async (req, res): Promise<void> => {
+  const fwd = req.headers["x-forwarded-for"] as string | undefined;
+  const ip = (fwd ? fwd.split(",")[0]?.trim() : undefined) ?? req.ip ?? "unknown";
+  if (!checkEmbedRateLimit(ip)) {
+    res.status(429).json({ error: "Too many requests — try again in a minute" });
+    return;
+  }
   const [row] = await db
     .select({ value: adminConfigTable.value })
     .from(adminConfigTable)
     .where(eq(adminConfigTable.key, "watch_video_embed"))
     .limit(1);
+  res.set("Cache-Control", "no-store");
   res.json({ embed: row?.value ?? "" });
 });
 
