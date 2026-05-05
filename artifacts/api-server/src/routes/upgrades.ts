@@ -291,7 +291,7 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
 
     await db.transaction(async (tx) => {
       await tx.update(usersTable)
-        .set({ coinBalance: newBalance, miningLevel: user.miningLevel + 1 })
+        .set({ coinBalance: newBalance, miningLevel: sql`GREATEST(mining_level, ${upgrade.tier + 1})` })
         .where(eq(usersTable.id, req.userId!));
       await tx.insert(userUpgradesTable).values({ userId: req.userId!, upgradeId });
       await tx.insert(transactionsTable).values({

@@ -62,6 +62,11 @@ export default function Upgrades() {
 
   const bundlePrice = bundleTarget?.bundlePrice ?? null;
 
+  // Coin bundles are server-limited to ≤3 levels at a time
+  const nextTier = upgrades?.find(u => u.isNext)?.tier ?? 1;
+  const levelsInBundle = bundleTarget ? bundleTarget.tier - nextTier + 1 : 0;
+  const coinBundleBlocked = levelsInBundle > 3;
+
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: getGetUpgradesQueryKey() });
     queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
@@ -82,7 +87,9 @@ export default function Upgrades() {
     const u = upgrades?.find(x => x.tier === targetLevel);
     const bundle = u?.bundlePrice;
     if (!bundle) return;
-    const canAffordCoins = coinBalance >= bundle.coins;
+    const jumpSize = targetLevel - (upgrades?.find(x => x.isNext)?.tier ?? 1) + 1;
+    const blocked = jumpSize > 3;
+    const canAffordCoins = !blocked && coinBalance >= bundle.coins;
     setPaymentMethod(canAffordCoins ? "coins" : "usdt");
     setModal({ type: "bundle", targetLevel });
   };
@@ -442,11 +449,14 @@ export default function Upgrades() {
                 <p className="text-sm font-medium mb-2">Payment Method</p>
                 <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => setPaymentMethod("coins")}
-                    className={`p-3 rounded-xl border text-left transition-all ${paymentMethod === "coins" ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}
+                    onClick={() => !coinBundleBlocked && setPaymentMethod("coins")}
+                    disabled={coinBundleBlocked}
+                    className={`p-3 rounded-xl border text-left transition-all ${coinBundleBlocked ? "opacity-40 cursor-not-allowed border-border" : paymentMethod === "coins" ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}
                   >
                     <p className="text-sm font-semibold">{bundlePrice.coins.toLocaleString()} coins</p>
-                    <p className="text-xs text-muted-foreground">5% bundle discount</p>
+                    <p className="text-xs text-muted-foreground">
+                      {coinBundleBlocked ? "USDT only for 4+ levels" : "5% bundle discount"}
+                    </p>
                   </button>
                   <button
                     onClick={() => setPaymentMethod("usdt")}
@@ -458,7 +468,13 @@ export default function Upgrades() {
                 </div>
               </div>
 
-              {paymentMethod === "coins" && coinBalance < bundlePrice.coins && (
+              {coinBundleBlocked && (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-700 dark:text-amber-400">
+                  Bundles skipping 4 or more levels can only be paid with USDT. Please select USDT to continue.
+                </div>
+              )}
+
+              {!coinBundleBlocked && paymentMethod === "coins" && coinBalance < bundlePrice.coins && (
                 <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 text-xs text-destructive">
                   Insufficient balance. Need {bundlePrice.coins.toLocaleString()} coins, you have {coinBalance.toFixed(0)}.
                 </div>
@@ -467,7 +483,7 @@ export default function Upgrades() {
               <Button
                 className="w-full gap-2"
                 onClick={handleBundlePurchase}
-                disabled={isPending || (paymentMethod === "coins" && coinBalance < bundlePrice.coins)}
+                disabled={isPending || coinBundleBlocked && paymentMethod === "coins" || (!coinBundleBlocked && paymentMethod === "coins" && coinBalance < bundlePrice.coins)}
                 data-testid="button-confirm-bundle"
               >
                 <Package className="w-4 h-4" />
