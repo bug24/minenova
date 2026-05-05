@@ -900,9 +900,12 @@ router.post("/trivia/solo", requireAuth, async (req: Request, res: Response): Pr
 
     // inArray does not guarantee DB return order matches questionIds, so key by ID first
     const qById = new Map(allQWithAnswers.map(q => [q.id, q]));
+    // Adaptive difficulty: bot accuracy is randomised per game between 40–60%
+    // so the player's expected win rate averages ~50% with no guaranteed wins.
+    const botAccuracy = 0.40 + Math.random() * 0.20;
     const botAnswers = questionIds.map(qid => {
       const q = qById.get(qid)!;
-      const isCorrect = Math.random() < 0.65;
+      const isCorrect = Math.random() < botAccuracy;
       if (isCorrect) return q.correctIndex;
       const opts = (q.options as string[]).length;
       const wrong = Array.from({ length: opts }, (_, i) => i).filter(i => i !== q.correctIndex);

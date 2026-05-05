@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useGetWallet, getGetWalletQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
   triviaApi, fetchTriviaSettings,
@@ -341,19 +340,12 @@ export default function Trivia() {
       {/* Entry fee */}
       <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
         <label className="text-xs font-semibold text-muted-foreground block">Entry Fee (coins)</label>
-        <Input
-          type="number"
-          value={entryFee}
-          onChange={e => setEntryFee(e.target.value)}
-          placeholder={`Min ${minFee.toLocaleString()}`}
-          className="text-sm"
-        />
         <div className="flex gap-1.5 flex-wrap">
           {FEE_PRESETS.filter(p => p >= minFee && p <= maxFee).map(p => (
             <button
               key={p}
               onClick={() => setEntryFee(String(p))}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${entryFee === String(p) ? "bg-indigo-500 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-colors ${entryFee === String(p) ? "bg-indigo-500 text-white shadow-sm" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
             >
               {p.toLocaleString()}
             </button>
