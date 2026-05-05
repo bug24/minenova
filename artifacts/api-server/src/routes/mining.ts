@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, miningSessionsTable, usersTable, transactionsTable, referralsTable, referralTransactionsTable, adminConfigTable, upgradesTable, userUpgradesTable } from "@workspace/db";
-import { eq, and, isNull, desc, gt, lte, inArray } from "drizzle-orm";
+import { eq, and, isNull, desc, gt, lte, inArray, gte, not } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { BoostMiningBody, GetMiningStatusResponse, StartMiningResponse, ClaimMiningResponse, BoostMiningResponse, GetDashboardSummaryResponse } from "@workspace/api-zod";
 import { sql } from "drizzle-orm";
@@ -89,6 +89,24 @@ async function getUserEffectiveUpgrade(userId: number): Promise<EffectiveUpgrade
   }
 }
 
+/** Sum of boost coins earned today (UTC) from OTHER already-claimed sessions for this user. */
+async function getPriorDailyBoostCoins(userId: number, excludeSessionId?: number): Promise<number> {
+  const todayUtc = new Date();
+  todayUtc.setUTCHours(0, 0, 0, 0);
+  const conditions = [
+    eq(miningSessionsTable.userId, userId),
+    gte(miningSessionsTable.startedAt, todayUtc),
+  ];
+  if (excludeSessionId !== undefined) {
+    conditions.push(not(eq(miningSessionsTable.id, excludeSessionId)));
+  }
+  const [row] = await db
+    .select({ total: sql<number>`coalesce(sum(boost_coins_earned_today), 0)` })
+    .from(miningSessionsTable)
+    .where(and(...conditions));
+  return Number(row?.total ?? 0);
+}
+
 async function getSessionDurationMs(): Promise<number> {
   const [row] = await db.select({ value: adminConfigTable.value }).from(adminConfigTable)
     .where(eq(adminConfigTable.key, "session_duration_hours")).limit(1);
@@ -104,6 +122,8 @@ function computeMiningStatus(
   dailyCap: number | null = null,
   upgradeName: string | null = null,
   upgradeTier: number | null = null,
+  /** Boost coins already earned today from OTHER claimed sessions for this user (UTC day). */
+  priorDailyBoostCoins = 0,
 ) {
   const now = new Date();
 
@@ -118,7 +138,7 @@ function computeMiningStatus(
       boostEndsAt: null,
       boostsUsedToday: 0,
       boostTiersUsed: "",
-      boostCoinsEarnedToday: 0,
+      boostCoinsEarnedToday: priorDailyBoostCoins,
       canClaim: false,
       cooldownEndsAt: null,
       speedMultiplier,
@@ -136,13 +156,13 @@ function computeMiningStatus(
   const boostActive = session.boostEndsAt && now < new Date(session.boostEndsAt);
   const multiplier = boostActive ? session.boostMultiplier : 1;
 
-  // Split base vs boost-extra coins so we can cap the boost portion
+  // Split base vs boost-extra coins so we can cap the boost portion.
+  // remainingBoostCap accounts for boost coins already claimed from earlier sessions today.
   const baseCoinsPerHour = baseRate * user.miningLevel * speedMultiplier;
   const rawBaseCoins = elapsedHours * baseCoinsPerHour;
 
-  const boostEarnedSoFar = session.boostCoinsEarnedToday ?? 0;
   const rawBoostExtra = boostActive ? elapsedHours * baseCoinsPerHour * (multiplier - 1) : 0;
-  const remainingBoostCap = Math.max(0, DAILY_BOOST_CAP - boostEarnedSoFar);
+  const remainingBoostCap = Math.max(0, DAILY_BOOST_CAP - priorDailyBoostCoins);
   const cappedBoostExtra = Math.min(rawBoostExtra, remainingBoostCap);
 
   const rawCoins = rawBaseCoins + cappedBoostExtra;
@@ -158,7 +178,7 @@ function computeMiningStatus(
     boostEndsAt: session.boostEndsAt ? session.boostEndsAt.toISOString() : null,
     boostsUsedToday: session.boostsUsedToday,
     boostTiersUsed: session.boostTiersUsed ?? "",
-    boostCoinsEarnedToday: boostEarnedSoFar,
+    boostCoinsEarnedToday: Math.round((priorDailyBoostCoins + cappedBoostExtra) * 100) / 100,
     canClaim: isComplete,
     cooldownEndsAt: null,
     speedMultiplier,
@@ -200,11 +220,12 @@ router.get("/mining/status", requireAuth, async (req, res): Promise<void> => {
         .limit(1);
     }
 
-    const [baseRate, effectiveUpgrade] = await Promise.all([
+    const [baseRate, effectiveUpgrade, priorDailyBoostCoins] = await Promise.all([
       getEffectiveBaseRate(req.userId!),
       getUserEffectiveUpgrade(req.userId!),
+      getPriorDailyBoostCoins(req.userId!, session?.id),
     ]);
-    res.json(GetMiningStatusResponse.parse(computeMiningStatus(session ?? null, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier)));
+    res.json(GetMiningStatusResponse.parse(computeMiningStatus(session ?? null, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier, priorDailyBoostCoins)));
   } catch (err) {
     req.log.error({ err }, "mining/status error");
     res.status(500).json({ error: "Failed to fetch mining status" });
@@ -260,8 +281,10 @@ router.post("/mining/start", requireAuth, async (req, res): Promise<void> => {
         getUserEffectiveUpgrade(req.userId!),
       ]);
       let totalCoins = 0;
+      // Process each session sequentially so priorDailyBoostCoins is accurate per-session.
       for (const s of expiredSessions) {
-        const status = computeMiningStatus(s, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier);
+        const priorBoost = await getPriorDailyBoostCoins(req.userId!, s.id);
+        const status = computeMiningStatus(s, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier, priorBoost);
         totalCoins += status.accumulatedCoins;
         await db
           .update(miningSessionsTable)
@@ -395,8 +418,10 @@ router.post("/mining/claim", requireAuth, async (req, res): Promise<void> => {
     ]);
 
     let coinsEarned = 0;
+    // Process sessions sequentially so each session's priorDailyBoostCoins includes the ones just claimed above it.
     for (const session of expiredSessions) {
-      const statusData = computeMiningStatus(session, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier);
+      const priorBoost = await getPriorDailyBoostCoins(req.userId!, session.id);
+      const statusData = computeMiningStatus(session, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier, priorBoost);
       coinsEarned += statusData.accumulatedCoins;
       await db
         .update(miningSessionsTable)
@@ -511,7 +536,9 @@ router.post("/mining/boost", requireAuth, async (req, res): Promise<void> => {
       return;
     }
 
-    if ((session.boostCoinsEarnedToday ?? 0) >= DAILY_BOOST_CAP) {
+    // Gate on the true daily aggregate — sum across ALL of today's sessions, not just this one.
+    const priorDailyBoostCoins = await getPriorDailyBoostCoins(req.userId!, session.id);
+    if (priorDailyBoostCoins >= DAILY_BOOST_CAP) {
       res.status(400).json({ error: "Daily boost limit reached. You've earned the maximum +100 boost coins today." });
       return;
     }
@@ -539,7 +566,7 @@ router.post("/mining/boost", requireAuth, async (req, res): Promise<void> => {
       getEffectiveBaseRate(req.userId!),
       getUserEffectiveUpgrade(req.userId!),
     ]);
-    res.json(BoostMiningResponse.parse(computeMiningStatus(updated, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier)));
+    res.json(BoostMiningResponse.parse(computeMiningStatus(updated, user, baseRate, effectiveUpgrade.speedMultiplier, effectiveUpgrade.dailyCap, effectiveUpgrade.upgradeName, effectiveUpgrade.upgradeTier, priorDailyBoostCoins)));
   } catch (err) {
     req.log.error({ err }, "mining/boost error");
     res.status(500).json({ error: "Could not apply boost. Please try again." });
