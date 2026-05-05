@@ -196,6 +196,7 @@ export default function WalletPage() {
    * Social share: captures the receipt as JPEG, attempts Web Share API with the
    * image file attached. Falls back to downloading the JPEG + opening intent URL
    * on browsers/desktops that don't support file sharing.
+   * User cancellation via the native share sheet returns early with no fallback.
    */
   const handleShare = useCallback(async (
     platform: "twitter" | "whatsapp" | "facebook",
@@ -212,25 +213,34 @@ export default function WalletPage() {
     setScreenshotting(true);
     try {
       const result = await captureReceiptJpeg(ref, amount);
-      if (result && navigator.canShare?.({ files: [result.file] })) {
+      if (!result) {
+        toast({ variant: "destructive", title: "Screenshot failed", description: "Please try again." });
+        window.open(intentUrls[platform], "_blank");
+        claimShareBonus(withdrawalId);
+        return;
+      }
+      if (navigator.canShare?.({ files: [result.file] })) {
         try {
           await navigator.share({ files: [result.file], title: "MineNova Withdrawal", text: msg });
           claimShareBonus(withdrawalId);
           return;
-        } catch { /* user cancelled or share failed — fall through to intent */ }
+        } catch (err) {
+          // User explicitly cancelled the native share sheet — do not fall through to fallback
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          // Other share errors (e.g. API glitch) — fall through to download + intent fallback
+        }
       }
       // Fallback: save JPEG then open intent URL so user can attach the image manually
-      if (result) {
-        const link = document.createElement("a");
-        link.href = result.url;
-        link.download = `minenova-receipt-${amount.toFixed(2)}usdt.jpg`;
-        link.click();
-        toast({ title: "Receipt saved!", description: "Attach the saved image to your post." });
-      }
+      const link = document.createElement("a");
+      link.href = result.url;
+      link.download = `minenova-receipt-${amount.toFixed(2)}usdt.jpg`;
+      link.click();
+      toast({ title: "Receipt saved!", description: "Attach the saved image to your post." });
       window.open(intentUrls[platform], "_blank");
       claimShareBonus(withdrawalId);
     } catch {
-      // Screenshot failed — still open the intent URL with text only
+      // Capture threw unexpectedly — show error, still open intent URL with text only
+      toast({ variant: "destructive", title: "Screenshot failed", description: "Sharing text only." });
       window.open(intentUrls[platform], "_blank");
       claimShareBonus(withdrawalId);
     } finally {
