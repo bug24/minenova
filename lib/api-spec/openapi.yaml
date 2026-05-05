@@ -370,6 +370,31 @@ paths:
                 items:
                   $ref: "#/components/schemas/Upgrade"
 
+  /upgrades/bundle:
+    post:
+      operationId: bundlePurchaseUpgrade
+      tags: [upgrades]
+      summary: Purchase multiple upgrade levels at once (skip ahead with discounted bundle price)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BundlePurchaseBody"
+      responses:
+        "200":
+          description: Bundle purchase initiated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BundlePurchaseResult"
+        "400":
+          description: Invalid target level, insufficient funds, or large jump requires USDT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /upgrades/{upgradeId}/purchase:
     post:
       operationId: purchaseUpgrade
@@ -1020,6 +1045,23 @@ components:
         - description
         - createdAt
 
+    BundlePrice:
+      type: object
+      properties:
+        coins:
+          type: number
+        usdt:
+          type: number
+        coinDiscountPct:
+          type: number
+        usdtDiscountPct:
+          type: number
+      required:
+        - coins
+        - usdt
+        - coinDiscountPct
+        - usdtDiscountPct
+
     Upgrade:
       type: object
       properties:
@@ -1043,6 +1085,21 @@ components:
           type: boolean
         isAutoMining:
           type: boolean
+        badge:
+          type: ["string", "null"]
+        icon:
+          type: ["string", "null"]
+        isUnlocked:
+          type: boolean
+          description: True if the user already owns this tier (tier < miningLevel)
+        isNext:
+          type: boolean
+          description: True if this is the immediate next tier the user can purchase
+        bundlePrice:
+          description: Discounted cumulative cost to jump to this level; null if already unlocked or isNext
+          oneOf:
+            - $ref: "#/components/schemas/BundlePrice"
+            - type: "null"
       required:
         - id
         - name
@@ -1052,6 +1109,9 @@ components:
         - dailyCapBoost
         - owned
         - isAutoMining
+        - isUnlocked
+        - isNext
+        - bundlePrice
 
     PurchaseUpgradeBody:
       type: object
@@ -1190,6 +1250,45 @@ components:
         - paymentTag
         - status
         - createdAt
+
+    BundlePurchaseBody:
+      type: object
+      properties:
+        targetLevel:
+          type: integer
+          minimum: 1
+          maximum: 8
+        paymentMethod:
+          type: string
+          enum: [coins, usdt]
+      required:
+        - targetLevel
+        - paymentMethod
+
+    BundlePurchaseResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        levelsUnlocked:
+          type: array
+          items:
+            type: integer
+        totalCost:
+          type: number
+        newBalance:
+          type: ["number", "null"]
+        usdtAddress:
+          type: ["string", "null"]
+        paymentTag:
+          type: ["string", "null"]
+      required:
+        - success
+        - message
+        - levelsUnlocked
+        - totalCost
 
     AdminUpgradeDecisionBody:
       type: object

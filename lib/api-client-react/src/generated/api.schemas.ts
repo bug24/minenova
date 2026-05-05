@@ -201,6 +201,13 @@ export interface Transaction {
   createdAt: string;
 }
 
+export interface BundlePrice {
+  coins: number;
+  usdt: number;
+  coinDiscountPct: number;
+  usdtDiscountPct: number;
+}
+
 export interface Upgrade {
   id: number;
   name: string;
@@ -214,6 +221,16 @@ export interface Upgrade {
   usdtCost?: number | null;
   owned: boolean;
   isAutoMining: boolean;
+  /** @nullable */
+  badge?: string | null;
+  /** @nullable */
+  icon?: string | null;
+  /** True if the user already owns this tier (tier < miningLevel) */
+  isUnlocked: boolean;
+  /** True if this is the immediate next tier the user can purchase */
+  isNext: boolean;
+  /** Discounted cumulative cost to jump to this level; null if already unlocked or isNext */
+  bundlePrice: BundlePrice | null;
 }
 
 export interface PurchaseUpgradeBody {
@@ -276,6 +293,36 @@ export interface AdminUpgradePayment {
   /** @nullable */
   markedPaidAt?: string | null;
   createdAt: string;
+}
+
+export type BundlePurchaseBodyPaymentMethod =
+  (typeof BundlePurchaseBodyPaymentMethod)[keyof typeof BundlePurchaseBodyPaymentMethod];
+
+export const BundlePurchaseBodyPaymentMethod = {
+  coins: "coins",
+  usdt: "usdt",
+} as const;
+
+export interface BundlePurchaseBody {
+  /**
+   * @minimum 1
+   * @maximum 8
+   */
+  targetLevel: number;
+  paymentMethod: BundlePurchaseBodyPaymentMethod;
+}
+
+export interface BundlePurchaseResult {
+  success: boolean;
+  message: string;
+  levelsUnlocked: number[];
+  totalCost: number;
+  /** @nullable */
+  newBalance?: number | null;
+  /** @nullable */
+  usdtAddress?: string | null;
+  /** @nullable */
+  paymentTag?: string | null;
 }
 
 export interface AdminUpgradeDecisionBody {

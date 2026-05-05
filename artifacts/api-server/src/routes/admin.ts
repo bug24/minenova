@@ -30,7 +30,7 @@ import {
   getSupportUnreadCount,
   requestAdminUploadUrl,
 } from "./support";
-import { eq, and, isNull, or, ilike, sql, desc, type SQL } from "drizzle-orm";
+import { eq, and, isNull, or, ilike, sql, desc, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { hashPassword, verifyPassword, generateSubAdminToken, verifySubAdminToken, isSubAdminToken } from "../lib/auth";
 import * as OTPAuth from "otpauth";
@@ -360,11 +360,14 @@ async function seedDefaultMessages() {
 }
 
 const DEFAULT_UPGRADES = [
-  { tier: 1, name: "Speed Boost I", description: "Increase your mining speed by 20% permanently", hashRateBoost: 20, dailyCapBoost: 140, coinCost: 500, usdtCost: 5, isAutoMining: false, sortOrder: 1, badge: null, icon: "⚡" },
-  { tier: 2, name: "Speed Boost II", description: "Increase mining speed to 1.5x permanently", hashRateBoost: 50, dailyCapBoost: 180, coinCost: 1500, usdtCost: 15, isAutoMining: false, sortOrder: 2, badge: "Popular", icon: "🚀" },
-  { tier: 3, name: "Speed Boost III", description: "Double your mining speed permanently (2x base)", hashRateBoost: 100, dailyCapBoost: 250, coinCost: 3000, usdtCost: 30, isAutoMining: false, sortOrder: 3, badge: null, icon: "⛏️" },
-  { tier: 4, name: "Mining Level 4", description: "Elite mining tier — 2.5x base mining speed", hashRateBoost: 150, dailyCapBoost: 350, coinCost: 6000, usdtCost: 60, isAutoMining: false, sortOrder: 4, badge: "Best Value", icon: "💎" },
-  { tier: 5, name: "Auto Miner Pro", description: "Maximum speed (3x) with automatic mining sessions", hashRateBoost: 200, dailyCapBoost: 500, coinCost: 10000, usdtCost: 100, isAutoMining: true, sortOrder: 5, badge: "Elite", icon: "🤖" },
+  { tier: 1, name: "Mining Level 1", description: "Unlock Level 1 — start boosting your mining speed by 20%", hashRateBoost: 20, dailyCapBoost: 140, coinCost: 1000, usdtCost: 0.7, isAutoMining: false, sortOrder: 1, badge: null, icon: "⚡" },
+  { tier: 2, name: "Mining Level 2", description: "Unlock Level 2 — mine at 1.5x base speed", hashRateBoost: 50, dailyCapBoost: 180, coinCost: 3000, usdtCost: 2, isAutoMining: false, sortOrder: 2, badge: null, icon: "🚀" },
+  { tier: 3, name: "Mining Level 3", description: "Unlock Level 3 — double your mining speed permanently (2x)", hashRateBoost: 100, dailyCapBoost: 250, coinCost: 7500, usdtCost: 4.5, isAutoMining: false, sortOrder: 3, badge: "Popular", icon: "⛏️" },
+  { tier: 4, name: "Mining Level 4", description: "Unlock Level 4 — elite tier at 2.5x base mining speed", hashRateBoost: 150, dailyCapBoost: 350, coinCost: 18000, usdtCost: 10, isAutoMining: false, sortOrder: 4, badge: null, icon: "💎" },
+  { tier: 5, name: "Mining Level 5", description: "Unlock Level 5 — high-output tier with 3x mining speed", hashRateBoost: 200, dailyCapBoost: 500, coinCost: 40000, usdtCost: 20, isAutoMining: false, sortOrder: 5, badge: "Best Value", icon: "🏆" },
+  { tier: 6, name: "Mining Level 6", description: "Unlock Level 6 — industrial speed with 3.5x multiplier", hashRateBoost: 250, dailyCapBoost: 700, coinCost: 100000, usdtCost: 40, isAutoMining: false, sortOrder: 6, badge: null, icon: "🔥" },
+  { tier: 7, name: "Mining Level 7", description: "Unlock Level 7 — ultra tier at 4x speed", hashRateBoost: 300, dailyCapBoost: 1000, coinCost: 250000, usdtCost: 80, isAutoMining: false, sortOrder: 7, badge: null, icon: "💫" },
+  { tier: 8, name: "Mining Level 8", description: "Unlock Level 8 — maximum speed (5x) with automatic mining sessions", hashRateBoost: 400, dailyCapBoost: 1500, coinCost: 600000, usdtCost: 150, isAutoMining: true, sortOrder: 8, badge: "Elite", icon: "🤖" },
 ];
 
 async function seedUpgrades() {
@@ -1705,6 +1708,55 @@ router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, requ
   if (!txn) { res.status(404).json({ error: "Transaction not found" }); return; }
   if (txn.status === "completed") { res.status(400).json({ error: "Already approved" }); return; }
 
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, txn.userId)).limit(1);
+
+  // ── Bundle payment detection ──────────────────────────────────────────────
+  // Bundle USDT descriptions look like:
+  //   "USDT bundle payment for Levels 3, 4, 5 — 10% discount"
+  const bundleMatch = txn.description.match(/USDT bundle payment for Levels ([\d, ]+)/);
+  if (bundleMatch) {
+    const tierNumbers = bundleMatch[1].split(",").map(s => parseInt(s.trim(), 10)).filter(Boolean);
+    const upgradesToGrant = await db
+      .select({ id: upgradesTable.id, tier: upgradesTable.tier, usdtCost: upgradesTable.usdtCost, name: upgradesTable.name })
+      .from(upgradesTable)
+      .where(inArray(upgradesTable.tier, tierNumbers));
+
+    if (upgradesToGrant.length === 0) {
+      res.status(400).json({ error: "No upgrades found for bundle — cannot approve" });
+      return;
+    }
+
+    const maxTier = Math.max(...upgradesToGrant.map(u => u.tier));
+
+    await db.transaction(async (tx) => {
+      await tx.update(transactionsTable)
+        .set({ status: "completed", adminNote: note ?? null })
+        .where(eq(transactionsTable.id, id));
+
+      await tx.insert(userUpgradesTable).values(
+        upgradesToGrant.map(u => ({ userId: txn.userId, upgradeId: u.id }))
+      ).onConflictDoNothing();
+
+      await tx.update(usersTable)
+        .set({ miningLevel: maxTier + 1 })
+        .where(eq(usersTable.id, txn.userId));
+    });
+
+    sendUpgradeApprovedEmail(user.email, user.username, `Bundle Levels ${tierNumbers.join(", ")}`, note).catch(() => {});
+
+    const totalUsdtValue = Math.abs(txn.amount);
+    for (const u of upgradesToGrant) {
+      const perUpgradeValue = totalUsdtValue / upgradesToGrant.length;
+      await triggerUpgradeReferralReward({ referredUserId: txn.userId, upgradeId: u.id, upgradeUsdtValue: perUpgradeValue })
+        .catch(err => req.log.error({ err, upgradeId: u.id, userId: txn.userId }, "Referral reward trigger failed for bundle USDT approval"));
+    }
+
+    res.json({ success: true, message: `Bundle upgrade (Levels ${tierNumbers.join(", ")}) approved for ${user.username}.` });
+    logAudit(req, "upgrade.approve", "upgrade_payment", id, { userId: txn.userId, username: user.username, upgradeName: `Bundle Levels ${tierNumbers.join(", ")}` }).catch(() => {});
+    return;
+  }
+
+  // ── Single upgrade payment ─────────────────────────────────────────────────
   let upgradeId = txn.upgradeId;
   if (!upgradeId) {
     const name = txn.description.replace("USDT payment for upgrade: ", "");
@@ -1717,21 +1769,17 @@ router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, requ
   const [upgrade] = await db.select().from(upgradesTable).where(eq(upgradesTable.id, upgradeId)).limit(1);
   if (!upgrade) { res.status(404).json({ error: "Upgrade not found" }); return; }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, txn.userId)).limit(1);
-
   await db.update(transactionsTable)
     .set({ status: "completed", adminNote: note ?? null, upgradeId })
     .where(eq(transactionsTable.id, id));
-  await db.insert(userUpgradesTable).values({ userId: txn.userId, upgradeId });
-  await db.update(usersTable).set({ miningLevel: sql`mining_level + 1` }).where(eq(usersTable.id, txn.userId));
+  await db.insert(userUpgradesTable).values({ userId: txn.userId, upgradeId }).onConflictDoNothing();
+  await db.update(usersTable).set({ miningLevel: upgrade.tier + 1 }).where(eq(usersTable.id, txn.userId));
 
   sendUpgradeApprovedEmail(user.email, user.username, upgrade.name, note).catch(() => {});
 
   const usdtValue = upgrade.usdtCost ?? 0;
   if (usdtValue > 0) {
     // Reward trigger is non-fatal: approval is already committed at this point.
-    // Errors (e.g., duplicate unique key on retry) are logged without
-    // failing the admin approval response.
     await triggerUpgradeReferralReward({ referredUserId: txn.userId, upgradeId, upgradeUsdtValue: usdtValue })
       .catch(err => req.log.error({ err, upgradeId, userId: txn.userId }, "Referral reward trigger failed for USDT upgrade approval"));
   }

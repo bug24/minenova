@@ -22,6 +22,8 @@ import type {
   AdminUpgradePayment,
   AuthResponse,
   BoostBody,
+  BundlePurchaseBody,
+  BundlePurchaseResult,
   ClaimResult,
   DashboardSummary,
   ErrorResponse,
@@ -1532,6 +1534,92 @@ export function useGetUpgrades<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Purchase multiple upgrade levels at once (skip ahead with discounted bundle price)
+ */
+export const getBundlePurchaseUpgradeUrl = () => {
+  return `/api/upgrades/bundle`;
+};
+
+export const bundlePurchaseUpgrade = async (
+  bundlePurchaseBody: BundlePurchaseBody,
+  options?: RequestInit,
+): Promise<BundlePurchaseResult> => {
+  return customFetch<BundlePurchaseResult>(getBundlePurchaseUpgradeUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bundlePurchaseBody),
+  });
+};
+
+export const getBundlePurchaseUpgradeMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bundlePurchaseUpgrade>>,
+    TError,
+    { data: BodyType<BundlePurchaseBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bundlePurchaseUpgrade>>,
+  TError,
+  { data: BodyType<BundlePurchaseBody> },
+  TContext
+> => {
+  const mutationKey = ["bundlePurchaseUpgrade"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bundlePurchaseUpgrade>>,
+    { data: BodyType<BundlePurchaseBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bundlePurchaseUpgrade(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BundlePurchaseUpgradeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bundlePurchaseUpgrade>>
+>;
+export type BundlePurchaseUpgradeMutationBody = BodyType<BundlePurchaseBody>;
+export type BundlePurchaseUpgradeMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Purchase multiple upgrade levels at once (skip ahead with discounted bundle price)
+ */
+export const useBundlePurchaseUpgrade = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bundlePurchaseUpgrade>>,
+    TError,
+    { data: BodyType<BundlePurchaseBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bundlePurchaseUpgrade>>,
+  TError,
+  { data: BodyType<BundlePurchaseBody> },
+  TContext
+> => {
+  return useMutation(getBundlePurchaseUpgradeMutationOptions(options));
+};
 
 /**
  * @summary Purchase an upgrade using coins or USDT

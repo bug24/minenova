@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, upgradesTable, userUpgradesTable, usersTable, transactionsTable, adminConfigTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
-import { PurchaseUpgradeParams, PurchaseUpgradeBody, GetUpgradesResponse, PurchaseUpgradeResponse } from "@workspace/api-zod";
+import { PurchaseUpgradeParams, PurchaseUpgradeBody, GetUpgradesResponse, PurchaseUpgradeResponse, BundlePurchaseUpgradeBody, BundlePurchaseUpgradeResponse } from "@workspace/api-zod";
 import { generatePaymentTag } from "../lib/auth";
 import { sendUpgradePaymentSubmittedEmail } from "../lib/email";
 import { triggerUpgradeReferralReward } from "../lib/referralReward";
@@ -11,6 +11,9 @@ import { z } from "zod/v4";
 
 const router: IRouter = Router();
 const COINS_PER_USDT = 1000;
+const MAX_LEVELS = 8;
+const COIN_DISCOUNT = 0.05;   // 5% off bundle via coins
+const USDT_DISCOUNT = 0.10;   // 10% off bundle via USDT
 
 async function getUsdtDepositAddress(): Promise<string> {
   const rows = await db
@@ -22,31 +25,201 @@ async function getUsdtDepositAddress(): Promise<string> {
 }
 
 router.get("/upgrades", requireAuth, async (req, res): Promise<void> => {
-  const allUpgrades = await db.select().from(upgradesTable).orderBy(upgradesTable.sortOrder);
-  const userUpgrades = await db
-    .select({ upgradeId: userUpgradesTable.upgradeId })
-    .from(userUpgradesTable)
-    .where(eq(userUpgradesTable.userId, req.userId!));
+  try {
+    const allUpgrades = await db.select().from(upgradesTable).orderBy(upgradesTable.sortOrder);
+    const [user] = await db.select({ miningLevel: usersTable.miningLevel }).from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
+    const userLevel = user?.miningLevel ?? 1;
 
-  const ownedSet = new Set(userUpgrades.map(u => u.upgradeId));
+    const userUpgrades = await db
+      .select({ upgradeId: userUpgradesTable.upgradeId })
+      .from(userUpgradesTable)
+      .where(eq(userUpgradesTable.userId, req.userId!));
 
-  const result = allUpgrades.map(u => ({
-    id: u.id,
-    name: u.name,
-    description: u.description,
-    tier: u.tier,
-    hashRateBoost: u.hashRateBoost,
-    dailyCapBoost: u.dailyCapBoost,
-    coinCost: u.coinCost,
-    usdtCost: u.usdtCost,
-    owned: ownedSet.has(u.id),
-    isAutoMining: u.isAutoMining,
-    badge: u.badge ?? null,
-    icon: u.icon ?? null,
-  }));
+    const ownedSet = new Set(userUpgrades.map(u => u.upgradeId));
 
-  res.json(GetUpgradesResponse.parse(result));
+    const result = allUpgrades.map(u => {
+      const isUnlocked = u.tier < userLevel;
+      const isNext = u.tier === userLevel;
+
+      // bundlePrice: only meaningful for skip targets (not yet unlocked, not the immediate next)
+      let bundlePrice: { coins: number; usdt: number; coinDiscountPct: number; usdtDiscountPct: number } | null = null;
+      if (!isUnlocked && !isNext) {
+        const levelsToUnlock = allUpgrades.filter(x => x.tier >= userLevel && x.tier <= u.tier);
+        const rawCoins = levelsToUnlock.reduce((sum, x) => sum + (x.coinCost ?? 0), 0);
+        const rawUsdt = levelsToUnlock.reduce((sum, x) => sum + (x.usdtCost ?? 0), 0);
+        bundlePrice = {
+          coins: Math.round(rawCoins * (1 - COIN_DISCOUNT) * 100) / 100,
+          usdt: Math.round(rawUsdt * (1 - USDT_DISCOUNT) * 1000) / 1000,
+          coinDiscountPct: Math.round(COIN_DISCOUNT * 100),
+          usdtDiscountPct: Math.round(USDT_DISCOUNT * 100),
+        };
+      }
+
+      return {
+        id: u.id,
+        name: u.name,
+        description: u.description,
+        tier: u.tier,
+        hashRateBoost: u.hashRateBoost,
+        dailyCapBoost: u.dailyCapBoost,
+        coinCost: u.coinCost,
+        usdtCost: u.usdtCost,
+        owned: ownedSet.has(u.id),
+        isAutoMining: u.isAutoMining,
+        badge: u.badge ?? null,
+        icon: u.icon ?? null,
+        isUnlocked,
+        isNext,
+        bundlePrice,
+      };
+    });
+
+    res.json(GetUpgradesResponse.parse(result));
+  } catch (err) {
+    req.log.error({ err }, "upgrades/GET error");
+    res.status(500).json({ error: "Failed to load upgrades" });
+  }
 });
+
+// ─── Bundle purchase — must be declared before /:upgradeId/purchase ───────────
+
+router.post("/upgrades/bundle", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const parsed = BundlePurchaseUpgradeBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+
+    const { targetLevel, paymentMethod } = parsed.data;
+
+    if (targetLevel < 1 || targetLevel > MAX_LEVELS) {
+      res.status(400).json({ error: `Target level must be between 1 and ${MAX_LEVELS}` });
+      return;
+    }
+
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
+    const userLevel = user.miningLevel; // the tier they can buy next; tiers < userLevel are already owned
+
+    if (targetLevel < userLevel) {
+      res.status(400).json({ error: "You have already unlocked this level" });
+      return;
+    }
+    if (targetLevel === userLevel) {
+      res.status(400).json({ error: "Use the standard upgrade to purchase the next single level" });
+      return;
+    }
+
+    const jump = targetLevel - userLevel + 1; // number of levels to unlock
+
+    if (jump > 3 && paymentMethod === "coins") {
+      res.status(400).json({ error: "Jumping more than 3 levels at once requires USDT payment" });
+      return;
+    }
+
+    // Fetch all tiers to unlock
+    const allUpgrades = await db.select().from(upgradesTable).orderBy(upgradesTable.sortOrder);
+    const levelsToUnlock = allUpgrades.filter(u => u.tier >= userLevel && u.tier <= targetLevel);
+
+    if (levelsToUnlock.length === 0) {
+      res.status(400).json({ error: "No upgrades found for the requested levels" });
+      return;
+    }
+
+    const rawCoinTotal = levelsToUnlock.reduce((s, u) => s + (u.coinCost ?? 0), 0);
+    const rawUsdtTotal = levelsToUnlock.reduce((s, u) => s + (u.usdtCost ?? 0), 0);
+
+    const discountedCoinTotal = Math.round(rawCoinTotal * (1 - COIN_DISCOUNT) * 100) / 100;
+    const discountedUsdtTotal = Math.round(rawUsdtTotal * (1 - USDT_DISCOUNT) * 1000) / 1000;
+
+    const levelNumbers = levelsToUnlock.map(u => u.tier);
+    const upgradeIds = levelsToUnlock.map(u => u.id);
+
+    if (paymentMethod === "coins") {
+      if (user.coinBalance < discountedCoinTotal) {
+        res.status(400).json({ error: `Insufficient coin balance. Need ${discountedCoinTotal} coins (5% bundle discount applied).` });
+        return;
+      }
+
+      const newBalance = user.coinBalance - discountedCoinTotal;
+      const newLevel = targetLevel + 1; // next tier to buy after this bundle
+
+      await db.transaction(async (tx) => {
+        await tx.update(usersTable)
+          .set({ coinBalance: newBalance, miningLevel: newLevel })
+          .where(eq(usersTable.id, req.userId!));
+
+        await tx.insert(userUpgradesTable).values(
+          upgradeIds.map(upgradeId => ({ userId: req.userId!, upgradeId }))
+        );
+
+        await tx.insert(transactionsTable).values({
+          userId: req.userId!,
+          type: "upgrade",
+          amount: -discountedCoinTotal,
+          status: "completed",
+          description: `Bundle upgrade to Level ${targetLevel} (Levels ${levelNumbers.join(", ")}) — 5% discount`,
+        });
+      });
+
+      const usdtValue = discountedUsdtTotal > 0 ? discountedUsdtTotal : discountedCoinTotal / COINS_PER_USDT;
+      for (const upgradeId of upgradeIds) {
+        await triggerUpgradeReferralReward({ referredUserId: req.userId!, upgradeId, upgradeUsdtValue: usdtValue / upgradeIds.length })
+          .catch(err => req.log.error({ err, upgradeId, userId: req.userId }, "Referral reward failed for bundle upgrade"));
+      }
+
+      res.json(BundlePurchaseUpgradeResponse.parse({
+        success: true,
+        message: `Bundle upgrade complete! You've unlocked Levels ${levelNumbers.join(", ")} (5% discount applied).`,
+        levelsUnlocked: levelNumbers,
+        totalCost: discountedCoinTotal,
+        newBalance,
+        usdtAddress: null,
+        paymentTag: null,
+      }));
+      return;
+    }
+
+    if (paymentMethod === "usdt") {
+      const paymentTag = generatePaymentTag();
+      const usdtAddress = await getUsdtDepositAddress();
+
+      await db.insert(transactionsTable).values({
+        userId: req.userId!,
+        type: "upgrade_payment",
+        amount: -discountedUsdtTotal,
+        status: "pending",
+        description: `USDT bundle payment for Levels ${levelNumbers.join(", ")} — 10% discount`,
+        usdtAddress,
+        paymentTag,
+      });
+
+      sendAdminNotification({
+        title: "Bundle Upgrade Request",
+        body: `${user.username} submitted $${discountedUsdtTotal.toFixed(2)} USDT to unlock Levels ${levelNumbers.join(", ")}.`,
+        url: "/admin",
+      }).catch(() => {});
+
+      res.json(BundlePurchaseUpgradeResponse.parse({
+        success: true,
+        message: `Send ${discountedUsdtTotal} USDT to activate Levels ${levelNumbers.join(", ")} (10% bundle discount applied). Use the payment tag so we can identify your payment.`,
+        levelsUnlocked: levelNumbers,
+        totalCost: discountedUsdtTotal,
+        newBalance: null,
+        usdtAddress,
+        paymentTag,
+      }));
+      return;
+    }
+
+    res.status(400).json({ error: "Invalid payment method. Use 'coins' or 'usdt'" });
+  } catch (err) {
+    req.log.error({ err }, "upgrades/bundle error");
+    res.status(500).json({ error: "Bundle upgrade failed. Please try again." });
+  }
+});
+
+// ─── Single-level purchase ─────────────────────────────────────────────────────
 
 router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Promise<void> => {
   const params = PurchaseUpgradeParams.safeParse(req.params);
@@ -71,6 +244,16 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
   }
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
+
+  // Sequential enforcement: user can only purchase the next level in sequence
+  if (upgrade.tier < user.miningLevel) {
+    res.status(400).json({ error: `You have already unlocked Level ${upgrade.tier}` });
+    return;
+  }
+  if (upgrade.tier > user.miningLevel) {
+    res.status(400).json({ error: `You must unlock Level ${user.miningLevel} before jumping to Level ${upgrade.tier}. Use the bundle option to skip multiple levels.` });
+    return;
+  }
 
   if (paymentMethod === "coins") {
     if (!upgrade.coinCost) {
@@ -99,9 +282,6 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
     });
 
     const usdtValue = upgrade.usdtCost ?? upgrade.coinCost! / COINS_PER_USDT;
-    // Reward trigger is non-fatal: purchase is already committed at this point.
-    // Errors (e.g., DB transient failure, duplicate unique key on retry) are
-    // logged and do not cause the successful purchase to appear as a failure.
     await triggerUpgradeReferralReward({ referredUserId: req.userId!, upgradeId, upgradeUsdtValue: usdtValue })
       .catch(err => req.log.error({ err, upgradeId, userId: req.userId }, "Referral reward trigger failed for coin upgrade"));
 
@@ -179,7 +359,7 @@ router.post("/upgrades/payments/mark-paid", requireAuth, async (req, res): Promi
     .where(eq(transactionsTable.id, txn.id));
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
-  const upgradeName = txn.description.replace("USDT payment for upgrade: ", "");
+  const upgradeName = txn.description.replace("USDT payment for upgrade: ", "").replace("USDT bundle payment for ", "");
   const usdtAmount = Math.abs(txn.amount);
 
   sendUpgradePaymentSubmittedEmail(

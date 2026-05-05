@@ -360,8 +360,49 @@ export const GetUpgradesResponseItem = zod.object({
   usdtCost: zod.number().nullish(),
   owned: zod.boolean(),
   isAutoMining: zod.boolean(),
+  badge: zod.string().nullish(),
+  icon: zod.string().nullish(),
+  isUnlocked: zod
+    .boolean()
+    .describe("True if the user already owns this tier (tier < miningLevel)"),
+  isNext: zod
+    .boolean()
+    .describe("True if this is the immediate next tier the user can purchase"),
+  bundlePrice: zod
+    .union([
+      zod.object({
+        coins: zod.number(),
+        usdt: zod.number(),
+        coinDiscountPct: zod.number(),
+        usdtDiscountPct: zod.number(),
+      }),
+      zod.null(),
+    ])
+    .describe(
+      "Discounted cumulative cost to jump to this level; null if already unlocked or isNext",
+    ),
 });
 export const GetUpgradesResponse = zod.array(GetUpgradesResponseItem);
+
+/**
+ * @summary Purchase multiple upgrade levels at once (skip ahead with discounted bundle price)
+ */
+export const bundlePurchaseUpgradeBodyTargetLevelMax = 8;
+
+export const BundlePurchaseUpgradeBody = zod.object({
+  targetLevel: zod.number().min(1).max(bundlePurchaseUpgradeBodyTargetLevelMax),
+  paymentMethod: zod.enum(["coins", "usdt"]),
+});
+
+export const BundlePurchaseUpgradeResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string(),
+  levelsUnlocked: zod.array(zod.number()),
+  totalCost: zod.number(),
+  newBalance: zod.number().nullish(),
+  usdtAddress: zod.string().nullish(),
+  paymentTag: zod.string().nullish(),
+});
 
 /**
  * @summary Purchase an upgrade using coins or USDT
