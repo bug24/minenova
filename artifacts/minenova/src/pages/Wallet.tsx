@@ -23,7 +23,7 @@ import {
   Wallet, ArrowUpRight, Clock, CheckCircle2, XCircle, AlertCircle,
   TrendingUp, Zap, Twitter, Facebook, MessageCircle, Share2, MailWarning,
   Pickaxe, Gift, Gamepad2, CreditCard, RefreshCcw, Hash, CalendarDays, Info,
-  Download, Camera,
+  Download,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
@@ -117,6 +117,7 @@ export default function WalletPage() {
   const [screenshotting, setScreenshotting] = useState(false);
   const [sharedWithdrawalIds, setSharedWithdrawalIds] = useState<Set<number>>(new Set());
   const receiptRef = useRef<HTMLDivElement>(null);
+  const shareTxReceiptRef = useRef<HTMLDivElement>(null);
 
   const { user } = useAuth();
 
@@ -154,51 +155,88 @@ export default function WalletPage() {
     } catch { /* non-fatal */ }
   }, [sharedWithdrawalIds, toast, queryClient]);
 
-  const captureAndDownloadReceipt = useCallback(async (amountUsdt?: number, withdrawalId?: number) => {
-    if (!receiptRef.current) return;
+  /** Captures a receipt card as a JPEG File + data URL. Returns null on failure. */
+  const captureReceiptJpeg = useCallback(async (
+    ref: React.RefObject<HTMLDivElement | null>,
+    amountUsdt: number,
+  ): Promise<{ file: File; url: string } | null> => {
+    if (!ref.current) return null;
+    const canvas = await html2canvas(ref.current, { backgroundColor: "#0f0f0f", scale: 2 });
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+    const blob = await (await fetch(dataUrl)).blob();
+    const filename = `minenova-receipt-${amountUsdt.toFixed(2)}usdt.jpg`;
+    const file = new File([blob], filename, { type: "image/jpeg" });
+    return { file, url: dataUrl };
+  }, []);
+
+  /** Downloads the receipt card as a JPEG file. */
+  const downloadReceiptJpeg = useCallback(async (
+    ref: React.RefObject<HTMLDivElement | null>,
+    amountUsdt: number,
+    withdrawalId?: number,
+  ) => {
     setScreenshotting(true);
     try {
-      const canvas = await html2canvas(receiptRef.current, { backgroundColor: "#0f0f0f", scale: 2 });
-      const url = canvas.toDataURL("image/png");
-      const shareText = amountUsdt != null
-        ? buildShareMsg(amountUsdt, "whatsapp")
-        : `I just withdrew USDT from MineNova! Mine crypto and get paid.\n\n${referralUrl}`;
-
-      if (navigator.canShare && navigator.share) {
-        try {
-          const blob = await (await fetch(url)).blob();
-          const file = new File([blob], "minenova-withdrawal.png", { type: "image/png" });
-          if (navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: "MineNova Withdrawal", text: shareText });
-            if (withdrawalId != null) claimShareBonus(withdrawalId);
-            return;
-          }
-        } catch { /* fallback to download */ }
-      }
-
+      const result = await captureReceiptJpeg(ref, amountUsdt);
+      if (!result) return;
       const link = document.createElement("a");
-      link.href = url;
-      link.download = "minenova-withdrawal-receipt.png";
+      link.href = result.url;
+      link.download = `minenova-receipt-${amountUsdt.toFixed(2)}usdt.jpg`;
       link.click();
-      toast({ title: "Receipt downloaded!" });
+      toast({ title: "Receipt saved!", description: "JPG saved to your downloads." });
       if (withdrawalId != null) claimShareBonus(withdrawalId);
     } catch {
-      toast({ variant: "destructive", title: "Screenshot failed", description: "Try downloading manually." });
+      toast({ variant: "destructive", title: "Screenshot failed", description: "Please try again." });
     } finally {
       setScreenshotting(false);
     }
-  }, [toast, buildShareMsg, referralUrl, claimShareBonus]);
+  }, [captureReceiptJpeg, claimShareBonus, toast]);
 
-  const handleShare = useCallback((platform: "twitter" | "whatsapp" | "facebook", amount: number, withdrawalId: number) => {
-    const msg = encodeURIComponent(buildShareMsg(amount, platform));
-    const urls: Record<string, string> = {
-      twitter: `https://twitter.com/intent/tweet?text=${msg}`,
-      whatsapp: `https://api.whatsapp.com/send?text=${msg}`,
-      facebook: `https://www.facebook.com/sharer/sharer.php?quote=${msg}`,
+  /**
+   * Social share: captures the receipt as JPEG, attempts Web Share API with the
+   * image file attached. Falls back to downloading the JPEG + opening intent URL
+   * on browsers/desktops that don't support file sharing.
+   */
+  const handleShare = useCallback(async (
+    platform: "twitter" | "whatsapp" | "facebook",
+    amount: number,
+    withdrawalId: number,
+    ref: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    const msg = buildShareMsg(amount, platform);
+    const intentUrls: Record<string, string> = {
+      twitter: `https://twitter.com/intent/tweet?text=${encodeURIComponent(msg)}`,
+      whatsapp: `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`,
+      facebook: `https://www.facebook.com/sharer/sharer.php?quote=${encodeURIComponent(msg)}`,
     };
-    window.open(urls[platform], "_blank");
-    claimShareBonus(withdrawalId);
-  }, [buildShareMsg, claimShareBonus]);
+    setScreenshotting(true);
+    try {
+      const result = await captureReceiptJpeg(ref, amount);
+      if (result && navigator.canShare?.({ files: [result.file] })) {
+        try {
+          await navigator.share({ files: [result.file], title: "MineNova Withdrawal", text: msg });
+          claimShareBonus(withdrawalId);
+          return;
+        } catch { /* user cancelled or share failed — fall through to intent */ }
+      }
+      // Fallback: save JPEG then open intent URL so user can attach the image manually
+      if (result) {
+        const link = document.createElement("a");
+        link.href = result.url;
+        link.download = `minenova-receipt-${amount.toFixed(2)}usdt.jpg`;
+        link.click();
+        toast({ title: "Receipt saved!", description: "Attach the saved image to your post." });
+      }
+      window.open(intentUrls[platform], "_blank");
+      claimShareBonus(withdrawalId);
+    } catch {
+      // Screenshot failed — still open the intent URL with text only
+      window.open(intentUrls[platform], "_blank");
+      claimShareBonus(withdrawalId);
+    } finally {
+      setScreenshotting(false);
+    }
+  }, [buildShareMsg, captureReceiptJpeg, claimShareBonus, toast]);
   const coinBalance = wallet?.withdrawableBalance ?? 0;
   const usdtValue = coinBalance / COINS_PER_USDT;
   const canWithdraw = coinBalance >= MINIMUM_COINS;
@@ -639,49 +677,42 @@ export default function WalletPage() {
 
               {/* Share section */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Share2 className="w-3 h-3" /> Share with your referral link
-                  </p>
-                  <button
-                    onClick={() => captureAndDownloadReceipt(withdrawalResult.amount, withdrawalResult.transactionId)}
-                    disabled={screenshotting}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {screenshotting ? <RefreshCcw className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
-                    {screenshotting ? "Capturing…" : "Screenshot"}
-                  </button>
-                </div>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Share2 className="w-3 h-3" /> Share with your referral link
+                </p>
                 <div className="grid grid-cols-3 gap-2">
                   <button
-                    onClick={() => handleShare("twitter", withdrawalResult.amount, withdrawalResult.transactionId)}
-                    className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 transition-colors"
+                    onClick={() => handleShare("twitter", withdrawalResult.amount, withdrawalResult.transactionId, receiptRef)}
+                    disabled={screenshotting}
+                    className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 transition-colors disabled:opacity-50"
                   >
-                    <Twitter className="w-4 h-4 text-sky-400" />
+                    {screenshotting ? <RefreshCcw className="w-4 h-4 text-sky-400 animate-spin" /> : <Twitter className="w-4 h-4 text-sky-400" />}
                     <span className="text-xs text-sky-400 font-medium">Twitter</span>
                   </button>
                   <button
-                    onClick={() => handleShare("whatsapp", withdrawalResult.amount, withdrawalResult.transactionId)}
-                    className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                    onClick={() => handleShare("whatsapp", withdrawalResult.amount, withdrawalResult.transactionId, receiptRef)}
+                    disabled={screenshotting}
+                    className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
                   >
-                    <MessageCircle className="w-4 h-4 text-emerald-500" />
+                    {screenshotting ? <RefreshCcw className="w-4 h-4 text-emerald-500 animate-spin" /> : <MessageCircle className="w-4 h-4 text-emerald-500" />}
                     <span className="text-xs text-emerald-500 font-medium">WhatsApp</span>
                   </button>
                   <button
-                    onClick={() => handleShare("facebook", withdrawalResult.amount, withdrawalResult.transactionId)}
-                    className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
+                    onClick={() => handleShare("facebook", withdrawalResult.amount, withdrawalResult.transactionId, receiptRef)}
+                    disabled={screenshotting}
+                    className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
                   >
-                    <Facebook className="w-4 h-4 text-blue-500" />
+                    {screenshotting ? <RefreshCcw className="w-4 h-4 text-blue-500 animate-spin" /> : <Facebook className="w-4 h-4 text-blue-500" />}
                     <span className="text-xs text-blue-500 font-medium">Facebook</span>
                   </button>
                 </div>
                 <button
-                  onClick={() => captureAndDownloadReceipt(withdrawalResult.amount, withdrawalResult.transactionId)}
+                  onClick={() => downloadReceiptJpeg(receiptRef, withdrawalResult.amount, withdrawalResult.transactionId)}
                   disabled={screenshotting}
-                  className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border border-border hover:bg-accent/50 transition-colors text-xs text-muted-foreground"
+                  className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border border-border hover:bg-accent/50 transition-colors text-xs text-muted-foreground disabled:opacity-50"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  Download Receipt
+                  {screenshotting ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  {screenshotting ? "Capturing…" : "Download JPG"}
                 </button>
               </div>
 
@@ -787,7 +818,7 @@ export default function WalletPage() {
             const amountUsdt = Math.abs(shareTx.amount);
             return (
               <div className="space-y-4 pt-1">
-                <div className="rounded-2xl border border-emerald-500/30 p-4 space-y-3" style={{ background: "linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%)" }}>
+                <div ref={shareTxReceiptRef} className="rounded-2xl border border-emerald-500/30 p-4 space-y-3" style={{ background: "linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%)" }}>
                   <div className="flex items-center gap-2">
                     <div className="w-7 h-7 rounded-full bg-emerald-500/20 flex items-center justify-center">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
@@ -808,27 +839,38 @@ export default function WalletPage() {
                   </p>
                   <div className="grid grid-cols-3 gap-2">
                     <button
-                      onClick={() => handleShare("twitter", amountUsdt, shareTx.id)}
-                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 transition-colors"
+                      onClick={() => handleShare("twitter", amountUsdt, shareTx.id, shareTxReceiptRef)}
+                      disabled={screenshotting}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 transition-colors disabled:opacity-50"
                     >
-                      <Twitter className="w-4 h-4 text-sky-400" />
+                      {screenshotting ? <RefreshCcw className="w-4 h-4 text-sky-400 animate-spin" /> : <Twitter className="w-4 h-4 text-sky-400" />}
                       <span className="text-xs text-sky-400 font-medium">Twitter</span>
                     </button>
                     <button
-                      onClick={() => handleShare("whatsapp", amountUsdt, shareTx.id)}
-                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                      onClick={() => handleShare("whatsapp", amountUsdt, shareTx.id, shareTxReceiptRef)}
+                      disabled={screenshotting}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
                     >
-                      <MessageCircle className="w-4 h-4 text-emerald-500" />
+                      {screenshotting ? <RefreshCcw className="w-4 h-4 text-emerald-500 animate-spin" /> : <MessageCircle className="w-4 h-4 text-emerald-500" />}
                       <span className="text-xs text-emerald-500 font-medium">WhatsApp</span>
                     </button>
                     <button
-                      onClick={() => handleShare("facebook", amountUsdt, shareTx.id)}
-                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
+                      onClick={() => handleShare("facebook", amountUsdt, shareTx.id, shareTxReceiptRef)}
+                      disabled={screenshotting}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
                     >
-                      <Facebook className="w-4 h-4 text-blue-500" />
+                      {screenshotting ? <RefreshCcw className="w-4 h-4 text-blue-500 animate-spin" /> : <Facebook className="w-4 h-4 text-blue-500" />}
                       <span className="text-xs text-blue-500 font-medium">Facebook</span>
                     </button>
                   </div>
+                  <button
+                    onClick={() => downloadReceiptJpeg(shareTxReceiptRef, amountUsdt, shareTx.id)}
+                    disabled={screenshotting}
+                    className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border border-border hover:bg-accent/50 transition-colors text-xs text-muted-foreground disabled:opacity-50"
+                  >
+                    {screenshotting ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                    {screenshotting ? "Capturing…" : "Download JPG"}
+                  </button>
                 </div>
                 <Button className="w-full" variant="outline" onClick={() => setShareTx(null)}>Done</Button>
               </div>
