@@ -373,8 +373,11 @@ export const GetUpgradesResponseItem = zod.object({
       zod.object({
         coins: zod.number(),
         usdt: zod.number(),
-        coinDiscountPct: zod.number(),
-        usdtDiscountPct: zod.number(),
+        discountPct: zod
+          .number()
+          .describe(
+            "Headline discount percentage (applied to USDT; coin discount is half)",
+          ),
       }),
       zod.null(),
     ])

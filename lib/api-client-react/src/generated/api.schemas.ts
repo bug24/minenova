@@ -204,8 +204,8 @@ export interface Transaction {
 export interface BundlePrice {
   coins: number;
   usdt: number;
-  coinDiscountPct: number;
-  usdtDiscountPct: number;
+  /** Headline discount percentage (applied to USDT; coin discount is half) */
+  discountPct: number;
 }
 
 export interface Upgrade {

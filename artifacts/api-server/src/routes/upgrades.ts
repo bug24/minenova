@@ -13,7 +13,7 @@ const router: IRouter = Router();
 const COINS_PER_USDT = 1000;
 const MAX_LEVELS = 8;
 const COIN_DISCOUNT = 0.05;   // 5% off bundle via coins
-const USDT_DISCOUNT = 0.10;   // 10% off bundle via USDT
+const USDT_DISCOUNT = 0.10;   // 10% off bundle via USDT (headline rate)
 
 async function getUsdtDepositAddress(): Promise<string> {
   const rows = await db
@@ -24,11 +24,21 @@ async function getUsdtDepositAddress(): Promise<string> {
   return rows[0]?.value ?? "TRX_PLACEHOLDER_ADDRESS_CONFIGURE_ME";
 }
 
+/** Returns the highest tier owned by the user (0 if none). Derived from user_upgrades records. */
+async function getMaxOwnedTier(userId: number, allUpgrades: { id: number; tier: number }[]): Promise<number> {
+  const owned = await db
+    .select({ upgradeId: userUpgradesTable.upgradeId })
+    .from(userUpgradesTable)
+    .where(eq(userUpgradesTable.userId, userId));
+  if (owned.length === 0) return 0;
+  const ownedIds = new Set(owned.map(u => u.upgradeId));
+  const ownedTiers = allUpgrades.filter(u => ownedIds.has(u.id)).map(u => u.tier);
+  return ownedTiers.length > 0 ? Math.max(...ownedTiers) : 0;
+}
+
 router.get("/upgrades", requireAuth, async (req, res): Promise<void> => {
   try {
     const allUpgrades = await db.select().from(upgradesTable).orderBy(upgradesTable.sortOrder);
-    const [user] = await db.select({ miningLevel: usersTable.miningLevel }).from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
-    const userLevel = user?.miningLevel ?? 1;
 
     const userUpgrades = await db
       .select({ upgradeId: userUpgradesTable.upgradeId })
@@ -37,21 +47,25 @@ router.get("/upgrades", requireAuth, async (req, res): Promise<void> => {
 
     const ownedSet = new Set(userUpgrades.map(u => u.upgradeId));
 
-    const result = allUpgrades.map(u => {
-      const isUnlocked = u.tier < userLevel;
-      const isNext = u.tier === userLevel;
+    // Derive progression from actual ownership records, not miningLevel
+    const ownedTiers = allUpgrades.filter(u => ownedSet.has(u.id)).map(u => u.tier);
+    const maxOwnedTier = ownedTiers.length > 0 ? Math.max(...ownedTiers) : 0;
 
-      // bundlePrice: only meaningful for skip targets (not yet unlocked, not the immediate next)
-      let bundlePrice: { coins: number; usdt: number; coinDiscountPct: number; usdtDiscountPct: number } | null = null;
+    const result = allUpgrades.map(u => {
+      const isUnlocked = ownedSet.has(u.id);         // ownership-based
+      const isNext = u.tier === maxOwnedTier + 1;    // next sequential level
+
+      // bundlePrice: only for tiers that are skip targets (2+ levels ahead)
+      let bundlePrice: { coins: number; usdt: number; discountPct: number } | null = null;
       if (!isUnlocked && !isNext) {
-        const levelsToUnlock = allUpgrades.filter(x => x.tier >= userLevel && x.tier <= u.tier);
+        // Sum all tiers from the next unowned level (maxOwnedTier+1) up to this tier
+        const levelsToUnlock = allUpgrades.filter(x => x.tier >= maxOwnedTier + 1 && x.tier <= u.tier);
         const rawCoins = levelsToUnlock.reduce((sum, x) => sum + (x.coinCost ?? 0), 0);
         const rawUsdt = levelsToUnlock.reduce((sum, x) => sum + (x.usdtCost ?? 0), 0);
         bundlePrice = {
           coins: Math.round(rawCoins * (1 - COIN_DISCOUNT) * 100) / 100,
           usdt: Math.round(rawUsdt * (1 - USDT_DISCOUNT) * 1000) / 1000,
-          coinDiscountPct: Math.round(COIN_DISCOUNT * 100),
-          usdtDiscountPct: Math.round(USDT_DISCOUNT * 100),
+          discountPct: Math.round(USDT_DISCOUNT * 100),
         };
       }
 
@@ -98,28 +112,28 @@ router.post("/upgrades/bundle", requireAuth, async (req, res): Promise<void> => 
       return;
     }
 
-    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
-    const userLevel = user.miningLevel; // the tier they can buy next; tiers < userLevel are already owned
+    const allUpgrades = await db.select().from(upgradesTable).orderBy(upgradesTable.sortOrder);
+    const maxOwnedTier = await getMaxOwnedTier(req.userId!, allUpgrades);
+    const nextTier = maxOwnedTier + 1;
 
-    if (targetLevel < userLevel) {
+    if (targetLevel <= maxOwnedTier) {
       res.status(400).json({ error: "You have already unlocked this level" });
       return;
     }
-    if (targetLevel === userLevel) {
+    if (targetLevel === nextTier) {
       res.status(400).json({ error: "Use the standard upgrade to purchase the next single level" });
       return;
     }
 
-    const jump = targetLevel - userLevel + 1; // number of levels to unlock
+    const jump = targetLevel - maxOwnedTier; // total levels to unlock
 
     if (jump > 3 && paymentMethod === "coins") {
       res.status(400).json({ error: "Jumping more than 3 levels at once requires USDT payment" });
       return;
     }
 
-    // Fetch all tiers to unlock
-    const allUpgrades = await db.select().from(upgradesTable).orderBy(upgradesTable.sortOrder);
-    const levelsToUnlock = allUpgrades.filter(u => u.tier >= userLevel && u.tier <= targetLevel);
+    // Fetch all tiers to unlock: from maxOwnedTier+1 up to targetLevel
+    const levelsToUnlock = allUpgrades.filter(u => u.tier >= nextTier && u.tier <= targetLevel);
 
     if (levelsToUnlock.length === 0) {
       res.status(400).json({ error: "No upgrades found for the requested levels" });
@@ -135,6 +149,8 @@ router.post("/upgrades/bundle", requireAuth, async (req, res): Promise<void> => 
     const levelNumbers = levelsToUnlock.map(u => u.tier);
     const upgradeIds = levelsToUnlock.map(u => u.id);
 
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
+
     if (paymentMethod === "coins") {
       if (user.coinBalance < discountedCoinTotal) {
         res.status(400).json({ error: `Insufficient coin balance. Need ${discountedCoinTotal} coins (5% bundle discount applied).` });
@@ -142,11 +158,12 @@ router.post("/upgrades/bundle", requireAuth, async (req, res): Promise<void> => 
       }
 
       const newBalance = user.coinBalance - discountedCoinTotal;
-      const newLevel = targetLevel + 1; // next tier to buy after this bundle
+      // miningLevel tracks mining speed (increment by number of levels unlocked)
+      const newMiningLevel = user.miningLevel + levelsToUnlock.length;
 
       await db.transaction(async (tx) => {
         await tx.update(usersTable)
-          .set({ coinBalance: newBalance, miningLevel: newLevel })
+          .set({ coinBalance: newBalance, miningLevel: newMiningLevel })
           .where(eq(usersTable.id, req.userId!));
 
         await tx.insert(userUpgradesTable).values(
@@ -243,17 +260,21 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
     return;
   }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
+  // Sequential enforcement: derived from actual ownership records
+  const allUpgrades = await db.select({ id: upgradesTable.id, tier: upgradesTable.tier }).from(upgradesTable);
+  const maxOwnedTier = await getMaxOwnedTier(req.userId!, allUpgrades);
+  const nextTier = maxOwnedTier + 1;
 
-  // Sequential enforcement: user can only purchase the next level in sequence
-  if (upgrade.tier < user.miningLevel) {
+  if (upgrade.tier < nextTier) {
     res.status(400).json({ error: `You have already unlocked Level ${upgrade.tier}` });
     return;
   }
-  if (upgrade.tier > user.miningLevel) {
-    res.status(400).json({ error: `You must unlock Level ${user.miningLevel} before jumping to Level ${upgrade.tier}. Use the bundle option to skip multiple levels.` });
+  if (upgrade.tier > nextTier) {
+    res.status(400).json({ error: `You must unlock Level ${nextTier} before purchasing Level ${upgrade.tier}. Use the bundle option to skip multiple levels.` });
     return;
   }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
 
   if (paymentMethod === "coins") {
     if (!upgrade.coinCost) {
@@ -266,10 +287,11 @@ router.post("/upgrades/:upgradeId/purchase", requireAuth, async (req, res): Prom
     }
 
     const newBalance = user.coinBalance - upgrade.coinCost;
-    const newLevel = user.miningLevel + 1;
 
     await db.transaction(async (tx) => {
-      await tx.update(usersTable).set({ coinBalance: newBalance, miningLevel: newLevel }).where(eq(usersTable.id, req.userId!));
+      await tx.update(usersTable)
+        .set({ coinBalance: newBalance, miningLevel: user.miningLevel + 1 })
+        .where(eq(usersTable.id, req.userId!));
       await tx.insert(userUpgradesTable).values({ userId: req.userId!, upgradeId });
       await tx.insert(transactionsTable).values({
         userId: req.userId!,
@@ -359,7 +381,9 @@ router.post("/upgrades/payments/mark-paid", requireAuth, async (req, res): Promi
     .where(eq(transactionsTable.id, txn.id));
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1);
-  const upgradeName = txn.description.replace("USDT payment for upgrade: ", "").replace("USDT bundle payment for ", "");
+  const upgradeName = txn.description
+    .replace("USDT payment for upgrade: ", "")
+    .replace("USDT bundle payment for ", "");
   const usdtAmount = Math.abs(txn.amount);
 
   sendUpgradePaymentSubmittedEmail(

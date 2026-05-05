@@ -337,7 +337,7 @@ export default function Upgrades() {
                         ${upgrade.bundlePrice.usdt} USDT
                       </span>
                       <Badge className="text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/20 border">
-                        {upgrade.bundlePrice.usdtDiscountPct}% off USDT · {upgrade.bundlePrice.coinDiscountPct}% off coins
+                        {upgrade.bundlePrice.discountPct}% off USDT · 5% off coins
                       </Badge>
                     </div>
                   )}
@@ -428,12 +428,12 @@ export default function Upgrades() {
                   <div className="bg-primary/10 border border-primary/20 rounded-lg p-2 text-center">
                     <p className="text-xs text-muted-foreground">Coins</p>
                     <p className="text-sm font-bold text-primary">{bundlePrice.coins.toLocaleString()}</p>
-                    <p className="text-xs text-emerald-600">{bundlePrice.coinDiscountPct}% off</p>
+                    <p className="text-xs text-emerald-600">5% off</p>
                   </div>
                   <div className="bg-accent/10 border border-accent/20 rounded-lg p-2 text-center">
                     <p className="text-xs text-muted-foreground">USDT</p>
                     <p className="text-sm font-bold text-accent">${bundlePrice.usdt}</p>
-                    <p className="text-xs text-emerald-600">{bundlePrice.usdtDiscountPct}% off</p>
+                    <p className="text-xs text-emerald-600">{bundlePrice.discountPct}% off</p>
                   </div>
                 </div>
               </div>

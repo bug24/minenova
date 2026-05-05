@@ -1052,15 +1052,13 @@ components:
           type: number
         usdt:
           type: number
-        coinDiscountPct:
+        discountPct:
           type: number
-        usdtDiscountPct:
-          type: number
+          description: Headline discount percentage (applied to USDT; coin discount is half)
       required:
         - coins
         - usdt
-        - coinDiscountPct
-        - usdtDiscountPct
+        - discountPct
 
     Upgrade:
       type: object
