@@ -163,8 +163,10 @@ export default function WalletPage() {
     if (!ref.current) return null;
     const canvas = await html2canvas(ref.current, { backgroundColor: "#0f0f0f", scale: 2 });
     const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
-    const blob = await (await fetch(dataUrl)).blob();
     const filename = `minenova-receipt-${amountUsdt.toFixed(2)}usdt.jpg`;
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob returned null")), "image/jpeg", 0.9);
+    });
     const file = new File([blob], filename, { type: "image/jpeg" });
     return { file, url: dataUrl };
   }, []);
@@ -413,10 +415,10 @@ export default function WalletPage() {
         ) : transactions && transactions.length > 0 ? (
           <div className="space-y-2">
             {transactions.map(tx => (
-              <div key={tx.id} className="flex items-stretch gap-1.5">
+              <div key={tx.id} className="flex flex-col gap-1">
                 <button
                   onClick={() => setSelectedTx(tx)}
-                  className="flex-1 min-w-0 bg-card border border-card-border rounded-xl p-3 flex items-center gap-3 text-left hover:bg-accent/50 active:scale-[0.99] transition-all"
+                  className="w-full bg-card border border-card-border rounded-xl p-3 flex items-center gap-3 text-left hover:bg-accent/50 active:scale-[0.99] transition-all"
                   data-testid={`tx-${tx.id}`}
                 >
                   <div className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
@@ -436,11 +438,10 @@ export default function WalletPage() {
                 {tx.type === "withdrawal" && (
                   <button
                     onClick={() => setShareTx(tx)}
-                    className="w-9 bg-card border border-card-border rounded-xl flex items-center justify-center hover:bg-primary/10 active:scale-95 transition-all flex-shrink-0"
-                    title="Share withdrawal"
-                    aria-label="Share withdrawal"
+                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-primary/5 border border-primary/20 text-primary hover:bg-primary/10 active:scale-[0.99] transition-all text-xs font-semibold"
                   >
-                    <Share2 className="w-4 h-4 text-primary" />
+                    <Share2 className="w-3.5 h-3.5" />
+                    Share withdrawal receipt &amp; earn coins
                   </button>
                 )}
               </div>
