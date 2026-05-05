@@ -80,6 +80,11 @@ export const GetMiningStatusResponse = zod.object({
     .describe(
       'Comma-separated list of boost tiers used today (e.g. \"single,double\")',
     ),
+  boostCoinsEarnedToday: zod
+    .number()
+    .describe(
+      "Boost-extra coins earned today (counts against the daily cap of 100)",
+    ),
   canClaim: zod.boolean(),
   cooldownEndsAt: zod.string().nullish(),
   speedMultiplier: zod
@@ -113,6 +118,11 @@ export const StartMiningResponse = zod.object({
     .string()
     .describe(
       'Comma-separated list of boost tiers used today (e.g. \"single,double\")',
+    ),
+  boostCoinsEarnedToday: zod
+    .number()
+    .describe(
+      "Boost-extra coins earned today (counts against the daily cap of 100)",
     ),
   canClaim: zod.boolean(),
   cooldownEndsAt: zod.string().nullish(),
@@ -160,6 +170,11 @@ export const BoostMiningResponse = zod.object({
     .string()
     .describe(
       'Comma-separated list of boost tiers used today (e.g. \"single,double\")',
+    ),
+  boostCoinsEarnedToday: zod
+    .number()
+    .describe(
+      "Boost-extra coins earned today (counts against the daily cap of 100)",
     ),
   canClaim: zod.boolean(),
   cooldownEndsAt: zod.string().nullish(),

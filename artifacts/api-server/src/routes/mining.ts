@@ -34,6 +34,7 @@ const router: IRouter = Router();
 
 const BASE_HASH_RATE = 10;
 const BASE_COINS_PER_HOUR = 0.5;
+const DAILY_BOOST_CAP = 100;
 
 const REFERRAL_BONUS_COINS = 250;
 const REFERRAL_COMMISSION_RATE = 0.07;
@@ -117,11 +118,13 @@ function computeMiningStatus(
       boostEndsAt: null,
       boostsUsedToday: 0,
       boostTiersUsed: "",
+      boostCoinsEarnedToday: 0,
       canClaim: false,
       cooldownEndsAt: null,
       speedMultiplier,
       upgradeName,
       upgradeTier,
+      _boostCoinsThisSession: 0,
     };
   }
 
@@ -133,8 +136,16 @@ function computeMiningStatus(
   const boostActive = session.boostEndsAt && now < new Date(session.boostEndsAt);
   const multiplier = boostActive ? session.boostMultiplier : 1;
 
-  const coinsPerHour = baseRate * user.miningLevel * speedMultiplier * multiplier;
-  const rawCoins = elapsedHours * coinsPerHour;
+  // Split base vs boost-extra coins so we can cap the boost portion
+  const baseCoinsPerHour = baseRate * user.miningLevel * speedMultiplier;
+  const rawBaseCoins = elapsedHours * baseCoinsPerHour;
+
+  const boostEarnedSoFar = session.boostCoinsEarnedToday ?? 0;
+  const rawBoostExtra = boostActive ? elapsedHours * baseCoinsPerHour * (multiplier - 1) : 0;
+  const remainingBoostCap = Math.max(0, DAILY_BOOST_CAP - boostEarnedSoFar);
+  const cappedBoostExtra = Math.min(rawBoostExtra, remainingBoostCap);
+
+  const rawCoins = rawBaseCoins + cappedBoostExtra;
   const accumulatedCoins = dailyCap !== null ? Math.min(rawCoins, dailyCap) : rawCoins;
 
   return {
@@ -147,11 +158,13 @@ function computeMiningStatus(
     boostEndsAt: session.boostEndsAt ? session.boostEndsAt.toISOString() : null,
     boostsUsedToday: session.boostsUsedToday,
     boostTiersUsed: session.boostTiersUsed ?? "",
+    boostCoinsEarnedToday: boostEarnedSoFar,
     canClaim: isComplete,
     cooldownEndsAt: null,
     speedMultiplier,
     upgradeName,
     upgradeTier,
+    _boostCoinsThisSession: Math.round(cappedBoostExtra * 100) / 100,
   };
 }
 
@@ -252,7 +265,7 @@ router.post("/mining/start", requireAuth, async (req, res): Promise<void> => {
         totalCoins += status.accumulatedCoins;
         await db
           .update(miningSessionsTable)
-          .set({ claimedAt: now, isActive: false, coinsEarned: status.accumulatedCoins })
+          .set({ claimedAt: now, isActive: false, coinsEarned: status.accumulatedCoins, boostCoinsEarnedToday: status._boostCoinsThisSession })
           .where(eq(miningSessionsTable.id, s.id));
       }
       if (totalCoins > 0) {
@@ -387,7 +400,7 @@ router.post("/mining/claim", requireAuth, async (req, res): Promise<void> => {
       coinsEarned += statusData.accumulatedCoins;
       await db
         .update(miningSessionsTable)
-        .set({ claimedAt: now, isActive: false, coinsEarned: statusData.accumulatedCoins })
+        .set({ claimedAt: now, isActive: false, coinsEarned: statusData.accumulatedCoins, boostCoinsEarnedToday: statusData._boostCoinsThisSession })
         .where(eq(miningSessionsTable.id, session.id));
     }
 
@@ -498,11 +511,16 @@ router.post("/mining/boost", requireAuth, async (req, res): Promise<void> => {
       return;
     }
 
-    const boostMultiplier = boostType === "triple" ? 5 : boostType === "double" ? 3 : 2;
+    if ((session.boostCoinsEarnedToday ?? 0) >= DAILY_BOOST_CAP) {
+      res.status(400).json({ error: "Daily boost limit reached. You've earned the maximum +100 boost coins today." });
+      return;
+    }
+
+    const boostMultiplier = boostType === "triple" ? 3 : boostType === "double" ? 2.5 : 2;
     const boostDurationMs =
-      boostType === "triple" ? 120 * 60 * 1000
-      : boostType === "double" ? 60 * 60 * 1000
-      : 30 * 60 * 1000;
+      boostType === "triple" ? 45 * 60 * 1000
+      : boostType === "double" ? 30 * 60 * 1000
+      : 20 * 60 * 1000;
 
     const newTiersUsed = [...tiersUsed, boostType].join(",");
 

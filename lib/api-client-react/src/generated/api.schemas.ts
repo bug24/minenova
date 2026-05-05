@@ -60,6 +60,8 @@ export interface MiningStatus {
   boostsUsedToday: number;
   /** Comma-separated list of boost tiers used today (e.g. "single,double") */
   boostTiersUsed: string;
+  /** Boost-extra coins earned today (counts against the daily cap of 100) */
+  boostCoinsEarnedToday: number;
   canClaim: boolean;
   /** @nullable */
   cooldownEndsAt?: string | null;

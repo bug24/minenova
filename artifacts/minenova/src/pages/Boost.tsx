@@ -22,6 +22,8 @@ type BoostTier = {
   placement: string;
 };
 
+const DAILY_BOOST_CAP = 100;
+
 const boostTiers: BoostTier[] = [
   {
     id: "single",
@@ -29,7 +31,7 @@ const boostTiers: BoostTier[] = [
     label: "2x Speed",
     multiplier: "2x",
     adCount: 1,
-    duration: "30 min",
+    duration: "20 min",
     gradient: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%)",
     borderColor: "rgba(59, 130, 246, 0.4)",
     glowColor: "rgba(59, 130, 246, 0.15)",
@@ -38,10 +40,10 @@ const boostTiers: BoostTier[] = [
   {
     id: "double",
     emoji: "🔥",
-    label: "3x Speed",
-    multiplier: "3x",
+    label: "2.5x Speed",
+    multiplier: "2.5x",
     adCount: 2,
-    duration: "60 min",
+    duration: "30 min",
     gradient: "linear-gradient(135deg, #9333ea 0%, #7c3aed 50%, #ec4899 100%)",
     borderColor: "rgba(147, 51, 234, 0.4)",
     glowColor: "rgba(147, 51, 234, 0.15)",
@@ -50,10 +52,10 @@ const boostTiers: BoostTier[] = [
   {
     id: "triple",
     emoji: "🚀",
-    label: "5x Speed",
-    multiplier: "5x",
+    label: "3x Speed (MAX)",
+    multiplier: "3x",
     adCount: 3,
-    duration: "120 min",
+    duration: "45 min",
     gradient: "linear-gradient(135deg, #f97316 0%, #ea580c 50%, #dc2626 100%)",
     borderColor: "rgba(249, 115, 22, 0.4)",
     glowColor: "rgba(249, 115, 22, 0.15)",
@@ -121,6 +123,9 @@ export default function Boost() {
   const tiersUsedToday: string[] = (status?.boostTiersUsed ?? "").split(",").filter(Boolean);
   const boostsUsed = status?.boostsUsedToday ?? 0;
   const boostsRemaining = Math.max(0, 3 - boostsUsed);
+  const boostCoinsEarnedToday = status?.boostCoinsEarnedToday ?? 0;
+  const dailyCapReached = boostCoinsEarnedToday >= DAILY_BOOST_CAP;
+  const capProgress = Math.min(100, (boostCoinsEarnedToday / DAILY_BOOST_CAP) * 100);
 
   useEffect(() => {
     if (!hasActiveBoost || !boostEndsAt) { setTimeRemaining(""); return; }
@@ -176,6 +181,10 @@ export default function Boost() {
   const startBoostFlow = async (tier: BoostTier) => {
     if (!isActive) {
       toast({ variant: "destructive", title: "No active session", description: "Start mining first to use a boost." });
+      return;
+    }
+    if (dailyCapReached) {
+      toast({ variant: "destructive", title: "Daily limit reached", description: "You've earned the maximum +100 boost coins today. Resets at midnight." });
       return;
     }
     if (hasActiveBoost) {
@@ -274,6 +283,28 @@ export default function Boost() {
         </div>
       </div>
 
+      {/* Daily boost cap progress */}
+      <div className="bg-card border border-card-border rounded-2xl px-4 py-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">Daily boost coins earned</div>
+          <div className="text-sm font-bold">
+            <span className={dailyCapReached ? "text-amber-400" : "text-foreground"}>
+              {boostCoinsEarnedToday.toFixed(1)}
+            </span>
+            <span className="text-muted-foreground"> / {DAILY_BOOST_CAP}</span>
+          </div>
+        </div>
+        <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${dailyCapReached ? "bg-amber-400" : "bg-primary"}`}
+            style={{ width: `${capProgress}%` }}
+          />
+        </div>
+        {dailyCapReached && (
+          <p className="text-xs text-amber-500 font-medium">Daily limit reached — resets at midnight UTC</p>
+        )}
+      </div>
+
       {/* Active boost banner */}
       {hasActiveBoost && (
         <div className="flex items-center justify-between gap-2 bg-primary/10 border border-primary/30 rounded-2xl px-4 py-3">
@@ -307,7 +338,7 @@ export default function Boost() {
         {boostTiers.map(tier => {
           const isActivating = activatingTier === tier.id;
           const usedToday = tiersUsedToday.includes(tier.id);
-          const disabled = !isActive || usedToday || hasActiveBoost || (activatingTier !== null && !isActivating);
+          const disabled = !isActive || usedToday || hasActiveBoost || dailyCapReached || (activatingTier !== null && !isActivating);
 
           return (
             <div
@@ -364,6 +395,8 @@ export default function Boost() {
                       <CheckCircle2 className="w-4 h-4" />
                       Used today — resets at midnight
                     </span>
+                  ) : dailyCapReached ? (
+                    "Daily limit reached"
                   ) : hasActiveBoost ? (
                     "Boost already active"
                   ) : (

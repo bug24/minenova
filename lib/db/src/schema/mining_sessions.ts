@@ -14,6 +14,7 @@ export const miningSessionsTable = pgTable("mining_sessions", {
   boostEndsAt: timestamp("boost_ends_at", { withTimezone: true }),
   boostsUsedToday: integer("boosts_used_today").notNull().default(0),
   boostTiersUsed: text("boost_tiers_used").notNull().default(""),
+  boostCoinsEarnedToday: real("boost_coins_earned_today").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

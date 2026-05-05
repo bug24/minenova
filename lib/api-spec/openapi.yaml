@@ -707,6 +707,9 @@ components:
         boostTiersUsed:
           type: string
           description: Comma-separated list of boost tiers used today (e.g. "single,double")
+        boostCoinsEarnedToday:
+          type: number
+          description: Boost-extra coins earned today (counts against the daily cap of 100)
         canClaim:
           type: boolean
         cooldownEndsAt:
@@ -729,6 +732,7 @@ components:
         - boostMultiplier
         - boostsUsedToday
         - boostTiersUsed
+        - boostCoinsEarnedToday
         - canClaim
         - speedMultiplier
         - upgradeName
