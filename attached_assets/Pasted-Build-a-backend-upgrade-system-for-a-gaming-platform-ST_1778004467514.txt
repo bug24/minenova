@@ -1,0 +1,178 @@
+Build a backend upgrade system for a gaming platform.
+
+STACK:
+- Node.js (Express)
+- MongoDB (Mongoose)
+
+-----------------------------------
+CORE REQUIREMENTS:
+
+1. Users can upgrade mining levels (Level 1 → Level 8)
+2. Upgrades must be sequential (no skipping for free)
+3. Users can unlock higher levels instantly by paying cumulative cost (bundle system)
+4. Support both COINS and USDT payments
+5. Prevent abuse, double upgrades, and invalid states
+
+-----------------------------------
+DATABASE MODELS:
+
+User:
+- _id
+- coinBalance (number)
+- usdtBalance (number)
+- currentLevel (number, default 0)
+- highestLevelUnlocked (number)
+- totalSpentUSDT (number)
+
+UpgradeLevel:
+- level (1–8)
+- coinCost
+- usdtCost
+- speedMultiplier
+- dailyCap
+
+-----------------------------------
+UPGRADE DATA (im the DB):
+
+Level 1 → coin:1000, usdt:0.7
+Level 2 → coin:3000, usdt:2
+Level 3 → coin:7500, usdt:4.5
+Level 4 → coin:18000, usdt:10
+Level 5 → coin:40000, usdt:20
+Level 6 → coin:100000, usdt:40
+Level 7 → coin:250000, usdt:80
+Level 8 → coin:600000, usdt:150
+
+-----------------------------------
+API ENDPOINTS:
+
+1. UPGRADE SINGLE LEVEL
+
+POST /upgrade
+
+Body:
+- targetLevel
+- paymentMethod ("coins" or "usdt")
+
+LOGIC:
+
+- Fetch user
+- Check:
+    if targetLevel !== user.currentLevel + 1 → reject
+- Get upgrade data
+- If coins:
+    - check balance >= coinCost
+    - deduct coins
+- If USDT:
+    - check balance >= usdtCost
+    - deduct usdt
+- Update:
+    user.currentLevel = targetLevel
+    user.highestLevelUnlocked = targetLevel
+- Save user
+- Return success
+
+-----------------------------------
+
+2. BUNDLE UPGRADE (PAY TO SKIP)
+
+POST /upgrade/bundle
+
+Body:
+- targetLevel
+- paymentMethod ("coins" or "usdt")
+
+LOGIC:
+
+- Fetch user
+- If targetLevel <= user.currentLevel → reject
+
+- Calculate cumulative cost:
+    sum all levels from (currentLevel + 1 → targetLevel)
+
+Example:
+User at Level 2 → wants Level 5
+Cost = L3 + L4 + L5
+
+-----------------------------------
+
+APPLY DISCOUNT:
+
+- If paymentMethod = "usdt":
+    apply 10% discount on total
+- If coins:
+    no discount OR max 5%
+
+-----------------------------------
+
+VALIDATION:
+
+- If coins:
+    check user.coinBalance >= totalCoinCost
+- If USDT:
+    check user.usdtBalance >= totalUSDTCost
+
+-----------------------------------
+
+PROCESS PAYMENT:
+
+- Deduct balance
+- Update:
+    user.currentLevel = targetLevel
+    user.highestLevelUnlocked = targetLevel
+    user.totalSpentUSDT += amount (if USDT)
+
+-----------------------------------
+
+3. GET UPGRADE OPTIONS
+
+GET /upgrade/options
+
+Return:
+
+For each level:
+- level
+- coinCost
+- usdtCost
+- isUnlocked
+- isNext
+- bundlePrice (if applicable)
+
+-----------------------------------
+
+4. SECURITY RULES:
+
+- Prevent double requests (use request lock or transaction)
+- Never allow negative balances
+- Validate targetLevel <= 8
+- Log every transaction (important)
+
+-----------------------------------
+
+5. OPTIONAL FEATURES:
+
+- Add "recommended" flag for USDT
+- Add "discount percentage" field in response
+- Add upgrade history log
+
+-----------------------------------
+
+IMPORTANT ECONOMY RULES:
+
+- Always deduct BEFORE upgrading
+- Always validate level progression
+- Never allow skipping without paying cumulative cost
+- Apply stricter checks on USDT payments
+
+-----------------------------------
+
+RETURN:
+
+- Clean JSON responses
+- Proper error handling
+- Modular functions (upgradeService.js)
+
+
+if (targetLevel - user.currentLevel > 3 && paymentMethod === "coins") {
+   return error("Large jumps require USDT payment");
+}
