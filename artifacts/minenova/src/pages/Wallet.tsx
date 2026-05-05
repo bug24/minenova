@@ -26,7 +26,7 @@ import {
   Download,
 } from "lucide-react";
 import { useLocation } from "wouter";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/useAuth";
 
 const COINS_PER_USDT = 1000;
 const MINIMUM_COINS = 5000;

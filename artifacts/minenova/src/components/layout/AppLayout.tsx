@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useState, useEffect } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/useAuth";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLogout } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
