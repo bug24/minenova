@@ -89,7 +89,12 @@ async function getUserEffectiveUpgrade(userId: number): Promise<EffectiveUpgrade
   }
 }
 
-/** Sum of boost coins earned today (UTC) from OTHER already-claimed sessions for this user. */
+/**
+ * Sum of boost_coins_earned_today across ALL of a user's sessions that started today (UTC),
+ * excluding the current active session (whose in-progress boost earnings are computed live).
+ * Does not filter by claimedAt — unclaimed rows contribute 0 by default (column default),
+ * so including them is safe and avoids a race condition on the claim path.
+ */
 async function getPriorDailyBoostCoins(userId: number, excludeSessionId?: number): Promise<number> {
   const todayUtc = new Date();
   todayUtc.setUTCHours(0, 0, 0, 0);
@@ -536,7 +541,9 @@ router.post("/mining/boost", requireAuth, async (req, res): Promise<void> => {
       return;
     }
 
-    // Gate on the true daily aggregate — sum across ALL of today's sessions, not just this one.
+    // Gate on the true daily aggregate across all of today's sessions for this user.
+    // priorDailyBoostCoins = boost earned in claimed sessions earlier today (the current
+    // active session contributes 0 via its column default until claimed).
     const priorDailyBoostCoins = await getPriorDailyBoostCoins(req.userId!, session.id);
     if (priorDailyBoostCoins >= DAILY_BOOST_CAP) {
       res.status(400).json({ error: "Daily boost limit reached. You've earned the maximum +100 boost coins today." });
