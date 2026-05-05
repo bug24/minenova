@@ -59,7 +59,7 @@ async function getMinesSettings(): Promise<{ enabled: boolean; minBet: number; m
     enabled: (cfg["mines_enabled"] ?? "true") === "true",
     minBet: parseFloat(cfg["mines_min_bet"] ?? "10"),
     maxBet: parseFloat(cfg["mines_max_bet"] ?? "100000"),
-    feePct: parseFloat(cfg["mines_fee_pct"] ?? "3"),
+    feePct: parseFloat(cfg["mines_fee_pct"] ?? "5"),
   };
 }
 
@@ -89,8 +89,8 @@ router.post("/mines/start", requireAuth, async (req: Request, res: Response): Pr
     const mines = Number(mineCount);
 
     if (!betNum || betNum <= 0) { res.status(400).json({ error: "bet must be a positive number" }); return; }
-    if (!Number.isInteger(mines) || mines < 1 || mines > 24) {
-      res.status(400).json({ error: "mineCount must be between 1 and 24" }); return;
+    if (!Number.isInteger(mines) || mines < 3 || mines > 24) {
+      res.status(400).json({ error: "mineCount must be between 3 and 24" }); return;
     }
 
     const settings = await getMinesSettings();
@@ -315,8 +315,8 @@ router.post("/mines/cashout", requireAuth, async (req: Request, res: Response): 
       if (game.status !== "active") throw Object.assign(new Error("Game is not active"), { status: 409 });
 
       const revealedTiles = (game.revealedTiles as number[]) ?? [];
-      if (revealedTiles.length === 0) {
-        throw Object.assign(new Error("Reveal at least one tile before cashing out"), { status: 400 });
+      if (revealedTiles.length < 2) {
+        throw Object.assign(new Error("Reveal at least 2 gems before cashing out"), { status: 400 });
       }
 
       const systemUserId = await getSystemUserId();

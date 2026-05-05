@@ -91,7 +91,9 @@ interface Leaderboard {
 }
 
 const TOTAL_TILES = 25;
-const MINE_PRESETS = [1, 3, 5, 10, 15, 24];
+const MINE_PRESETS = [3, 5, 10, 15, 20, 24];
+const MIN_MINES = 3;
+const MIN_GEMS_TO_CASHOUT = 2;
 
 // Multiplier formula (client-side preview — houseEdge = 1 - feePct/100)
 function calcMultiplier(mineCount: number, revealed: number, houseEdge: number): number {
@@ -193,7 +195,7 @@ export default function MinesGame() {
   const [phase, setPhase] = useState<"setup" | "playing" | "ended">("setup");
   const [gameId, setGameId] = useState<number | null>(null);
   const [bet, setBet] = useState("100");
-  const [mineCount, setMineCount] = useState(3);
+  const [mineCount, setMineCount] = useState(5);
   const [revealedTiles, setRevealedTiles] = useState<number[]>([]);
   const [mineTiles, setMineTiles] = useState<number[]>([]);
   const [hitMine, setHitMine] = useState<number | null>(null);
@@ -582,7 +584,7 @@ export default function MinesGame() {
                 >{m}</button>
               ))}
             </div>
-            <input type="range" min={1} max={24} value={mineCount}
+            <input type="range" min={MIN_MINES} max={24} value={mineCount}
               onChange={e => setMineCount(Number(e.target.value))}
               className="w-full mt-2 accent-primary" />
           </div>
@@ -700,13 +702,13 @@ export default function MinesGame() {
               className="w-full font-bold gap-2"
               style={{ background: "linear-gradient(135deg, #059669, #0d9488)" }}
               onClick={handleCashOut}
-              disabled={cashingOut || revealedTiles.length === 0}
+              disabled={cashingOut || revealedTiles.length < MIN_GEMS_TO_CASHOUT}
             >
               <DollarSign className="w-4 h-4" />
               {cashingOut
                 ? "Cashing out…"
-                : revealedTiles.length === 0
-                  ? "Reveal a gem first"
+                : revealedTiles.length < MIN_GEMS_TO_CASHOUT
+                  ? `Find ${MIN_GEMS_TO_CASHOUT - revealedTiles.length} more gem${revealedTiles.length === 1 ? "" : "s"} to cash out`
                   : `Cash Out — ${potentialPayout.toFixed(0)} coins`
               }
             </Button>
