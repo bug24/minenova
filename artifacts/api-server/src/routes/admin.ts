@@ -1738,7 +1738,7 @@ router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, requ
       ).onConflictDoNothing();
 
       await tx.update(usersTable)
-        .set({ miningLevel: maxTier + 1 })
+        .set({ miningLevel: sql`GREATEST(mining_level, ${maxTier + 1})` })
         .where(eq(usersTable.id, txn.userId));
     });
 
@@ -1773,7 +1773,9 @@ router.post("/admin/upgrade-payments/:transactionId/approve", requireAdmin, requ
     .set({ status: "completed", adminNote: note ?? null, upgradeId })
     .where(eq(transactionsTable.id, id));
   await db.insert(userUpgradesTable).values({ userId: txn.userId, upgradeId }).onConflictDoNothing();
-  await db.update(usersTable).set({ miningLevel: upgrade.tier + 1 }).where(eq(usersTable.id, txn.userId));
+  await db.update(usersTable)
+    .set({ miningLevel: sql`GREATEST(mining_level, ${upgrade.tier + 1})` })
+    .where(eq(usersTable.id, txn.userId));
 
   sendUpgradeApprovedEmail(user.email, user.username, upgrade.name, note).catch(() => {});
 

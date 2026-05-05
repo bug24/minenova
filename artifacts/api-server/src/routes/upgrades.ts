@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, upgradesTable, userUpgradesTable, usersTable, transactionsTable, adminConfigTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { PurchaseUpgradeParams, PurchaseUpgradeBody, GetUpgradesResponse, PurchaseUpgradeResponse, BundlePurchaseUpgradeBody, BundlePurchaseUpgradeResponse } from "@workspace/api-zod";
 import { generatePaymentTag } from "../lib/auth";
@@ -158,12 +158,13 @@ router.post("/upgrades/bundle", requireAuth, async (req, res): Promise<void> => 
       }
 
       const newBalance = user.coinBalance - discountedCoinTotal;
-      // miningLevel tracks mining speed (increment by number of levels unlocked)
-      const newMiningLevel = user.miningLevel + levelsToUnlock.length;
+      // miningLevel = highest-owned tier + 1 (used as mining speed multiplier).
+      // Use GREATEST so a concurrent purchase can never roll back the level.
+      const targetMiningLevel = targetLevel + 1;
 
       await db.transaction(async (tx) => {
         await tx.update(usersTable)
-          .set({ coinBalance: newBalance, miningLevel: newMiningLevel })
+          .set({ coinBalance: newBalance, miningLevel: sql`GREATEST(mining_level, ${targetMiningLevel})` })
           .where(eq(usersTable.id, req.userId!));
 
         await tx.insert(userUpgradesTable).values(
