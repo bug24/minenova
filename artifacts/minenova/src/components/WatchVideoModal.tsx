@@ -60,7 +60,10 @@ export default function WatchVideoModal({ onComplete, onClose, completing }: Wat
   useEffect(() => {
     let cancelled = false;
     fetch("/api/config/watch-video-embed")
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data: { embed?: string }) => {
         if (!cancelled) setRawEmbed(data.embed ?? "");
       })
