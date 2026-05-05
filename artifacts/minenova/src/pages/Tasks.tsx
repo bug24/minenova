@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { CheckCircle2, Play, Share2, Twitter, Facebook, MessageCircle, Gift, LogIn, Coins, Link2 } from "lucide-react";
+import WatchVideoModal from "@/components/WatchVideoModal";
 
 function getTaskIcon(taskType: string) {
   if (taskType === "share_twitter") return <Twitter className="w-5 h-5 text-sky-400" />;
@@ -34,6 +35,8 @@ export default function Tasks() {
   const { toast } = useToast();
   const [pendingConfirmId, setPendingConfirmId] = useState<number | null>(null);
   const [invitingId, setInvitingId] = useState<number | null>(null);
+  const [watchVideoTaskId, setWatchVideoTaskId] = useState<number | null>(null);
+  const [watchVideoCompleting, setWatchVideoCompleting] = useState(false);
 
   const handleShare = (taskId: number, taskType: string, shareUrl?: string | null, shareText?: string | null) => {
     const url = buildShareIntentUrl(taskType, shareUrl, shareText);
@@ -104,12 +107,39 @@ export default function Tasks() {
     });
   };
 
+  const handleWatchVideoComplete = () => {
+    if (watchVideoTaskId === null) return;
+    setWatchVideoCompleting(true);
+    completeTask.mutate({ taskId: watchVideoTaskId }, {
+      onSuccess: (res) => {
+        toast({ title: "Video watched!", description: `+${res.coinsEarned} coins added to your balance.` });
+        queryClient.invalidateQueries({ queryKey: getGetTasksQueryKey() });
+        setWatchVideoTaskId(null);
+        setWatchVideoCompleting(false);
+      },
+      onError: (err: unknown) => {
+        const msg = (err as { data?: { error?: string } })?.data?.error ?? "Could not complete task";
+        toast({ variant: "destructive", title: "Error", description: msg });
+        setWatchVideoTaskId(null);
+        setWatchVideoCompleting(false);
+      },
+    });
+  };
+
   const completed = tasks?.filter(t => t.completedToday).length ?? 0;
   const total = tasks?.length ?? 0;
   const totalRewards = tasks?.reduce((sum, t) => sum + (t.completedToday ? 0 : t.reward), 0) ?? 0;
 
   return (
     <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-6">
+      {watchVideoTaskId !== null && (
+        <WatchVideoModal
+          onComplete={handleWatchVideoComplete}
+          onClose={() => setWatchVideoTaskId(null)}
+          completing={watchVideoCompleting}
+        />
+      )}
+
       <div>
         <h1 className="text-2xl font-bold font-serif">Daily Tasks</h1>
         <p className="text-muted-foreground text-sm mt-0.5">Complete tasks to earn extra coins every day</p>
@@ -150,6 +180,7 @@ export default function Tasks() {
           {tasks.map(task => {
             const isShareTask = task.taskType.startsWith("share_");
             const isInviteTask = task.taskType === "invite_friend";
+            const isWatchVideo = task.taskType === "watch_video";
             const isPendingConfirm = pendingConfirmId === task.id;
             const isInviting = invitingId === task.id;
             return (
@@ -174,6 +205,11 @@ export default function Tasks() {
                       {isInviteTask && !task.completedToday && (
                         <Badge variant="outline" className="text-xs gap-1">
                           <Link2 className="w-2.5 h-2.5" /> Invite
+                        </Badge>
+                      )}
+                      {isWatchVideo && !task.completedToday && (
+                        <Badge variant="outline" className="text-xs gap-1 text-rose-500 border-rose-500/30">
+                          <Play className="w-2.5 h-2.5" /> 30s
                         </Badge>
                       )}
                     </div>
@@ -222,6 +258,8 @@ export default function Tasks() {
                             handleInviteShare(task.id, task.shareUrl, task.shareText);
                           } else if (isShareTask) {
                             handleShare(task.id, task.taskType, task.shareUrl, task.shareText);
+                          } else if (isWatchVideo) {
+                            setWatchVideoTaskId(task.id);
                           } else {
                             handleNonShareComplete(task.id);
                           }
@@ -229,7 +267,7 @@ export default function Tasks() {
                         disabled={completeTask.isPending || isInviting}
                         data-testid={`button-complete-task-${task.id}`}
                       >
-                        {isInviting ? "Sharing…" : isInviteTask ? "Invite" : isShareTask ? "Share" : "Complete"}
+                        {isInviting ? "Sharing…" : isInviteTask ? "Invite" : isShareTask ? "Share" : isWatchVideo ? "Watch" : "Complete"}
                       </Button>
                     )}
                   </div>

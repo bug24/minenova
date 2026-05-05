@@ -3070,6 +3070,23 @@ function SettingsTab({ secret }: { secret: string }) {
             Coins awarded when a user shares their withdrawal receipt. Set to 0 to disable.
           </p>
         </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Watch Video Embed Code</label>
+          <div className="space-y-2">
+            <textarea
+              rows={4}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+              placeholder="Paste full <iframe> embed code here…"
+              value={settings.watch_video_embed}
+              onChange={e => setSettings(p => ({ ...p, watch_video_embed: e.target.value }))}
+            />
+            <SaveBtn k="watch_video_embed" />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            HTML embed code for the Watch Video daily task. Users must watch for 30 seconds before claiming the reward.
+          </p>
+        </div>
       </div>
 
       {/* ── Economy ── */}
