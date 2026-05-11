@@ -2334,24 +2334,27 @@ router.delete("/admin/chat/messages/:id", requireAdmin, requirePermission("setti
   res.json({ success: true });
 });
 
-// GET /admin/chat/users — recent chatters (last 50 distinct senders) with active mute status
+// GET /admin/chat/users — 50 most recent distinct senders with active mute status
 router.get("/admin/chat/users", requireAdmin, requirePermission("settings", "read"), async (_req, res): Promise<void> => {
   const now = new Date();
 
-  // Distinct recent chatters via subquery on chat_messages
-  const recentChatters = await db
-    .selectDistinctOn([chatMessagesTable.userId], {
-      userId: chatMessagesTable.userId,
-      username: chatMessagesTable.username,
-      lastMessageAt: sql<string>`max(${chatMessagesTable.createdAt}) over (partition by ${chatMessagesTable.userId})`,
-    })
-    .from(chatMessagesTable)
-    .orderBy(chatMessagesTable.userId, desc(chatMessagesTable.createdAt))
-    .limit(200);
+  // CTE: latest message timestamp per user, then pick top 50 by recency
+  const recentChatters = await db.execute<{ userId: number; username: string; lastMessageAt: string }>(sql`
+    WITH latest AS (
+      SELECT user_id, username, MAX(created_at) AS last_message_at
+      FROM chat_messages
+      GROUP BY user_id, username
+    )
+    SELECT user_id AS "userId", username, last_message_at AS "lastMessageAt"
+    FROM latest
+    ORDER BY last_message_at DESC
+    LIMIT 50
+  `);
 
-  if (recentChatters.length === 0) { res.json([]); return; }
+  const rows = recentChatters.rows;
+  if (rows.length === 0) { res.json([]); return; }
 
-  const userIds = recentChatters.map(r => r.userId);
+  const userIds = rows.map(r => r.userId);
 
   // Fetch active mutes for these users
   const activeMutes = await db
@@ -2366,18 +2369,14 @@ router.get("/admin/chat/users", requireAdmin, requirePermission("settings", "rea
 
   const muteMap = new Map(activeMutes.map(m => [m.userId, m]));
 
-  // Sort by lastMessageAt descending and cap at 50
-  const result = recentChatters
-    .map(c => ({
-      userId: c.userId,
-      username: c.username,
-      lastMessageAt: c.lastMessageAt,
-      muteId: muteMap.get(c.userId)?.id ?? null,
-      muteExpiresAt: muteMap.get(c.userId)?.expiresAt?.toISOString() ?? null,
-      muteReason: muteMap.get(c.userId)?.reason ?? null,
-    }))
-    .sort((a, b) => (a.lastMessageAt > b.lastMessageAt ? -1 : 1))
-    .slice(0, 50);
+  const result = rows.map(c => ({
+    userId: c.userId,
+    username: c.username,
+    lastMessageAt: c.lastMessageAt,
+    muteId: muteMap.get(c.userId)?.id ?? null,
+    muteExpiresAt: muteMap.get(c.userId)?.expiresAt?.toISOString() ?? null,
+    muteReason: muteMap.get(c.userId)?.reason ?? null,
+  }));
 
   res.json(result);
 });

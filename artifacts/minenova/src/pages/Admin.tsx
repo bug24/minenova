@@ -2146,7 +2146,7 @@ function ChatAdminSection({ secret, chatEnabled, isSavingChat, isSavedChat, onTo
     if (res.ok) {
       const d = await res.json();
       setMuteUsername(""); setMuteReason("");
-      loadMutes();
+      loadMutes(); loadChatters();
       toast({ title: muteDuration == null ? `${d.username} permanently banned from chat` : `${d.username} muted for ${MUTE_DURATIONS.find(x => x.minutes === muteDuration)?.label}` });
     } else {
       const d = await res.json().catch(() => ({}));
