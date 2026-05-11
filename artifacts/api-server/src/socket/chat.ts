@@ -1,7 +1,7 @@
 import type { Server as HttpServer } from "node:http";
 import { Server as SocketIOServer } from "socket.io";
-import { db, chatMessagesTable, chatBannedWordsTable, adminConfigTable, usersTable } from "@workspace/db";
-import { desc, eq, sql } from "drizzle-orm";
+import { db, chatMessagesTable, chatBannedWordsTable, adminConfigTable, usersTable, chatMutesTable } from "@workspace/db";
+import { desc, eq, sql, and, or, isNull, gt } from "drizzle-orm";
 import { verifyToken } from "../lib/auth";
 import { logger } from "../lib/logger";
 
@@ -23,6 +23,32 @@ export async function isChatEnabled(): Promise<boolean> {
     .where(eq(adminConfigTable.key, "chat_enabled"))
     .limit(1);
   return row ? row.value === "true" : true;
+}
+
+async function isMutedOrBanned(userId: number): Promise<boolean> {
+  const now = new Date();
+  const [mute] = await db
+    .select({ id: chatMutesTable.id })
+    .from(chatMutesTable)
+    .where(and(
+      eq(chatMutesTable.userId, userId),
+      or(isNull(chatMutesTable.expiresAt), gt(chatMutesTable.expiresAt, now))
+    ))
+    .limit(1);
+  return !!mute;
+}
+
+/** Disconnect all live sockets for a user with a mute notice */
+export function kickMutedUser(userId: number): void {
+  if (!_io) return;
+  const socketIds = connectedUsers.get(userId);
+  if (!socketIds) return;
+  for (const sid of [...socketIds]) {
+    const s = _io.sockets.sockets.get(sid);
+    if (s) {
+      s.emit("chat_error", { code: "muted", message: "You have been muted or banned from chat." });
+    }
+  }
 }
 
 async function getBannedPhrases(): Promise<string[]> {
@@ -148,6 +174,13 @@ export function attachChatSocket(httpServer: HttpServer): SocketIOServer {
       if (!enabled) {
         socket.emit("chat_disabled");
         socket.disconnect(true);
+        return;
+      }
+
+      // Mute / ban check
+      const muted = await isMutedOrBanned(userId);
+      if (muted) {
+        socket.emit("chat_error", { code: "muted", message: "You are muted or banned from chat." });
         return;
       }
 

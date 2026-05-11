@@ -12,7 +12,7 @@ import {
   Play, Zap, AlertTriangle, ToggleLeft, ToggleRight, Menu, ChevronLeft,
   Film, Link, Clock, MonitorPlay, Code, Bell, Layers, ArrowUp, ArrowDown,
   TrendingUp, TrendingDown, DollarSign, LineChart, UserPlus, ShieldCheck, Lock,
-  Mail, Send, BookOpen, ChevronDown, Filter, MessageCircle, Image,
+  Mail, Send, BookOpen, ChevronDown, Filter, MessageCircle, Image, VolumeX,
 } from "lucide-react";
 
 function apiFetch(path: string, options?: RequestInit) {
@@ -2053,6 +2053,28 @@ function UpgradesTab({
 // ─── Chat Admin Section ───────────────────────────────────────────────────────
 
 interface BannedWord { id: number; phrase: string; createdAt: string; }
+interface ChatMute { id: number; userId: number; username: string | null; reason: string | null; expiresAt: string | null; createdAt: string; }
+
+const MUTE_DURATIONS: { label: string; minutes: number | null }[] = [
+  { label: "10 minutes", minutes: 10 },
+  { label: "30 minutes", minutes: 30 },
+  { label: "1 hour", minutes: 60 },
+  { label: "6 hours", minutes: 360 },
+  { label: "24 hours", minutes: 1440 },
+  { label: "7 days", minutes: 10080 },
+  { label: "Permanent ban", minutes: null },
+];
+
+function formatMuteExpiry(expiresAt: string | null): string {
+  if (!expiresAt) return "Permanent ban";
+  const diff = new Date(expiresAt).getTime() - Date.now();
+  if (diff <= 0) return "Expired";
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (h >= 24) return `${Math.floor(h / 24)}d ${h % 24}h remaining`;
+  if (h > 0) return `${h}h ${m}m remaining`;
+  return `${m}m remaining`;
+}
 
 function ChatAdminSection({ secret, chatEnabled, isSavingChat, isSavedChat, onToggle }: {
   secret: string;
@@ -2063,34 +2085,73 @@ function ChatAdminSection({ secret, chatEnabled, isSavingChat, isSavedChat, onTo
 }) {
   const { toast } = useToast();
   const h = useMemo(() => ({ "x-admin-secret": secret, "Content-Type": "application/json" }), [secret]);
+
+  // Banned phrases state
   const [words, setWords] = useState<BannedWord[]>([]);
   const [newPhrase, setNewPhrase] = useState("");
-  const [adding, setAdding] = useState(false);
+  const [addingPhrase, setAddingPhrase] = useState(false);
 
-  const load = useCallback(async () => {
+  // Mute/ban state
+  const [mutes, setMutes] = useState<ChatMute[]>([]);
+  const [muteUsername, setMuteUsername] = useState("");
+  const [muteDuration, setMuteDuration] = useState<number | null>(60);
+  const [muteReason, setMuteReason] = useState("");
+  const [addingMute, setAddingMute] = useState(false);
+
+  const loadWords = useCallback(async () => {
     const res = await apiFetch("/admin/chat/banned-words", { headers: h });
     if (res.ok) setWords(await res.json());
   }, [h]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadMutes = useCallback(async () => {
+    const res = await apiFetch("/admin/chat/mutes", { headers: h });
+    if (res.ok) setMutes(await res.json());
+  }, [h]);
 
-  const handleAdd = async () => {
+  useEffect(() => { loadWords(); loadMutes(); }, [loadWords, loadMutes]);
+
+  const handleAddPhrase = async () => {
     if (!newPhrase.trim()) return;
-    setAdding(true);
+    setAddingPhrase(true);
     const res = await apiFetch("/admin/chat/banned-words", { method: "POST", headers: h, body: JSON.stringify({ phrase: newPhrase.trim() }) });
-    if (res.ok) { setNewPhrase(""); load(); toast({ title: "Phrase added" }); }
+    if (res.ok) { setNewPhrase(""); loadWords(); toast({ title: "Phrase added" }); }
     else { const d = await res.json().catch(() => ({})); toast({ variant: "destructive", title: d.error ?? "Failed to add phrase" }); }
-    setAdding(false);
+    setAddingPhrase(false);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDeletePhrase = async (id: number) => {
     const res = await apiFetch(`/admin/chat/banned-words/${id}`, { method: "DELETE", headers: h });
-    if (res.ok) { load(); toast({ title: "Phrase removed" }); }
+    if (res.ok) { loadWords(); toast({ title: "Phrase removed" }); }
     else toast({ variant: "destructive", title: "Failed to remove phrase" });
   };
 
+  const handleAddMute = async () => {
+    if (!muteUsername.trim()) return;
+    setAddingMute(true);
+    const res = await apiFetch("/admin/chat/mutes", {
+      method: "POST", headers: h,
+      body: JSON.stringify({ username: muteUsername.trim(), durationMinutes: muteDuration, reason: muteReason.trim() || undefined }),
+    });
+    if (res.ok) {
+      const d = await res.json();
+      setMuteUsername(""); setMuteReason("");
+      loadMutes();
+      toast({ title: muteDuration == null ? `${d.username} permanently banned from chat` : `${d.username} muted for ${MUTE_DURATIONS.find(x => x.minutes === muteDuration)?.label}` });
+    } else {
+      const d = await res.json().catch(() => ({}));
+      toast({ variant: "destructive", title: d.error ?? "Failed to mute user" });
+    }
+    setAddingMute(false);
+  };
+
+  const handleRemoveMute = async (id: number, username: string | null) => {
+    const res = await apiFetch(`/admin/chat/mutes/${id}`, { method: "DELETE", headers: h });
+    if (res.ok) { loadMutes(); toast({ title: `${username ?? "User"} unmuted` }); }
+    else toast({ variant: "destructive", title: "Failed to remove mute" });
+  };
+
   return (
-    <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
+    <div className="bg-card border border-card-border rounded-2xl p-5 space-y-5">
       <h3 className="font-semibold text-sm text-sky-400">Global Chat</h3>
 
       {/* Enable / disable toggle */}
@@ -2108,7 +2169,71 @@ function ChatAdminSection({ secret, chatEnabled, isSavingChat, isSavedChat, onTo
         </div>
       </div>
 
-      {/* Banned words */}
+      {/* Mute / Ban users */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mute / Ban Users</p>
+        <p className="text-xs text-muted-foreground">Prevent a specific user from sending chat messages. They will receive an error if they try.</p>
+
+        <div className="grid grid-cols-1 gap-2">
+          <div className="flex gap-2">
+            <Input
+              placeholder="Username…"
+              value={muteUsername}
+              onChange={e => setMuteUsername(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleAddMute()}
+              className="text-sm"
+            />
+            <select
+              value={muteDuration === null ? "permanent" : String(muteDuration)}
+              onChange={e => setMuteDuration(e.target.value === "permanent" ? null : Number(e.target.value))}
+              className="text-sm bg-background border border-input rounded-md px-2 py-1 shrink-0"
+            >
+              {MUTE_DURATIONS.map(d => (
+                <option key={d.label} value={d.minutes === null ? "permanent" : String(d.minutes)}>{d.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <Input
+              placeholder="Reason (optional)…"
+              value={muteReason}
+              onChange={e => setMuteReason(e.target.value)}
+              className="text-sm"
+            />
+            <Button size="sm" onClick={handleAddMute} disabled={addingMute || !muteUsername.trim()} className="shrink-0">
+              <VolumeX className="w-3.5 h-3.5 mr-1" />
+              {muteDuration == null ? "Ban" : "Mute"}
+            </Button>
+          </div>
+        </div>
+
+        {mutes.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic">No muted or banned users.</p>
+        ) : (
+          <div className="space-y-1 max-h-48 overflow-y-auto">
+            {mutes.map(m => (
+              <div key={m.id} className="flex items-center justify-between gap-2 py-1.5 px-2 bg-muted/50 rounded-lg">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-foreground">{m.username ?? `User #${m.userId}`}</span>
+                    <Badge variant="outline" className={`text-[10px] px-1 py-0 ${m.expiresAt == null ? "border-red-500/50 text-red-400" : "border-amber-500/50 text-amber-400"}`}>
+                      {m.expiresAt == null ? "Banned" : "Muted"}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {formatMuteExpiry(m.expiresAt)}{m.reason ? ` · ${m.reason}` : ""}
+                  </p>
+                </div>
+                <Button variant="ghost" size="sm" className="w-6 h-6 p-0 text-green-400 hover:text-green-300 shrink-0" onClick={() => handleRemoveMute(m.id, m.username)} title="Unmute">
+                  <Check className="w-3 h-3" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Banned phrases */}
       <div className="space-y-2">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Banned Phrases</p>
         <p className="text-xs text-muted-foreground">Messages containing these phrases (case-insensitive) are silently rejected.</p>
@@ -2117,10 +2242,10 @@ function ChatAdminSection({ secret, chatEnabled, isSavingChat, isSavedChat, onTo
             placeholder="e.g. spam phrase, scam link…"
             value={newPhrase}
             onChange={e => setNewPhrase(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleAdd()}
+            onKeyDown={e => e.key === "Enter" && handleAddPhrase()}
             className="text-sm"
           />
-          <Button size="sm" onClick={handleAdd} disabled={adding || !newPhrase.trim()} className="shrink-0">
+          <Button size="sm" onClick={handleAddPhrase} disabled={addingPhrase || !newPhrase.trim()} className="shrink-0">
             <Plus className="w-3.5 h-3.5 mr-1" /> Add
           </Button>
         </div>
@@ -2131,7 +2256,7 @@ function ChatAdminSection({ secret, chatEnabled, isSavingChat, isSavedChat, onTo
             {words.map(w => (
               <div key={w.id} className="flex items-center justify-between gap-2 py-1.5 px-2 bg-muted/50 rounded-lg">
                 <span className="text-sm font-mono text-foreground truncate">{w.phrase}</span>
-                <Button variant="ghost" size="sm" className="w-6 h-6 p-0 text-red-400 hover:text-red-300 shrink-0" onClick={() => handleDelete(w.id)}>
+                <Button variant="ghost" size="sm" className="w-6 h-6 p-0 text-red-400 hover:text-red-300 shrink-0" onClick={() => handleDeletePhrase(w.id)}>
                   <X className="w-3 h-3" />
                 </Button>
               </div>

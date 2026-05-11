@@ -20,6 +20,7 @@ import {
   adminAuditLogTable,
   chatBannedWordsTable,
   chatMessagesTable,
+  chatMutesTable,
   ADMIN_MODULES,
 } from "@workspace/db";
 import {
@@ -2330,6 +2331,70 @@ router.delete("/admin/chat/messages/:id", requireAdmin, requirePermission("setti
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
   await db.delete(chatMessagesTable).where(eq(chatMessagesTable.id, id));
+  res.json({ success: true });
+});
+
+// ─── Chat Mute / Ban Management ──────────────────────────────────────────────
+
+// GET /admin/chat/mutes — list active mutes/bans with username
+router.get("/admin/chat/mutes", requireAdmin, requirePermission("settings", "read"), async (_req, res): Promise<void> => {
+  const now = new Date();
+  const rows = await db
+    .select({
+      id: chatMutesTable.id,
+      userId: chatMutesTable.userId,
+      username: usersTable.username,
+      reason: chatMutesTable.reason,
+      expiresAt: chatMutesTable.expiresAt,
+      createdAt: chatMutesTable.createdAt,
+    })
+    .from(chatMutesTable)
+    .leftJoin(usersTable, eq(chatMutesTable.userId, usersTable.id))
+    .where(or(isNull(chatMutesTable.expiresAt), sql`${chatMutesTable.expiresAt} > ${now}`))
+    .orderBy(desc(chatMutesTable.createdAt));
+  res.json(rows);
+});
+
+// POST /admin/chat/mutes — mute or ban a user by username
+router.post("/admin/chat/mutes", requireAdmin, requirePermission("settings", "write"), async (req, res): Promise<void> => {
+  const schema = z.object({
+    username: z.string().min(1),
+    durationMinutes: z.number().int().positive().nullable().optional(), // null = permanent
+    reason: z.string().optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid body" }); return; }
+  const { username, durationMinutes, reason } = parsed.data;
+
+  const [user] = await db.select({ id: usersTable.id, username: usersTable.username })
+    .from(usersTable)
+    .where(eq(usersTable.username, username))
+    .limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+  // Remove any existing mute for this user first (upsert pattern)
+  await db.delete(chatMutesTable).where(eq(chatMutesTable.userId, user.id));
+
+  const expiresAt = durationMinutes != null
+    ? new Date(Date.now() + durationMinutes * 60 * 1000)
+    : null;
+
+  const [mute] = await db.insert(chatMutesTable)
+    .values({ userId: user.id, reason: reason ?? null, expiresAt })
+    .returning();
+
+  // Notify the user's active sockets immediately
+  const { kickMutedUser } = await import("../socket/chat");
+  kickMutedUser(user.id);
+
+  res.status(201).json({ ...mute, username: user.username });
+});
+
+// DELETE /admin/chat/mutes/:id — remove a mute/ban
+router.delete("/admin/chat/mutes/:id", requireAdmin, requirePermission("settings", "write"), async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  await db.delete(chatMutesTable).where(eq(chatMutesTable.id, id));
   res.json({ success: true });
 });
 

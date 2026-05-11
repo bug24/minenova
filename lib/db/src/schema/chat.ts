@@ -26,3 +26,13 @@ export const supportMessagesTable = pgTable("support_messages", {
 }, (t) => [
   index("support_messages_user_id_created_at_idx").on(t.userId, t.createdAt),
 ]);
+
+export const chatMutesTable = pgTable("chat_mutes", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  reason: text("reason"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }), // null = permanent ban
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("chat_mutes_user_id_idx").on(t.userId),
+]);
