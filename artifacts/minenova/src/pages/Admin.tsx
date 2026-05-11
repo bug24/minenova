@@ -2054,6 +2054,7 @@ function UpgradesTab({
 
 interface BannedWord { id: number; phrase: string; createdAt: string; }
 interface ChatMute { id: number; userId: number; username: string | null; reason: string | null; expiresAt: string | null; createdAt: string; }
+interface ChatChatter { userId: number; username: string; lastMessageAt: string; muteId: number | null; muteExpiresAt: string | null; muteReason: string | null; }
 
 const MUTE_DURATIONS: { label: string; minutes: number | null }[] = [
   { label: "10 minutes", minutes: 10 },
@@ -2098,6 +2099,11 @@ function ChatAdminSection({ secret, chatEnabled, isSavingChat, isSavedChat, onTo
   const [muteReason, setMuteReason] = useState("");
   const [addingMute, setAddingMute] = useState(false);
 
+  // Recent chatters state
+  const [chatters, setChatters] = useState<ChatChatter[]>([]);
+  const [quickMutingId, setQuickMutingId] = useState<number | null>(null);
+  const [quickDuration, setQuickDuration] = useState<number | null>(60);
+
   const loadWords = useCallback(async () => {
     const res = await apiFetch("/admin/chat/banned-words", { headers: h });
     if (res.ok) setWords(await res.json());
@@ -2108,7 +2114,12 @@ function ChatAdminSection({ secret, chatEnabled, isSavingChat, isSavedChat, onTo
     if (res.ok) setMutes(await res.json());
   }, [h]);
 
-  useEffect(() => { loadWords(); loadMutes(); }, [loadWords, loadMutes]);
+  const loadChatters = useCallback(async () => {
+    const res = await apiFetch("/admin/chat/users", { headers: h });
+    if (res.ok) setChatters(await res.json());
+  }, [h]);
+
+  useEffect(() => { loadWords(); loadMutes(); loadChatters(); }, [loadWords, loadMutes, loadChatters]);
 
   const handleAddPhrase = async () => {
     if (!newPhrase.trim()) return;
@@ -2146,8 +2157,32 @@ function ChatAdminSection({ secret, chatEnabled, isSavingChat, isSavedChat, onTo
 
   const handleRemoveMute = async (id: number, username: string | null) => {
     const res = await apiFetch(`/admin/chat/mutes/${id}`, { method: "DELETE", headers: h });
-    if (res.ok) { loadMutes(); toast({ title: `${username ?? "User"} unmuted` }); }
+    if (res.ok) { loadMutes(); loadChatters(); toast({ title: `${username ?? "User"} unmuted` }); }
     else toast({ variant: "destructive", title: "Failed to remove mute" });
+  };
+
+  const handleQuickMute = async (chatter: ChatChatter) => {
+    setQuickMutingId(chatter.userId);
+    const res = await apiFetch("/admin/chat/mutes", {
+      method: "POST", headers: h,
+      body: JSON.stringify({ username: chatter.username, durationMinutes: quickDuration }),
+    });
+    if (res.ok) {
+      const label = quickDuration == null ? "permanently banned" : `muted for ${MUTE_DURATIONS.find(x => x.minutes === quickDuration)?.label}`;
+      toast({ title: `${chatter.username} ${label}` });
+      loadMutes(); loadChatters();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      toast({ variant: "destructive", title: d.error ?? "Failed to mute user" });
+    }
+    setQuickMutingId(null);
+  };
+
+  const handleQuickUnmute = async (chatter: ChatChatter) => {
+    if (!chatter.muteId) return;
+    const res = await apiFetch(`/admin/chat/mutes/${chatter.muteId}`, { method: "DELETE", headers: h });
+    if (res.ok) { loadMutes(); loadChatters(); toast({ title: `${chatter.username} unmuted` }); }
+    else toast({ variant: "destructive", title: "Failed to unmute" });
   };
 
   return (
@@ -2169,9 +2204,64 @@ function ChatAdminSection({ secret, chatEnabled, isSavingChat, isSavedChat, onTo
         </div>
       </div>
 
+      {/* Recent chatters */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recent Chatters</p>
+          <div className="flex items-center gap-2">
+            <select
+              value={quickDuration === null ? "permanent" : String(quickDuration)}
+              onChange={e => setQuickDuration(e.target.value === "permanent" ? null : Number(e.target.value))}
+              className="text-xs bg-background border border-input rounded-md px-1.5 py-0.5"
+            >
+              {MUTE_DURATIONS.map(d => (
+                <option key={d.label} value={d.minutes === null ? "permanent" : String(d.minutes)}>{d.label}</option>
+              ))}
+            </select>
+            <button onClick={loadChatters} className="text-muted-foreground hover:text-foreground" title="Refresh">
+              <RefreshCw className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">50 most recent senders. Click the mute icon to apply the selected duration instantly.</p>
+        {chatters.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic">No recent chat activity.</p>
+        ) : (
+          <div className="space-y-1 max-h-56 overflow-y-auto">
+            {chatters.map(c => {
+              const isMuted = c.muteId != null;
+              return (
+                <div key={c.userId} className={`flex items-center justify-between gap-2 py-1.5 px-2 rounded-lg ${isMuted ? "bg-red-500/10 border border-red-500/20" : "bg-muted/50"}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-medium text-foreground">{c.username}</span>
+                      {isMuted && (
+                        <Badge variant="outline" className={`text-[10px] px-1 py-0 ${c.muteExpiresAt == null ? "border-red-500/50 text-red-400" : "border-amber-500/50 text-amber-400"}`}>
+                          {c.muteExpiresAt == null ? "Banned" : formatMuteExpiry(c.muteExpiresAt)}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">{new Date(c.lastMessageAt).toLocaleString()}</p>
+                  </div>
+                  {isMuted ? (
+                    <Button variant="ghost" size="sm" className="w-6 h-6 p-0 text-green-400 hover:text-green-300 shrink-0" onClick={() => handleQuickUnmute(c)} title="Unmute">
+                      <Check className="w-3 h-3" />
+                    </Button>
+                  ) : (
+                    <Button variant="ghost" size="sm" className="w-6 h-6 p-0 text-amber-400 hover:text-amber-300 shrink-0" onClick={() => handleQuickMute(c)} disabled={quickMutingId === c.userId} title="Mute">
+                      <VolumeX className="w-3 h-3" />
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Mute / Ban users */}
       <div className="space-y-2">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mute / Ban Users</p>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mute / Ban by Username</p>
         <p className="text-xs text-muted-foreground">Prevent a specific user from sending chat messages. They will receive an error if they try.</p>
 
         <div className="grid grid-cols-1 gap-2">

@@ -31,7 +31,7 @@ import {
   getSupportUnreadCount,
   requestAdminUploadUrl,
 } from "./support";
-import { eq, and, isNull, or, ilike, sql, desc, inArray, type SQL } from "drizzle-orm";
+import { eq, and, isNull, or, ilike, sql, desc, inArray, gt, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { hashPassword, verifyPassword, generateSubAdminToken, verifySubAdminToken, isSubAdminToken } from "../lib/auth";
 import * as OTPAuth from "otpauth";
@@ -2332,6 +2332,54 @@ router.delete("/admin/chat/messages/:id", requireAdmin, requirePermission("setti
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
   await db.delete(chatMessagesTable).where(eq(chatMessagesTable.id, id));
   res.json({ success: true });
+});
+
+// GET /admin/chat/users — recent chatters (last 50 distinct senders) with active mute status
+router.get("/admin/chat/users", requireAdmin, requirePermission("settings", "read"), async (_req, res): Promise<void> => {
+  const now = new Date();
+
+  // Distinct recent chatters via subquery on chat_messages
+  const recentChatters = await db
+    .selectDistinctOn([chatMessagesTable.userId], {
+      userId: chatMessagesTable.userId,
+      username: chatMessagesTable.username,
+      lastMessageAt: sql<string>`max(${chatMessagesTable.createdAt}) over (partition by ${chatMessagesTable.userId})`,
+    })
+    .from(chatMessagesTable)
+    .orderBy(chatMessagesTable.userId, desc(chatMessagesTable.createdAt))
+    .limit(200);
+
+  if (recentChatters.length === 0) { res.json([]); return; }
+
+  const userIds = recentChatters.map(r => r.userId);
+
+  // Fetch active mutes for these users
+  const activeMutes = await db
+    .select({ userId: chatMutesTable.userId, id: chatMutesTable.id, expiresAt: chatMutesTable.expiresAt, reason: chatMutesTable.reason })
+    .from(chatMutesTable)
+    .where(
+      and(
+        inArray(chatMutesTable.userId, userIds),
+        or(isNull(chatMutesTable.expiresAt), gt(chatMutesTable.expiresAt, now)),
+      ),
+    );
+
+  const muteMap = new Map(activeMutes.map(m => [m.userId, m]));
+
+  // Sort by lastMessageAt descending and cap at 50
+  const result = recentChatters
+    .map(c => ({
+      userId: c.userId,
+      username: c.username,
+      lastMessageAt: c.lastMessageAt,
+      muteId: muteMap.get(c.userId)?.id ?? null,
+      muteExpiresAt: muteMap.get(c.userId)?.expiresAt?.toISOString() ?? null,
+      muteReason: muteMap.get(c.userId)?.reason ?? null,
+    }))
+    .sort((a, b) => (a.lastMessageAt > b.lastMessageAt ? -1 : 1))
+    .slice(0, 50);
+
+  res.json(result);
 });
 
 // ─── Chat Mute / Ban Management ──────────────────────────────────────────────
